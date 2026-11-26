@@ -30,7 +30,11 @@ func (state *State) monitorHostInfo(session *Session) [3]string {
 	if !session.isLocal() && session.host.isSSH() && session.role == sshconn.EndpointTarget && session.endpoint.User != "" {
 		user = session.endpoint.User
 	}
-	fields := [3]string{session.host.Label, session.host.Address, user}
+	address := session.host.Address
+	if distro := session.wslDistro(); distro != "" && session.HostID != localHostID {
+		address = distro
+	}
+	fields := [3]string{session.host.Label, address, user}
 	for i := range fields {
 		if fields[i] == "" {
 			fields[i] = "—"

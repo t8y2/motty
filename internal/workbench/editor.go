@@ -122,6 +122,10 @@ type hostEditor struct {
 	// for a host that sets any of them and for a value that fails validation.
 	advancedOpen bool
 
+	wslDistro                         string
+	wslUseUser, wslNoGUI              bool
+	wslUser, wslDirectory, wslCommand text.Editor
+
 	protocol hostProtocol
 	// terminal is an SSH host's terminal transport: SSH itself or mosh.
 	terminal hostTerminal
@@ -249,13 +253,29 @@ func (editor *hostEditor) validate(hosts []Host, ignoreID uint32, messages i18n.
 	if editor.value(fieldLabel) == "" {
 		return messages.ErrLabelRequired
 	}
-	if editor.value(fieldAddress) == "" {
+	if editor.protocol != protocolWSL && editor.value(fieldAddress) == "" {
 		if editor.protocol == protocolSerial {
 			return messages.ErrDeviceRequired
 		}
 		return messages.ErrAddressRequired
 	}
-	if editor.protocol == protocolSerial {
+	if editor.protocol == protocolWSL {
+		if !validEndpoint(protocolWSL, editor.wslDistro) {
+			return messages.WSL.ErrDistribution
+		}
+		user := strings.TrimSpace(editor.wslUser.String())
+		if editor.wslUseUser && (user == "" || !validWSLUser(user)) {
+			return messages.WSL.ErrUser
+		}
+		if !validWSLDirectory(editor.wslDirectory.String()) {
+			editor.advancedOpen = true
+			return messages.WSL.ErrDirectory
+		}
+		if !validSingleLineCommand(editor.wslCommand.String()) {
+			editor.advancedOpen = true
+			return messages.SettingsLocalStartupInvalid
+		}
+	} else if editor.protocol == protocolSerial {
 		if !validEndpoint(protocolSerial, editor.value(fieldAddress)) {
 			return messages.Tools.ErrSerialDevice
 		}
@@ -386,8 +406,11 @@ func (editor *hostEditor) load(host Host) {
 		editor.algorithms.Insert(host.Algo.list)
 	}
 	editor.label.Insert(host.Label)
-	editor.address.Insert(host.Address)
-	editor.user.Insert(host.User)
+	editor.loadWSL(host)
+	if !host.isWSL() {
+		editor.address.Insert(host.Address)
+		editor.user.Insert(host.User)
+	}
 	editor.group.Insert(host.Group)
 	editor.tags.Insert(formatHostTags(host))
 	editor.icon, editor.iconChosen, editor.system = host.Icon, true, host.System
@@ -424,6 +447,19 @@ func (editor *hostEditor) load(host Host) {
 	editor.port.Insert(strconv.Itoa(int(host.Port)))
 }
 
+func (editor *hostEditor) loadWSL(host Host) {
+	editor.wslDistro, editor.wslUseUser, editor.wslNoGUI = "", false, false
+	editor.wslUser, editor.wslDirectory, editor.wslCommand = text.Editor{}, text.Editor{}, text.Editor{}
+	if !host.isWSL() {
+		return
+	}
+	editor.wslDistro, editor.wslUseUser, editor.wslNoGUI = host.Address, host.User != "", host.WSLNoGUI
+	editor.wslUser.Insert(host.User)
+	editor.wslDirectory.Insert(host.WSLDirectory)
+	editor.wslCommand.Insert(host.LoginCommand)
+	editor.advancedOpen = host.WSLDirectory != "" || host.LoginCommand != "" || host.WSLNoGUI || host.NoHistory
+}
+
 // host builds the host the form currently describes.
 func (editor *hostEditor) host(id uint32) Host {
 	tags, _ := parseHostTags(editor.value(fieldTags))
@@ -439,7 +475,14 @@ func (editor *hostEditor) host(id uint32) Host {
 		Protocol: editor.protocol,
 		Encoding: editor.encoding,
 	}
-	if editor.protocol == protocolSerial {
+	if host.isWSL() {
+		host.Address, host.User = editor.wslDistro, ""
+		if editor.wslUseUser {
+			host.User = strings.TrimSpace(editor.wslUser.String())
+		}
+		host.WSLDirectory, host.WSLNoGUI = editor.wslDirectory.String(), editor.wslNoGUI
+		host.LoginCommand, host.NoHistory = strings.TrimSpace(editor.wslCommand.String()), editor.noHistory
+	} else if editor.protocol == protocolSerial {
 		host.Line, _ = serial.ParseLine(editor.value(fieldPort), editor.flow)
 	} else {
 		host.Port, _ = editor.portNumber()
@@ -490,7 +533,7 @@ func (editor *hostEditor) host(id uint32) Host {
 			host.Algo = &hostAlgo{mode: algoCustom, list: editor.value(fieldAlgorithms)}
 		}
 	}
-	if editor.protocol != protocolSerial {
+	if editor.protocol != protocolSerial && !host.isWSL() {
 		host.Proxy = cloneOutboundProxy(editor.proxy)
 		host.ProxyProfile, host.ProxyBypass = editor.proxyProfile, editor.proxyBypass
 	}
@@ -514,6 +557,7 @@ func (editor *hostEditor) host(id uint32) Host {
 
 // reset clears every field back to defaults for a fresh dialog session.
 func (editor *hostEditor) reset() {
+	editor.loadWSL(Host{})
 	editor.form = hostFormScroll{}
 	editor.color = text.Editor{}
 	editor.label = text.Editor{}

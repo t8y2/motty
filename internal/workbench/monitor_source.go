@@ -44,7 +44,8 @@ func monitorSystem(session *Session) sshconn.RemoteSystem {
 func monitorRunnerFor(session *Session) monitorRunner {
 	if session.isLocal() {
 		if distro := session.wslDistro(); distro != "" {
-			return remotestats.WSL{Exe: localshell.WSLExecutable(), Distro: distro}
+			conn := session.conn.(*localConn) // wslDistro only reports a local connection
+			return remotestats.WSL{Exe: localshell.WSLExecutable(), Distro: distro, User: conn.wslUser}
 		}
 		return remotestats.Local{}
 	}

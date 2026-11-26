@@ -17,7 +17,7 @@ func (state *State) hostProtocolTagLabel(host Host) string {
 func hostProtocolTagColor(pal *palette, protocol hostProtocol) gfx.Color {
 	index := 4 // SSH
 	switch protocol {
-	case protocolTelnet:
+	case protocolTelnet, protocolWSL:
 		index = 6
 	case protocolSerial:
 		index = 2

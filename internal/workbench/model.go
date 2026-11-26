@@ -39,6 +39,10 @@ type Host struct {
 	// expects BS. It is also the pty's erase character for an SSH host.
 	// Meaningful only where hostAsksBackspace says the host has the choice.
 	Backspace backspaceKey
+	// A WSL host uses Address for its distribution and User for the Linux
+	// account. Both may be empty to use WSL's defaults.
+	WSLDirectory string
+	WSLNoGUI     bool
 	// Algo, when set, replaces the default SSH algorithms for this host. Nil is
 	// the default, so a host that never asked costs one pointer.
 	Algo *hostAlgo
@@ -155,6 +159,9 @@ type reuseHostPolicy struct {
 	encoding         string
 	user             string
 	localShell       string
+	wslDirectory     string
+	wslNoGUI         bool
+	wslCommand       string
 	viaSSH           bool
 	clipboard        bool
 	console          bool
@@ -170,12 +177,16 @@ type reuseHostPolicy struct {
 }
 
 func reusePolicyFor(host Host) reuseHostPolicy {
-	return reuseHostPolicy{line: host.Line, backspace: host.Backspace, encoding: host.Encoding, user: host.User,
+	policy := reuseHostPolicy{line: host.Line, backspace: host.Backspace, encoding: host.Encoding, user: host.User,
 		localShell: host.localShell, viaSSH: host.ViaSSH, clipboard: host.Clipboard,
 		console: host.Console, noAudio: host.NoAudio, standardSecurity: host.StandardSecurity,
 		legacyTLS: host.LegacyTLS, interactiveOnly: host.InteractiveOnly,
 		colorDepth: host.ColorDepth, desktopEncoding: host.PreferredEncoding, effects: host.desktopEffects(),
 		desktopWidth: host.DesktopWidth, desktopHeight: host.DesktopHeight}
+	if host.isWSL() {
+		policy.wslDirectory, policy.wslNoGUI, policy.wslCommand = host.WSLDirectory, host.WSLNoGUI, host.LoginCommand
+	}
+	return policy
 }
 
 // hostAsksBackspace reports whether the form lets a host of the protocol and

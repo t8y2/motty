@@ -38,7 +38,9 @@ func (state *State) recordTerminalDirectory(sessionID uint32, cwd term.Cwd, repl
 				session.localDirectory = directory
 				state.terminalDirectoryDirty = true
 			}
-			state.noteLocalDirectory(directory)
+			if session.HostID == localHostID {
+				state.noteLocalDirectory(directory)
+			}
 		}
 	} else {
 		if !validSyncDirectory(cwd.Path) {

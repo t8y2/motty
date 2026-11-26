@@ -89,8 +89,11 @@ func (state *State) setVerticalTabsGrouping(enabled bool) bool {
 
 func (state *State) verticalSessionKey(session *Session) verticalTabKey {
 	host := session.host
-	if session.isLocal() {
+	if session.HostID == localHostID {
 		return verticalTabKey{local: true, shell: host.localShell}
+	}
+	if host.isWSL() {
+		return verticalTabKey{protocol: protocolWSL, address: state.sessionAddress(host), user: host.User}
 	}
 	address := strings.TrimSpace(host.Address)
 	user := strings.TrimSpace(host.User)

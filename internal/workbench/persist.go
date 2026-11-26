@@ -824,7 +824,7 @@ func (state *State) snapshot() savedState {
 		if session.containerCommand != "" {
 			continue
 		}
-		if session.isLocal() {
+		if session.HostID == localHostID {
 			saved.Sessions = append(saved.Sessions, savedSession{CustomTitle: savedCustomSessionTitle(session.customTitle), Label: session.Title, Mention: session.Mention, Local: true, LocalDirectory: session.localDirectory, LocalShell: session.host.localShell})
 			if session.ID == state.activeSessionID {
 				saved.ActiveSession = len(saved.Sessions)
@@ -834,7 +834,7 @@ func (state *State) snapshot() savedState {
 		saved.Sessions = append(saved.Sessions, savedSession{
 			CustomTitle: savedCustomSessionTitle(session.customTitle), Label: session.Title, Mention: session.Mention, Address: session.host.Address, User: session.host.User,
 			Port: session.host.Port, System: session.host.System.String(), SavedHost: session.HostID != 0,
-			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory,
+			CatalogID: session.savedCatalogID(), RemoteDirectory: session.startDirectory, LocalDirectory: session.localDirectory,
 			WorkspaceCommand: session.workspaceCommand,
 			savedTransport:   session.host.transport(),
 		})
@@ -1584,7 +1584,7 @@ func (state *State) restoreSessions(entries []savedSession, active int) []uint32
 		if session.Mention == "" {
 			session.Mention = state.uniqueMentionName(session.Title, session.ID)
 		}
-		if entry.Local {
+		if session.isLocal() {
 			session.setStartDirectory(entry.LocalDirectory)
 		} else {
 			session.setStartDirectory(entry.RemoteDirectory)
@@ -1619,14 +1619,14 @@ func (state *State) restoreSessionHost(entry savedSession) (Host, bool) {
 		}
 		return host, true
 	}
-	if entry.Address == "" {
+	if entry.Address == "" && entry.Protocol != "wsl" {
 		return Host{}, false
 	}
 	if entry.Label == "" {
 		entry.Label = entry.Address
 	}
 	host := Host{Label: entry.Label, Address: entry.Address, User: entry.User, Port: entry.Port, System: sshconn.ParseRemoteSystem(entry.System)}
-	if !host.applyTransport(entry.savedTransport) {
+	if !host.applyTransport(entry.savedTransport) || !validWSLEndpoint(host) {
 		return Host{}, false
 	}
 	host.normalizeEndpoint()

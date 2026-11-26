@@ -36,6 +36,10 @@ type hostFormScroll struct {
 	fieldIdleInterval, fieldIdleCustomInput                         dialogField
 	fieldAlgoCustom, fieldLoginCommand, fieldOTP                    dialogField
 	fieldResolution                                                 dialogField
+	wslUserField, wslDirectoryField, wslCommandField                dialogField
+	wslDistroField                                                  ui.FormFieldState
+	wslDistroBox                                                    ui.Box
+	wslDistroChoices                                                []string
 	// authField and portsField are the page form fields of the authentication
 	// choice and the detected serial ports; authBox is the choice itself, kept
 	// for the form's tab ring.

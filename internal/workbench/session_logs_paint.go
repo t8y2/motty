@@ -363,7 +363,7 @@ func (state *State) prepareSessionLogDetail() {
 	switch {
 	case detail.live:
 		detail.actionLabel = m.OpenSession
-	case record.Protocol == sessionlog.ProtocolLocal && record.TargetKind != sessionlog.TargetShared:
+	case record.Protocol == sessionlog.ProtocolLocal && record.TargetKind == sessionlog.TargetLocal:
 		detail.actionLabel = m.NewLocal
 	case detail.hasHost:
 		detail.actionLabel = m.Reopen

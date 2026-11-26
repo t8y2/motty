@@ -299,7 +299,7 @@ func proxyRouteKey(proxy *sshconn.Proxy) string {
 }
 
 func (state *State) hostProxyPrecheck() string {
-	if state.editor.protocol == protocolSerial {
+	if state.editor.protocol == protocolSerial || state.editor.protocol == protocolWSL {
 		return ""
 	}
 	proxy := state.editor.proxy

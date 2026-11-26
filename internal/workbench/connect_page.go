@@ -958,7 +958,7 @@ func (state *State) clickConnection(id gfx.ID) {
 // paintSessionBadge is the machine's badge, the one its row in the host list has:
 // its system, or the icon chosen for it. A local shell has the terminal.
 func (state *State) paintSessionBadge(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
-	if session.isLocal() {
+	if session.HostID == localHostID {
 		canvas.Rounded(bounds, bounds.Width*0.24, state.pal.accentSoft)
 		paintIcon(canvas, iconTerminal, insetRect(bounds, 0.24), state.pal.accent)
 		return

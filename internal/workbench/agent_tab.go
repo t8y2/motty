@@ -281,5 +281,12 @@ func (state *State) paintTabBadge(canvas *gfx.Canvas, session *Session, bounds g
 			return
 		}
 	}
-	state.paintHostCatalogIcon(canvas, session.host, bounds, fill)
+	host := session.host
+	if session.dialedProtocol == protocolWSL {
+		host.Protocol = protocolWSL
+		if conn, ok := session.conn.(*localConn); ok {
+			host.localShell = conn.shell
+		}
+	}
+	state.paintHostCatalogIcon(canvas, host, bounds, fill)
 }

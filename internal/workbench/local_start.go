@@ -63,7 +63,7 @@ func (state *State) newLocalTerminalDirectory() string {
 	if state.localStart == localStartHome {
 		return ""
 	}
-	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.isLocal() && session.localDirectory != "" {
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.HostID == localHostID && session.localDirectory != "" {
 		return session.localDirectory
 	}
 	return state.lastLocalDirectory
@@ -83,7 +83,7 @@ func (state *State) noteLocalDirectory(directory string) {
 // window closed with several local tabs reopens new ones where the user was
 // looking rather than wherever a background shell last printed a prompt.
 func (state *State) noteActiveLocalDirectory() {
-	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.isLocal() {
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.HostID == localHostID {
 		state.noteLocalDirectory(session.localDirectory)
 	}
 }
@@ -96,7 +96,7 @@ func (state *State) noteActiveLocalDirectory() {
 func (state *State) startRestoredLocalSessions() {
 	for index := range state.sessions {
 		session := &state.sessions[index]
-		if !session.isLocal() || !session.restored || !state.canReconnect(session) {
+		if session.HostID != localHostID || !session.restored || !state.canReconnect(session) {
 			continue
 		}
 		session.autoRestore = true
@@ -108,7 +108,7 @@ func (state *State) startRestoredLocalSessions() {
 // shell, which the first Wake starts.
 func (state *State) hasRestoredLocalSession() bool {
 	for index := range state.sessions {
-		if session := &state.sessions[index]; session.isLocal() && session.restored {
+		if session := &state.sessions[index]; session.HostID == localHostID && session.restored {
 			return true
 		}
 	}

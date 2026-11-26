@@ -687,6 +687,10 @@ func (t *terminal) armInitialization(state *State, session *Session) {
 		session.loginResults = nil
 		session.loginAborted = ""
 	}
+	if session.host.isWSL() {
+		t.login.armLocal(session.host.LoginCommand)
+		return
+	}
 	if session.isLocal() {
 		// A local shell's startup command belongs to the shell it runs, whether
 		// the tab chose one or the settings' default did; the connection froze

@@ -132,6 +132,9 @@ func (policy jumpPolicy) equal(other jumpPolicy) bool {
 
 // login is the account a connection to host signs in as.
 func (catalog *hostCatalog) login(host Host) string {
+	if host.isWSL() {
+		return host.User
+	}
 	if name := catalog.storedLogin(host); name != "" {
 		return name
 	}
@@ -594,7 +597,7 @@ func decodeHosts(saved []savedHost, known map[string]uint32, next uint32) (hosts
 	hosts = make([]Host, 0, len(saved))
 	usedIDs := make(map[string]struct{}, len(saved))
 	for _, entry := range saved {
-		if entry.Label == "" || entry.Address == "" {
+		if entry.Label == "" || entry.Address == "" && entry.Protocol != "wsl" {
 			continue
 		}
 		id, kept := known[entry.ID]
@@ -606,7 +609,7 @@ func decodeHosts(saved []savedHost, known map[string]uint32, next uint32) (hosts
 			ID: id, CatalogID: entry.ID, Label: entry.Label, Group: strings.TrimSpace(entry.Group),
 			Address: entry.Address, User: entry.User, Port: entry.Port, System: sshconn.ParseRemoteSystem(entry.System),
 		}
-		if !host.applyTransport(entry.savedTransport) {
+		if !host.applyTransport(entry.savedTransport) || !validWSLEndpoint(host) {
 			if !kept {
 				next--
 			}

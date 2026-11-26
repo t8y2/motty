@@ -197,7 +197,7 @@ func hostPrivacyMaskedWidth(canvas *gfx.Canvas, value string, style gfx.TextStyl
 
 func (state *State) hostPrivacySubtitleIsUser(host Host) bool {
 	switch host.Protocol {
-	case protocolVNC, protocolRDP:
+	case protocolVNC, protocolRDP, protocolWSL:
 		return host.User != ""
 	default:
 		return true
@@ -312,8 +312,7 @@ func (state *State) hostPrivacyConnectionWidth(canvas *gfx.Canvas, host Host, av
 	if host.Protocol == protocolVNC {
 		return state.hostPrivacyTargetWidth(canvas, host, style, available)
 	}
-	targetOnly := host.Protocol == protocolSerial || (host.Protocol == protocolRDP && host.User == "")
-	if targetOnly {
+	if host.Protocol == protocolSerial || (host.Protocol == protocolRDP || host.isWSL()) && host.User == "" {
 		return state.hostPrivacyTargetWidth(canvas, host, style, available)
 	}
 
@@ -345,8 +344,7 @@ func (state *State) paintHostPrivacyConnection(canvas *gfx.Canvas, bounds gfx.Re
 		state.paintHostPrivacyTarget(canvas, bounds, host, 19, style)
 		return
 	}
-	targetOnly := host.Protocol == protocolSerial || (host.Protocol == protocolRDP && host.User == "")
-	if targetOnly {
+	if host.Protocol == protocolSerial || (host.Protocol == protocolRDP || host.isWSL()) && host.User == "" {
 		state.paintHostPrivacyTarget(canvas, bounds, host, 19, style)
 		return
 	}

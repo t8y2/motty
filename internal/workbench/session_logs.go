@@ -846,7 +846,7 @@ func sessionLogText(value string) string {
 
 // sessionLogProtocol maps the workbench's host protocol to the stored enum.
 func sessionLogProtocol(host Host) sessionlog.Protocol {
-	if host.ID == localHostID {
+	if host.isLocal() {
 		return sessionlog.ProtocolLocal
 	}
 	switch host.Protocol {
@@ -864,7 +864,7 @@ func sessionLogProtocol(host Host) sessionlog.Protocol {
 }
 
 func sessionLogPort(host Host) uint16 {
-	if host.ID == localHostID || host.Protocol == protocolSerial {
+	if host.isLocal() || host.Protocol == protocolSerial {
 		return 0
 	}
 	if host.Port == 0 {

@@ -10,13 +10,17 @@ import "context"
 type WSL struct {
 	Exe    string
 	Distro string
+	User   string
 }
 
-// wslArgs is what wsl.exe is given to run one script inside the distribution:
-// the distribution, then /bin/sh with the script. --exec runs that program
-// directly, without the distribution's login shell.
-func wslArgs(distro, command string) []string {
-	return []string{"-d", distro, "--exec", "/bin/sh", "-c", command}
+// args runs one script in the session's distribution and user account.
+// --exec runs /bin/sh directly, without the distribution's login shell.
+func (w WSL) args(command string) []string {
+	args := []string{"-d", w.Distro}
+	if w.User != "" {
+		args = append(args, "--user", w.User)
+	}
+	return append(args, "--exec", "/bin/sh", "-c", command)
 }
 
 // StreamCommand runs command in the distribution and hands each stdout line,

@@ -20,6 +20,16 @@ func (state *State) localShellForIcon(host Host) string {
 	if host.localShell != "" {
 		return host.localShell
 	}
+	if host.isWSL() {
+		distro := host.Address
+		if distro == "" {
+			distro = state.localShellMenu.defaultWSLDistro
+		}
+		if distro != "" {
+			return localshell.WSLShell(distro)
+		}
+		return ""
+	}
 	if state.localShell != "" {
 		return state.localShell
 	}
@@ -39,6 +49,10 @@ func (state *State) paintLocalShellIcon(canvas *gfx.Canvas, host Host, bounds gf
 			paintBadgeArt(canvas, art, bounds)
 			return true
 		}
+	}
+	if host.isWSL() {
+		paintSystemBadge(canvas, wslHostSystem(host.Address), bounds, state.pal)
+		return true
 	}
 	if glyph, ok := localShellGlyph(shell); ok {
 		// The Material glyphs carry their own colors, so the tint only applies

@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 // wslExecutable is the wsl.exe that runs distributions, or empty when this
@@ -29,6 +31,31 @@ func wslExecutable() string {
 // WSLExecutable is the wsl.exe that runs distributions, or empty when this
 // Windows has none. The resource monitor starts its commands through it.
 func WSLExecutable() string { return wslExecutable() }
+
+// DefaultWSLDistro reads the current user's WSL registration without launching
+// it. A saved session can then use the same distribution for its shell, files
+// and monitor even if the default is changed while the tab is open.
+func DefaultWSLDistro() string {
+	root, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Lxss`, registry.READ)
+	if err != nil {
+		return ""
+	}
+	defer root.Close()
+	id, _, err := root.GetStringValue("DefaultDistribution")
+	if err != nil || id == "" {
+		return ""
+	}
+	key, err := registry.OpenKey(root, id, registry.QUERY_VALUE)
+	if err != nil {
+		return ""
+	}
+	defer key.Close()
+	name, _, err := key.GetStringValue("DistributionName")
+	if err != nil || !validDistro(name) {
+		return ""
+	}
+	return name
+}
 
 // InstalledWSL lists the distributions that can be started, asking wsl.exe.
 // It starts a process, so callers keep it off the window thread. No wsl.exe, a
