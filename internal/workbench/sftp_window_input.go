@@ -628,6 +628,9 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 }
 
 func (w *sftpWindow) click(id gfx.ID) {
+	if w.owner.clickTransferConflict(w.view, id) {
+		return
+	}
 	defer w.invalidate()
 	if w.view.worker == nil {
 		return
@@ -924,6 +927,9 @@ func (w *sftpWindow) moveSplitter(event gfx.KeyEvent) (gfx.EventResult, bool) {
 }
 
 func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
+	if result, handled := w.owner.transferConflictKey(w.view, event); handled {
+		return result
+	}
 	if event.Release {
 		return gfx.EventResult{}
 	}

@@ -283,6 +283,8 @@ var syncedSettings = map[string]bool{
 	"sftp_terminal_follow":         true,
 	"sftp_path_input":              true,
 	"sftp_panel_auto_open":         true,
+	"sftp_clear_uploads":           true,
+	"sftp_transfer_auto_open_off":  true,
 	"sftp_panel_side":              true,
 	"sftp_window_order":            true,
 	"sftp_open_mode":               true,

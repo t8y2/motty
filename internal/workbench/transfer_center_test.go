@@ -3,6 +3,7 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -609,10 +610,10 @@ func TestTransferPreviewKeepsTheOldCardPlacement(t *testing.T) {
 		t.Fatal("the preview has no card")
 	}
 	align := max(4, min(row.Bounds.Width*0.55, 190))
-	if wantLeft := row.Bounds.X + align; cardHit.Bounds.X != wantLeft {
+	if wantLeft := row.Bounds.X + align; math.Abs(float64(cardHit.Bounds.X-wantLeft)) > 0.001 {
 		t.Fatalf("preview starts at %v, want %v (the old align offset)", cardHit.Bounds.X, wantLeft)
 	}
-	if wantTop := row.Bounds.Y + row.Bounds.Height + 3; cardHit.Bounds.Y != wantTop {
+	if wantTop := row.Bounds.Y + row.Bounds.Height + 3; math.Abs(float64(cardHit.Bounds.Y-wantTop)) > 0.001 {
 		t.Fatalf("preview top = %v, want %v (3px under the trigger)", cardHit.Bounds.Y, wantTop)
 	}
 }

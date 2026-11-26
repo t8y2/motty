@@ -69,8 +69,8 @@ func TestNewSymbolicLinkIsCreatedListedAndOpensLikeAFolder(t *testing.T) {
 }
 
 // A conflict that still reaches the worker (for example a file created after
-// the panel checked the destination) opens the transfer center with its
-// recovery choices, unfiltered.
+// the panel checked the destination) opens a small prompt without changing the
+// transfer center's filters or opening its history.
 func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 	view := session.files
@@ -86,18 +86,17 @@ func TestConflictDialogCanSkipWhatExists(t *testing.T) {
 		t.Fatal("conflict download was not queued")
 	}
 	waitSFTP(t, state, session, func(view *sftpView) bool {
-		return state.transfers.open && len(state.transfers.entries) == 1 && state.transfers.entries[0].conflict
+		return len(view.conflictPrompt.targets) == 1
 	})
-	if center := &state.transfers; center.filter != transferFilterFailed || center.direction != transferAnyDirection ||
-		center.query != "" || center.groups[transferFilterFailed].collapsed {
-		t.Fatalf("conflict is still filtered: status=%d direction=%d query=%q", center.filter, center.direction, center.query)
+	if center := &state.transfers; center.open || center.filter != transferFilterRunning || center.direction != transferUpload || center.query != "hidden" {
+		t.Fatalf("conflict changed the center: open=%v status=%d direction=%d query=%q", center.open, center.filter, center.direction, center.query)
 	}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitTransfersSkip.At(state.transfers.entries[0].id)); !ok {
-		t.Fatal("the transfer center has no Skip button")
+	if _, ok := hitByID(&canvas, hitTransferConflictSkipAll); !ok {
+		t.Fatal("the conflict prompt has no Skip button")
 	}
-	state.Click(hitTransfersSkip.At(state.transfers.entries[0].id))
+	state.Click(hitTransferConflictSkipAll)
 	waitSFTP(t, state, session, func(view *sftpView) bool {
 		return view.dialog == sftpDialogNone && len(view.transfers) == 1 && view.transfers[0].State == sftpclient.TransferCompleted
 	})

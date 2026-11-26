@@ -2,6 +2,7 @@ package i18n
 
 // TransferCenterMessages describes the window-wide upload and download history.
 type TransferCenterMessages struct {
+	Pending, ConflictTitle, ConflictPromptFmt                                                                             string
 	Close                                                                                                                 string
 	Title, Description, Empty, EmptyFiltered                                                                              string
 	EmptyHint, EmptyFilteredHint                                                                                          string

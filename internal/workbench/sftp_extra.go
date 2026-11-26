@@ -49,6 +49,8 @@ var (
 	hitSettingsPathInput            = tree.ID(sftpHits, "settings-path-input")
 	hitSettingsFollowSetup          = tree.ID(sftpHits, "settings-follow-setup")
 	hitSettingsPanelAutoOpen        = tree.ID(sftpHits, "settings-panel-auto-open")
+	hitSettingsClearUploads         = tree.ID(sftpHits, "settings-clear-uploads")
+	hitSettingsTransferAutoOpen     = tree.ID(sftpHits, "settings-transfer-auto-open")
 	hitSettingsDirectoryTree        = tree.ID(sftpHits, "settings-directory-tree")
 	hitSettingsPanelLeft            = tree.ID(sftpHits, "settings-panel-left")
 	hitSettingsPanelRight           = tree.ID(sftpHits, "settings-panel-right")
@@ -514,6 +516,10 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			page.actionRow(m.FilesFollowSetup, m.FilesFollowSetupDescription, false,
 				components.ButtonAction{ID: hitSettingsFollowSetup, Label: m.FilesFollowSetupCopy, Variant: components.ButtonOutline})
 		})
+		page.group(state.messages.Transfers.Title, func() {
+			page.toggleRow(m.FilesTransferAutoOpen, m.FilesTransferAutoOpenDescription, !state.sftpTransferAutoOpenOff, hitSettingsTransferAutoOpen)
+			page.toggleRow(m.FilesClearUploads, m.FilesClearUploadsDescription, state.sftpClearUploads, hitSettingsClearUploads)
+		})
 	})
 }
 
@@ -532,6 +538,12 @@ func (state *State) clickFilesSettings(id gfx.ID) bool {
 		state.beginFilePreviewEdit()
 	case hitSettingsPanelAutoOpen:
 		state.sftpPanelAutoOpen = !state.sftpPanelAutoOpen
+		state.save()
+	case hitSettingsTransferAutoOpen:
+		state.sftpTransferAutoOpenOff = !state.sftpTransferAutoOpenOff
+		state.save()
+	case hitSettingsClearUploads:
+		state.sftpClearUploads = !state.sftpClearUploads
 		state.save()
 	case hitSettingsDirectoryTree:
 		state.sftpDirectoryTree = !state.sftpDirectoryTree
@@ -686,6 +698,8 @@ func (state *State) restoreSFTPSettings(saved savedState) {
 	state.sftpTerminalFollow = saved.SFTPTerminalFollow
 	state.sftpPathInput = saved.SFTPPathInput
 	state.sftpPanelAutoOpen = saved.SFTPPanelAutoOpen
+	state.sftpClearUploads = saved.SFTPClearUploads
+	state.sftpTransferAutoOpenOff = saved.SFTPTransferAutoOpenOff
 	state.sftpDirectoryTree = saved.SFTPDirectoryTree
 	if saved.SFTPPanelWidth >= layoutcore.MinContextWidth && saved.SFTPPanelWidth <= layoutcore.MaxContextWidth {
 		state.sftpPanelWidth = saved.SFTPPanelWidth

@@ -1237,4 +1237,7 @@ type ToolsMessages struct {
 	FilesDownloadDirectorySavedFmt       string
 	FilesDownloadAskSaved                string
 	FilesDownloadDirectoryUnavailableFmt string
+
+	FilesTransferAutoOpen, FilesTransferAutoOpenDescription string
+	FilesClearUploads, FilesClearUploadsDescription         string
 }

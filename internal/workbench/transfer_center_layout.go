@@ -18,13 +18,16 @@ const (
 func (state *State) declareTransferCenter(c ui.C) {
 	center := &state.transfers
 	center.details.beginPaint()
+	if view := state.transferConflictView(); view != nil && view.detached == nil {
+		defer state.declareTransferConflict(c, view)
+	}
 	if !center.open || !state.transferCenterAvailable() {
 		return
 	}
 	center.handlers(state)
 	viewport := c.Bounds()
 	anchor := center.anchor
-	width, preferredHeight := max(0, min(1180, viewport.Width-24)), float32(760)
+	width, preferredHeight := max(0, min(760, viewport.Width-24)), center.preferredHeight()
 	roomArea, margin := viewport, transferCenterGap
 	if center.compact {
 		area := state.transferCenterArea()
@@ -70,6 +73,16 @@ func (state *State) declareTransferCenter(c ui.C) {
 	}
 }
 
+// Size the history to its visible rows, reserving room for filters and recovery.
+// A long history scrolls within the capped popover.
+func (center *transferCenter) preferredHeight() float32 {
+	height := float32(30 + 58 + 34 + 30 + 5*10)
+	if center.retryCount > 0 || center.conflictCount > 0 {
+		height += 29 + 10
+	}
+	return min(540, height+max(76, float32(len(center.rows))*transferRowHeight))
+}
+
 // transferCenterArea is the content rectangle the progress notice floats in.
 // On the terminal page it excludes the pane header, side panels and assistant;
 // file-manager tabs and section pages use their own visible content instead.
@@ -103,6 +116,7 @@ func (state *State) declareTransferCompact(c ui.C, height float32) {
 			label string
 			count int
 		}{
+			{m.Pending, center.pending},
 			{m.Failed, center.failed},
 			{m.Interrupted, center.interrupted},
 			{m.Canceled, center.canceled},
@@ -124,6 +138,8 @@ func (state *State) declareTransferCompact(c ui.C, height float32) {
 		switch {
 		case center.failed > 0:
 			ink = pal.danger
+		case center.pending > 0:
+			ink = pal.warning
 		case center.interrupted > 0:
 			ink = pal.warning
 		case center.completed > 0:
