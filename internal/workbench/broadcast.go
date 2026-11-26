@@ -382,6 +382,10 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 	case id == hitSettingsCursorToggle:
 		state.terminalCursorSteady = !state.terminalCursorSteady
 		state.save()
+	case id == hitSettingsCursorProgram:
+		state.terminalCursorProgram = !state.terminalCursorProgram
+		state.applyTerminalCursorStyle()
+		state.save()
 	case id == hitSettingsCopyOnSelect:
 		state.terminalCopyOnSelect = !state.terminalCopyOnSelect
 		state.save()

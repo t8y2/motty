@@ -193,8 +193,11 @@ type Terminal struct {
 	defaultCursor CursorStyle
 	// cursorStyled says a program has styled the cursor, so the default no
 	// longer applies to it.
-	cursorStyled      bool
-	cursorSteady      bool
+	cursorStyled bool
+	cursorSteady bool
+	// cursorFromProgram says a program may still choose the cursor shape with
+	// DECSCUSR. It is on unless the user asked for their own shape to stand.
+	cursorFromProgram bool
 	title             string
 	hyperlinks        []hyperlinkRecord // allocated only after the first accepted OSC 8 target
 	hyperlinkByTarget map[string]uint32
@@ -263,7 +266,7 @@ type Terminal struct {
 // New returns a terminal of the given size keeping at most scrollback lines of
 // history. A scrollback of 0 keeps none.
 func New(cols, rows, scrollback int) *Terminal {
-	t := &Terminal{histMax: max(scrollback, 0)}
+	t := &Terminal{histMax: max(scrollback, 0), cursorFromProgram: true}
 	t.cols = clampInt(cols, 1, maxCols)
 	t.rows = clampInt(rows, 1, maxRows)
 	t.main.lines = t.blankLines(t.rows)
@@ -579,6 +582,21 @@ func (t *Terminal) SetDefaultCursor(style CursorStyle) {
 	t.defaultCursor = style
 	if !t.cursorStyled {
 		t.cursor = style
+	}
+	t.version++
+}
+
+// SetCursorFromProgram says whether a program may choose the cursor shape with
+// DECSCUSR. With it off, the user's shape stands however a program asks; the
+// shape a program already set is dropped at once, while a steady/blink request
+// it made still holds.
+func (t *Terminal) SetCursorFromProgram(fromProgram bool) {
+	if t.cursorFromProgram == fromProgram {
+		return
+	}
+	t.cursorFromProgram = fromProgram
+	if !fromProgram && t.cursorStyled {
+		t.cursor, t.cursorStyled = t.defaultCursor, false
 	}
 	t.version++
 }

@@ -224,6 +224,7 @@ var (
 	hitSettingsFontSizeReset   = tree.ID(settingsHits, "settings-font-size-reset")
 	hitSettingsFontSizeUp      = tree.ID(settingsHits, "settings-font-size-up")
 	hitSettingsCursorToggle    = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsCursorProgram   = tree.ID(settingsHits, "settings-cursor-program")
 	hitSettingsCopyOnSelect    = tree.ID(settingsHits, "settings-copy-on-select")
 	hitSettingsWordSeparators  = tree.ID(settingsHits, "settings-word-separators")
 	hitSettingsRightClickPaste = tree.ID(settingsHits, "settings-right-click-paste")
@@ -805,8 +806,12 @@ type State struct {
 	// font size.
 	interfaceTextSize   interfaceTextSize
 	terminalCursorStyle terminalCursorStyle
-	connectionReconnect reconnectPolicy
-	restoreConnect      restoreConnectPolicy
+	// terminalCursorProgram records whether a program may change the cursor
+	// shape with DECSCUSR. Zero keeps the user's shape, so the block PowerShell
+	// asks for through ConPTY does not cover spaces and backspaced cells.
+	terminalCursorProgram bool
+	connectionReconnect   reconnectPolicy
+	restoreConnect        restoreConnectPolicy
 	// What a launch opens once, from the first Wake (see openStartupSessions):
 	// a local terminal, and the saved hosts to connect, by catalog id.
 	// startupLocal opens the machine's default local terminal at a launch;
