@@ -1032,6 +1032,11 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, backdrop boo
 				})
 				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)
 			})
+			if !probe {
+				// Over the tab row, as the stack's later child: the arrows take no
+				// width from it, and their margin leaves the new-tab button clear.
+				state.declareWindowBarTabArrows(c)
+			}
 			if probe {
 				chrome.probeArea = area
 			}
@@ -1191,6 +1196,12 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 	if probe {
 		return ui.Slot(c).Size(barButtonSize, barButtonSize)
 	}
+	return state.barIconButton(c, id, icon, label, label)
+}
+
+// barIconButton is a window-bar button drawn now, with its tooltip given apart:
+// hint is what the tooltip shows, and empty when the icon's meaning needs none.
+func (state *State) barIconButton(c ui.C, id gfx.ID, icon uint8, label, hint string) ui.Box {
 	pal, canvas := state.pal, c.Canvas()
 	foreground := pal.muted
 	var fill gfx.Color
@@ -1201,7 +1212,7 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 		fill, foreground = pal.tabHover, pal.text
 	}
 	return ui.Row(c).Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
-		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: label}).Children(func() {
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: hint}).Children(func() {
 		ui.Icon(c, lucideIcons[icon]).Color(foreground)
 	})
 }
@@ -1211,7 +1222,7 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 // the layout kept for them, and the session's name.
 func (state *State) paintWindowBarParts(canvas *gfx.Canvas, strip gfx.Rect) {
 	bar := &state.chrome.bar
-	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
+	state.paintWorkspaceTabParts(canvas, state.windowBarTabsRoom(canvas, strip), bar.tabs)
 	state.paintWindowBarTitle(canvas)
 	state.paintToolbarDockTop(canvas)
 }

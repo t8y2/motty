@@ -183,3 +183,55 @@ func TestWithVerticalTabsTheTitleBarScrollbarDragsTheFileTabs(t *testing.T) {
 		t.Fatalf("pressing the track's end moved the file tabs %v -> %v, want %v", before, state.fileTabStrip.offset, state.fileTabStrip.max)
 	}
 }
+
+// The arrows show only where a tab is hidden, and each click moves the tabs one
+// tab towards that end, stopping at the first and last tab.
+func TestTabArrowsScrollOneTabTowardTheHiddenOnes(t *testing.T) {
+	state, canvas := manyTabs(t, 30)
+	if _, ok := hitByID(canvas, hitWindowBarTabsNext); ok {
+		t.Fatal("the tabs are scrolled to the active last tab, yet an arrow points further on")
+	}
+	if _, ok := hitByID(canvas, hitWindowBarTabsPrevious); !ok {
+		t.Fatal("tabs are hidden before the visible ones, yet no arrow points back")
+	}
+	pitch := state.tabStrip.pitch
+	before := state.tabStrip.offset
+	state.Click(hitWindowBarTabsPrevious)
+	if got := state.tabStrip.offset; got != before-pitch {
+		t.Fatalf("the previous arrow moved the tabs %v -> %v, want one tab (%v)", before, got, before-pitch)
+	}
+	canvas = paintWindowBar(state)
+	if _, ok := hitByID(canvas, hitWindowBarTabsNext); !ok {
+		t.Fatal("the tabs moved off their end, yet the next arrow is missing")
+	}
+	for range 100 {
+		state.Click(hitWindowBarTabsPrevious)
+	}
+	if state.tabStrip.offset != 0 {
+		t.Fatalf("the previous arrow did not stop at the first tab: offset %v", state.tabStrip.offset)
+	}
+	canvas = paintWindowBar(state)
+	if _, ok := hitByID(canvas, hitWindowBarTabsPrevious); ok {
+		t.Fatal("the first tab is in view, yet an arrow points before it")
+	}
+	state.Click(hitWindowBarTabsNext)
+	if got := state.tabStrip.offset; got != pitch {
+		t.Fatalf("the next arrow moved the tabs to %v, want one tab (%v)", got, pitch)
+	}
+}
+
+func TestNoTabArrowsWhenTheTabsFit(t *testing.T) {
+	_, canvas := manyTabs(t, 3)
+	for _, id := range []gfx.ID{hitWindowBarTabsPrevious, hitWindowBarTabsNext} {
+		if _, ok := hitByID(canvas, id); ok {
+			t.Fatalf("three tabs fit the bar, yet an arrow %v is painted", id)
+		}
+	}
+}
+
+// paintWindowBar paints the window once more and returns what it declared.
+func paintWindowBar(state *State) *gfx.Canvas {
+	var canvas gfx.Canvas
+	state.Paint(&canvas, windowBarTestSize)
+	return &canvas
+}

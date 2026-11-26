@@ -340,6 +340,8 @@ var EnglishMessages = Messages{
 	VerticalTabsAutoHide:                   "Auto-hide tabs",
 	VerticalTabsScrollbar:                  "Session list scrollbar",
 	TabStripScrollbar:                      "Session tabs scrollbar",
+	TabStripScrollLeft:                     "Scroll session tabs left",
+	TabStripScrollRight:                    "Scroll session tabs right",
 	SettingsNetworkProxy:                   "Local terminal proxy",
 	SettingsNetworkProxyDescription:        "Unset by default. Following the system sets HTTP_PROXY and related variables in new terminals, except WSL.",
 	SettingsNetworkProxySystem:             "Follow system",

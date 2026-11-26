@@ -320,6 +320,8 @@ type Messages struct {
 	VerticalTabsAutoHide                   string
 	VerticalTabsScrollbar                  string
 	TabStripScrollbar                      string
+	TabStripScrollLeft                     string
+	TabStripScrollRight                    string
 	SettingsNetworkProxy                   string
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string

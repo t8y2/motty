@@ -85,10 +85,19 @@ func (strip *tabStrip) scroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 			delta = event.DeltaY
 		}
 	}
-	moved := min(max(strip.offset+delta, 0), strip.max)
-	if moved == strip.offset {
+	if !strip.scrollBy(delta) {
 		return gfx.EventResult{Handled: true}, true
 	}
-	strip.offset = moved
 	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+// scrollBy moves the tabs by delta along the layout axis, kept between the
+// first tab and the last, and reports whether they moved.
+func (strip *tabStrip) scrollBy(delta float32) bool {
+	moved := min(max(strip.offset+delta, 0), strip.max)
+	if moved == strip.offset {
+		return false
+	}
+	strip.offset = moved
+	return true
 }

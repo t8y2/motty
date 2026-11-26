@@ -2147,6 +2147,10 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.save()
 	case id == hitNewTab || id == hitVerticalTabsNew:
 		state.openConnectPicker()
+	case id == hitWindowBarTabsPrevious:
+		state.scrollWindowBarTabs(-1)
+	case id == hitWindowBarTabsNext:
+		state.scrollWindowBarTabs(1)
 	case id == hitVerticalTabsPin:
 		state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 		state.save()
