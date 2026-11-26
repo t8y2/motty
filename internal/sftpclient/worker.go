@@ -1670,9 +1670,16 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 	if err := ensureRemoteRoot(advanced, next.remote, next.policy); err != nil {
 		return 0, 0, 0, err
 	}
-	// Directories first, in the plan's order (a parent precedes its children),
-	// so the file workers that follow always find theirs.
-	filesPlan := make([]plannedUpload, 0, len(plan))
+	// Directories are made one depth at a time, the ones at a depth together: a
+	// parent always exists before its children, and the file workers that follow
+	// find every directory they need. Creating them one by one would pay a
+	// lookup and a mkdir round trip per folder, serially, before any file moves.
+	// Links come after the directories, as a link may point into them.
+	var (
+		levels    [][]string
+		links     []plannedLink
+		filesPlan = make([]plannedUpload, 0, len(plan))
+	)
 	for _, item := range plan {
 		if worker.stopped(generation, next.id) {
 			return 0, 0, 0, ErrCanceled
@@ -1681,19 +1688,31 @@ func (worker *Worker) upload(client Remote, next request, generation uint64) (fi
 		if err != nil {
 			return 0, 0, 0, err
 		}
-		if item.directory {
-			if err := ensureRemoteDirectory(advanced, remotePath); err != nil {
-				return 0, 0, 0, err
+		switch {
+		case item.directory:
+			depth := pathDepth(item.relative)
+			for len(levels) <= depth {
+				levels = append(levels, nil)
 			}
-			continue
+			levels[depth] = append(levels[depth], remotePath)
+		case item.link != "":
+			links = append(links, plannedLink{remote: remotePath, target: item.link})
+		default:
+			filesPlan = append(filesPlan, plannedUpload{local: item.local, remote: remotePath, info: item.info})
 		}
-		if item.link != "" {
-			if err := putRemoteLink(advanced, remotePath, item.link, next.policy); err != nil {
-				return 0, 0, 0, err
-			}
-			continue
+	}
+	for _, paths := range levels {
+		if err := worker.ensureRemoteDirectories(advanced, next.id, generation, paths); err != nil {
+			return 0, 0, 0, err
 		}
-		filesPlan = append(filesPlan, plannedUpload{local: item.local, remote: remotePath, info: item.info})
+	}
+	for _, link := range links {
+		if worker.stopped(generation, next.id) {
+			return 0, 0, 0, ErrCanceled
+		}
+		if err := putRemoteLink(advanced, link.remote, link.target, next.policy); err != nil {
+			return 0, 0, 0, err
+		}
 	}
 	if len(filesPlan) == 0 {
 		return 0, 0, 0, nil
@@ -1715,13 +1734,72 @@ type plannedUpload struct {
 	info   os.FileInfo
 }
 
+// plannedLink is one symbolic link of a directory upload, with the remote path
+// its plan already validated.
+type plannedLink struct {
+	remote string
+	target string
+}
+
 // uploadFilesInFlight is how many files of one directory transfer are uploaded
-// at once. A small file costs several round trips (open, write, close, chmod,
-// rename) that its own sliding window cannot overlap with the next file's, so
-// without this a folder of KB-sized files is paced by one file at a time. KB
-// files hold one chunk each; the window bounds the cost of a folder of large
-// files at this many times uploadWindow.
-const uploadFilesInFlight = 8
+// at once. A small file is a chain of about nine round trips (lstat, open,
+// write, sync, close, chmod, times, rename) that its own sliding window cannot
+// overlap with the next file's, so the folder's throughput is roughly
+// in-flight files divided by that chain's round-trip time. At 200 ms round trip
+// 8 in flight measured ~70 KB/s on KB-sized files and 32 measured ~3.4x that.
+// Each in-flight file holds at most uploadWindow chunks, so a folder of large
+// files can hold this many times uploadWindow of buffers at its peak.
+const uploadFilesInFlight = 32
+
+// ensureRemoteDirectories makes paths, which are all children of directories
+// that already exist, with up to uploadFilesInFlight round trips in flight. The
+// first failure stops new ones from starting.
+func (worker *Worker) ensureRemoteDirectories(client transferRemote, transferID uint64, generation uint64, paths []string) error {
+	workers := min(uploadFilesInFlight, len(paths))
+	if workers == 0 {
+		return nil
+	}
+	tasks := make(chan string)
+	var (
+		group sync.WaitGroup
+		stop  = make(chan struct{})
+		once  sync.Once
+		fail  error
+	)
+	stopWith := func(err error) {
+		once.Do(func() {
+			fail = err
+			close(stop)
+		})
+	}
+	group.Add(workers)
+	for range workers {
+		go func() {
+			defer group.Done()
+			for remotePath := range tasks {
+				if worker.stopped(generation, transferID) {
+					stopWith(ErrCanceled)
+					return
+				}
+				if err := ensureRemoteDirectory(client, remotePath); err != nil {
+					stopWith(err)
+					return
+				}
+			}
+		}()
+	}
+sending:
+	for _, remotePath := range paths {
+		select {
+		case <-stop:
+			break sending
+		case tasks <- remotePath:
+		}
+	}
+	close(tasks)
+	group.Wait()
+	return fail
+}
 
 // uploadPlanned uploads a directory's files with a few in flight. The first
 // failure stops new files from starting; files already in flight finish and
@@ -1986,7 +2064,14 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 		return 0, 0, err
 	}
 	defer func() { err = errors.Join(err, source.Close()) }()
-	destination, err := client.OpenTransferFile(partial, os.O_RDWR|os.O_CREATE)
+	// Only a resume keeps what a partial already holds. Every other upload
+	// starts from an empty file, which O_TRUNC gives in the open request itself
+	// instead of a separate truncate round trip per file.
+	flags := os.O_RDWR | os.O_CREATE
+	if policy != ExistingResume || !partialExists {
+		flags |= os.O_TRUNC
+	}
+	destination, err := client.OpenTransferFile(partial, flags)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -2065,9 +2150,7 @@ func (worker *Worker) uploadStream(client transferRemote, openSource func() (io.
 			resumed = trusted
 		}
 	} else {
-		if err := destination.Truncate(0); err != nil {
-			return 0, 0, err
-		}
+		// The open above truncated the partial, so the copy starts at its start.
 		if _, err := destination.Seek(0, io.SeekStart); err != nil {
 			return 0, 0, err
 		}
