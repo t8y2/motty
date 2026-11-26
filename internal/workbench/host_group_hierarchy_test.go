@@ -301,10 +301,10 @@ func TestFilteredHostGroupKeepsChildHierarchy(t *testing.T) {
 		prod := state.hostGroupIndex("Team/Prod")
 		eu := state.hostGroupIndex("Team/Prod/EU")
 		checkRows([]hostTreeRow{
-			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
 			{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 0},
 			{Kind: hostTreeGroup, GroupIndex: eu, HostIndex: -1, Depth: 1},
 			{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 2},
+			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
 		})
 		canvas, _ := paintedTexts(state)
 		if mode == hostViewGrid {
@@ -316,8 +316,8 @@ func TestFilteredHostGroupKeepsChildHierarchy(t *testing.T) {
 		}
 		state.toggleHostGroup(prod)
 		checkRows([]hostTreeRow{
-			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
 			{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 0},
+			{Kind: hostTreeHost, GroupIndex: state.hostGroupIndex("Team"), HostIndex: 1, Depth: 0},
 		})
 		state.setHostFilter(true, "Team/Prod")
 		checkRows([]hostTreeRow{
@@ -327,6 +327,39 @@ func TestFilteredHostGroupKeepsChildHierarchy(t *testing.T) {
 		state.setHostFilter(true, "Team/Prod/EU")
 		checkRows([]hostTreeRow{{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 0}})
 	}
+}
+
+func TestHostGroupListsSubgroupsBeforeItsOwnHosts(t *testing.T) {
+	state := nestedHostGroupState(t)
+	state.hosts[1].Group = "Team"
+	state.hostDataChanged()
+	team := state.hostGroupIndex("Team")
+	prod := state.hostGroupIndex("Team/Prod")
+	eu := state.hostGroupIndex("Team/Prod/EU")
+	team2 := state.hostGroupIndex("Team2")
+	checkRows := func(want []hostTreeRow) {
+		t.Helper()
+		if !reflect.DeepEqual(state.hostTreeRows, want) {
+			t.Fatalf("rows = %+v, want %+v", state.hostTreeRows, want)
+		}
+	}
+	checkRows([]hostTreeRow{
+		{Kind: hostTreeGroup, GroupIndex: team, HostIndex: -1, Depth: 0},
+		{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 1},
+		{Kind: hostTreeGroup, GroupIndex: eu, HostIndex: -1, Depth: 2},
+		{Kind: hostTreeHost, GroupIndex: eu, HostIndex: 0, Depth: 3},
+		{Kind: hostTreeHost, GroupIndex: team, HostIndex: 1, Depth: 1},
+		{Kind: hostTreeGroup, GroupIndex: team2, HostIndex: -1, Depth: 0},
+		{Kind: hostTreeHost, GroupIndex: team2, HostIndex: 2, Depth: 1},
+	})
+	state.toggleHostGroup(prod)
+	checkRows([]hostTreeRow{
+		{Kind: hostTreeGroup, GroupIndex: team, HostIndex: -1, Depth: 0},
+		{Kind: hostTreeGroup, GroupIndex: prod, HostIndex: -1, Depth: 1},
+		{Kind: hostTreeHost, GroupIndex: team, HostIndex: 1, Depth: 1},
+		{Kind: hostTreeGroup, GroupIndex: team2, HostIndex: -1, Depth: 0},
+		{Kind: hostTreeHost, GroupIndex: team2, HostIndex: 2, Depth: 1},
+	})
 }
 
 func TestNestedHostGroupOrderingKeepsPunctuationSiblingOutsideSubtree(t *testing.T) {

@@ -517,10 +517,12 @@ func (state *State) rebuildHostTreeRows() {
 
 // appendHostTreeRows lists the group hierarchy over the hosts in visible, in
 // the order given: a group's header, then, while it is open or words filter the
-// tree, its hosts and the groups below it. A group that holds none of the hosts
-// and was not made on purpose is left out. filterOn narrows the tree to the
-// group named filter, whose own header is then not listed; flat leaves the group
-// headers out altogether.
+// tree, the groups filed under it (each with its own subtree) and then the hosts
+// filed directly in it. A subgroup therefore sits above the hosts of the group
+// that holds it, as file trees list folders before the files beside them. A
+// group that holds none of the hosts and was not made on purpose is left out.
+// filterOn narrows the tree to the group named filter, whose own header is then
+// not listed; flat leaves the group headers out altogether.
 func (state *State) appendHostTreeRows(rows []hostTreeRow, visible []int, words []string, flat, filterOn bool, filter string) []hostTreeRow {
 	filtering := len(words) != 0
 	filterDepth := 0
@@ -529,15 +531,12 @@ func (state *State) appendHostTreeRows(rows []hostTreeRow, visible []int, words 
 			filterDepth = int(state.hostGroups[index].Depth) + 1
 		}
 	}
-	hidden := ""
-	for groupIndex, group := range state.hostGroups {
-		if filterOn && !hostGroupWithin(group.Name, filter) {
-			continue
-		}
-		if hidden != "" && hostGroupWithin(group.Name, hidden) {
-			continue
-		}
-		hidden = ""
+	inFilter := func(name string) bool {
+		return !filterOn || hostGroupWithin(name, filter)
+	}
+	var appendGroup func(groupIndex int)
+	appendGroup = func(groupIndex int) {
+		group := state.hostGroups[groupIndex]
 		matched := 0
 		for _, hostIndex := range visible {
 			if hostGroupWithin(strings.TrimSpace(state.hosts[hostIndex].Group), group.Name) {
@@ -554,15 +553,24 @@ func (state *State) appendHostTreeRows(rows []hostTreeRow, visible []int, words 
 			}
 		}
 		if matched == 0 && !explicit {
-			continue
+			return
 		}
 		selected := filterOn && group.Name == filter
 		if !flat && !selected {
 			rows = append(rows, hostTreeRow{Kind: hostTreeGroup, GroupIndex: groupIndex, HostIndex: -1, Depth: uint8(max(0, int(group.Depth)-filterDepth))})
 		}
 		if !flat && !selected && !group.Expanded && !filtering {
-			hidden = group.Name
-			continue
+			return
+		}
+		// The groups below it keep their whole subtree together, so they come
+		// before the hosts filed directly here. The unnamed group is no one's
+		// parent: top-level groups file under no folder.
+		if group.Name != "" {
+			for childIndex, child := range state.hostGroups {
+				if child.Name != "" && hostGroupParent(child.Name) == group.Name {
+					appendGroup(childIndex)
+				}
+			}
 		}
 		for _, hostIndex := range visible {
 			if strings.TrimSpace(state.hosts[hostIndex].Group) != group.Name {
@@ -574,6 +582,16 @@ func (state *State) appendHostTreeRows(rows []hostTreeRow, visible []int, words 
 			}
 			rows = append(rows, hostTreeRow{Kind: hostTreeHost, GroupIndex: groupIndex, HostIndex: hostIndex, Depth: depth})
 		}
+	}
+	for groupIndex, group := range state.hostGroups {
+		if !inFilter(group.Name) {
+			continue
+		}
+		// A group whose parent is listed is reached from that parent's subtree.
+		if parent := hostGroupParent(group.Name); parent != "" && inFilter(parent) {
+			continue
+		}
+		appendGroup(groupIndex)
 	}
 	return rows
 }
