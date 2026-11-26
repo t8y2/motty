@@ -132,7 +132,10 @@ func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
 		prompt string
 		want   bool
 	}{
-		{name: "password is not an automatic reply", prompt: "Password:", want: false},
+		{name: "SSH password prompt", prompt: "root@example.com's password:", want: true},
+		{name: "passphrase prompt", prompt: "Enter passphrase for key '/home/user/.ssh/id_ed25519':", want: true},
+		{name: "Chinese password prompt", prompt: "请输入密码：", want: true},
+		{name: "password status is not a prompt", prompt: "Password expires in 30 days:", want: false},
 		{name: "yes no question", prompt: "Are you sure you want to continue? (yes/no)", want: true},
 		{name: "yes no shorthand", prompt: "Continue? [y/N]", want: true},
 		{name: "press enter", prompt: "Press Enter to continue", want: true},
@@ -142,6 +145,7 @@ func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
 		{name: "Chinese selection", prompt: "请选择操作", want: true},
 		{name: "Chinese input", prompt: "请输入命令", want: true},
 		{name: "verification code is secret", prompt: "请输入验证码", want: false},
+		{name: "token prompt is secret", prompt: "API token:", want: false},
 		{name: "REPL prompt", prompt: ">>> ", want: true},
 		{name: "connection status ending in colon", prompt: "Connecting to host:", want: false},
 		{name: "generic question", prompt: "Are you sure?", want: false},
@@ -579,23 +583,43 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		}
 	})
 
-	t.Run("password prompt keeps the abort policy", func(t *testing.T) {
-		state, shell, now := loginCommandSession(t, "sudo -i\necho after")
+	t.Run("password prompt sends the configured password", func(t *testing.T) {
+		state, shell, now := loginCommandSession(t, "ssh root@example\nconfigured-password")
 		session := &state.sessions[0]
 		token := session.term.folderToken
 
 		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
-		shell.say("\x1b]133;A;motty=" + token + "\x07Password:")
+		shell.say("\x1b]133;A;motty=" + token + "\x07root@example's password:")
+		state.Wake()
+		*now += loginCommandGrace
+		state.Wake()
+
+		if aborted := session.LoginCommandAborted(); aborted != "" {
+			t.Fatalf("password prompt aborted the configured password: %q", aborted)
+		}
+		if shell.typed() != "ssh root@example\rconfigured-password\r" {
+			t.Fatalf("configured password was not sent: %q", shell.typed())
+		}
+	})
+
+	t.Run("verification code prompt keeps the abort policy", func(t *testing.T) {
+		state, shell, now := loginCommandSession(t, "ssh root@example\necho after")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		shell.say("\x1b]133;A;motty=" + token + "\x07Verification code:")
 		state.Wake()
 		*now += loginCommandGrace
 		state.Wake()
 
 		if session.LoginCommandAborted() == "" {
-			t.Fatal("password prompt should abort the remaining configured command")
+			t.Fatal("verification-code prompt should abort the remaining configured commands")
 		}
-		if shell.typed() != "sudo -i\r" {
-			t.Fatalf("sent a configured reply at the password prompt: %q", shell.typed())
+		if shell.typed() != "ssh root@example\r" {
+			t.Fatalf("sent a configured reply at the verification-code prompt: %q", shell.typed())
 		}
 	})
 }

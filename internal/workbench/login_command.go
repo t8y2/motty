@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -12,6 +13,11 @@ import (
 
 // maxLoginCommand bounds the command text a host types after login.
 const maxLoginCommand = 1000
+
+// loginPasswordPrompt matches an explicit password prompt, including the
+// common OpenSSH "user@host's password:" and key passphrase forms. Other
+// secret prompts, such as verification codes and tokens, remain blocked.
+var loginPasswordPrompt = regexp.MustCompile(`(?i)(?:\b(?:password|passwd|passphrase|passcode)\b|密码|口令)(?:\s+for\b[^:：?？]*)?\s*[:：?？]\s*$`)
 
 // loginFailurePolicy says how multi-line post-login execution reacts when one
 // command exits with a non-zero status.
@@ -378,6 +384,9 @@ func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) 
 	if rowText == "" {
 		return false
 	}
+	if loginPasswordPrompt.MatchString(rowText) {
+		return true
+	}
 	if cmdhistory.PasswordPrompt(rowText) {
 		return false
 	}
@@ -397,15 +406,15 @@ func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) 
 	return false
 }
 
-// loginPasswordPromptReady reports a stable prompt for a secret. Login scripts
-// must stop at these prompts instead of sending the next configured line as a
-// possible password.
-func loginPasswordPromptReady(t *terminal, now time.Duration) bool {
+// loginUnapprovedSecretPromptReady reports a stable secret prompt that is not
+// an explicitly supported password prompt. Login scripts stop before sending
+// the next configured line to verification-code, token, and similar prompts.
+func loginUnapprovedSecretPromptReady(t *terminal, now time.Duration) bool {
 	if t == nil || t.screen == nil || !t.login.seen || t.login.quietWait(now, loginCommandGrace) > 0 {
 		return false
 	}
 	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
-	return rowText != "" && cmdhistory.PasswordPrompt(rowText)
+	return rowText != "" && cmdhistory.PasswordPrompt(rowText) && !loginPasswordPrompt.MatchString(rowText)
 }
 
 func (state *State) loginStepFinished(session *Session, now time.Duration) bool {
@@ -617,7 +626,7 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	if t.login.running {
-		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginPasswordPromptReady(t, now) {
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginUnapprovedSecretPromptReady(t, now) {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
@@ -643,7 +652,7 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	if t.login.waitPrompt {
-		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginPasswordPromptReady(t, now) {
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginUnapprovedSecretPromptReady(t, now) {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
