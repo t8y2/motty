@@ -259,6 +259,8 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	group(settingsFiles, tools.FilesPanelGroup, tools.FilesPanelGroup, "")
 	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
 	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)
+	row(settingsFiles, tools.FilesTransferAutoOpen, tools.FilesTransferAutoOpenDescription)
+	row(settingsFiles, tools.FilesClearUploads, tools.FilesClearUploadsDescription)
 	row(settingsFiles, tools.FilesFollow, tools.FilesFollowDescription)
 	row(settingsFiles, tools.FilesTerminalFollow, tools.FilesTerminalFollowDescription)
 	row(settingsFiles, tools.FilesFollowSetup, tools.FilesFollowSetupDescription)
@@ -277,8 +279,6 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsFiles, tools.FilesDownloadDirectory, tools.FilesDownloadAskDescription)
 	row(settingsFiles, tools.FilesParallel, "")
 	row(settingsFiles, tools.FilesKeepTimes, tools.FilesKeepTimesDescription)
-	row(settingsFiles, tools.FilesTransferAutoOpen, tools.FilesTransferAutoOpenDescription)
-	row(settingsFiles, tools.FilesClearUploads, tools.FilesClearUploadsDescription)
 
 	rowSearch(settingsSecurity, m.AppLock.Protection, m.AppLock.SettingsDescription, "master password lock unlock 锁屏 主密码")
 	row(settingsSecurity, m.AppLock.ChangePassword, "")

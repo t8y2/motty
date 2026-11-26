@@ -467,6 +467,8 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
 			settingsChoiceRow(page, m.FilesPanelPosition, m.FilesPanelPositionDescription, &state.sftpPanelSide, settingsSFTPPanelPositionChoices[:], state.settingsSFTPPanelPositionLabel,
 				func() { state.save() }, nil)
+			page.toggleRow(m.FilesTransferAutoOpen, m.FilesTransferAutoOpenDescription, !state.sftpTransferAutoOpenOff, hitSettingsTransferAutoOpen)
+			page.toggleRow(m.FilesClearUploads, m.FilesClearUploadsDescription, state.sftpClearUploads, hitSettingsClearUploads)
 			page.toggleRow(m.FilesFollow, m.FilesFollowDescription, !state.sftpFollowOff, hitSettingsFollowToggle)
 			page.toggleRow(m.FilesTerminalFollow, m.FilesTerminalFollowDescription, state.sftpTerminalFollow, hitSettingsTerminalFollowToggle)
 			page.actionRow(m.FilesFollowSetup, m.FilesFollowSetupDescription, false,
@@ -519,8 +521,6 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 			settingsChoiceRow(page, m.FilesParallel, "", &state.sftpParallel, settingsParallelChoices[:], state.settingsParallelLabel,
 				func() { state.applySFTPSettings(); state.save() }, nil)
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
-			page.toggleRow(m.FilesTransferAutoOpen, m.FilesTransferAutoOpenDescription, !state.sftpTransferAutoOpenOff, hitSettingsTransferAutoOpen)
-			page.toggleRow(m.FilesClearUploads, m.FilesClearUploadsDescription, state.sftpClearUploads, hitSettingsClearUploads)
 		})
 	})
 }
