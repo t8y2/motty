@@ -939,3 +939,19 @@ func TestUpdateCheckOffersDirectRetryWhenProxyUnavailable(t *testing.T) {
 		t.Fatal("direct retry button must disappear after successful check")
 	}
 }
+
+func TestSilentUpdateCheckDoesNotOfferDirectRetry(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	options.CheckUpdate = func(*http.Client) (update.Release, error) {
+		return update.Release{}, fmt.Errorf("%w: proxy settings cannot be read", proxy.ErrUnavailable)
+	}
+	state := newTestState(t, options)
+	openAboutSettings(state)
+
+	state.checkForUpdates(false)
+	waitUpdate(t, state, func() bool { return !state.update.checking })
+	if state.update.proxyFailed {
+		t.Fatal("a check nobody asked for must not leave a direct retry without an explanation")
+	}
+}

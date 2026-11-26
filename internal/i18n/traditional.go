@@ -2490,6 +2490,7 @@ var traditionalTools = ToolsMessages{
 	GeneralUpdateDescription:        "到 GitHub 查詢新版本並開啟下載頁，不會替你安裝任何東西。",
 	GeneralUpdateCheck:              "立即檢查",
 	GeneralUpdateDirectRetry:        "直連重試",
+	GeneralUpdateDirectRetryNote:    "直連重試將在本次嘗試中繞過系統代理。",
 	GeneralUpdateDownload:           "下載",
 	GeneralUpdateSource:             "更新來源",
 	GeneralUpdateSourceDescription:  "檢查和下載使用的位址。CNB 是中國大陸的鏡像；無法使用時會自動回到官方來源。",

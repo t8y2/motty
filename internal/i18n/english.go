@@ -2490,6 +2490,7 @@ var englishTools = ToolsMessages{
 	GeneralUpdateDescription:        "Looks for a newer version on GitHub and opens its download page. Nothing is installed for you.",
 	GeneralUpdateCheck:              "Check now",
 	GeneralUpdateDirectRetry:        "Retry directly",
+	GeneralUpdateDirectRetryNote:    "Retrying directly skips the system proxy for this attempt.",
 	GeneralUpdateDownload:           "Download",
 	GeneralUpdateSource:             "Update source",
 	GeneralUpdateSourceDescription:  "Where checks and downloads go. CNB is the copy for mainland China; the official mirror answers when it cannot.",

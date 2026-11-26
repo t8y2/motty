@@ -513,9 +513,16 @@ func (state *State) checkForUpdatesWithClient(asked bool, direct bool) {
 					state.update.text = ""
 				}
 			case err != nil:
-				state.update.proxyFailed = netclient.IsProxyUnavailable(err)
+				// The retry bypasses the proxy, so it is offered only beside a
+				// failure the user asked about and can read, never after a
+				// silent startup check.
+				state.update.direct = false
+				state.update.proxyFailed = asked && netclient.IsProxyUnavailable(err)
 				if asked {
 					state.update.text = fmt.Sprintf(m.UpdateFailedFmt, err)
+					if state.update.proxyFailed {
+						state.update.text += " " + m.GeneralUpdateDirectRetryNote
+					}
 				} else {
 					state.update.text = ""
 				}

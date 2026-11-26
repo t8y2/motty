@@ -291,7 +291,11 @@ func (state *State) declareUpdateProgress(c ui.C) {
 	if install.phase == installFailed {
 		dialog.Body(func() {
 			ui.Column(c).Fill().Children(func() {
-				ui.Paragraph(c, fmt.Sprintf(m.UpdateFailedBodyFmt, install.failure), 4).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(20).MarginSides(4, 0, 0, 0)
+				body := fmt.Sprintf(m.UpdateFailedBodyFmt, install.failure)
+				if netclient.IsProxyUnavailable(install.err) {
+					body += "\n\n" + m.GeneralUpdateDirectRetryNote
+				}
+				ui.Paragraph(c, body, 4).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(20).MarginSides(4, 0, 0, 0)
 			})
 		})
 		actions := []components.ButtonAction{

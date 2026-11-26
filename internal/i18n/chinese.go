@@ -2490,6 +2490,7 @@ var chineseTools = ToolsMessages{
 	GeneralUpdateDescription:        "到 GitHub 查找新版本并打开下载页,不会替你安装任何东西。",
 	GeneralUpdateCheck:              "立即检查",
 	GeneralUpdateDirectRetry:        "直连重试",
+	GeneralUpdateDirectRetryNote:    "直连重试将在本次尝试中绕过系统代理。",
 	GeneralUpdateDownload:           "下载",
 	GeneralUpdateSource:             "更新源",
 	GeneralUpdateSourceDescription:  "检查和下载使用的地址。CNB 是中国大陆的镜像；它不可用时自动回到官方源。",
