@@ -18,10 +18,10 @@ click "Snippets"
 waitfor "No snippets" 3000
 shot /tmp/snippet-page-empty.png
 click "Add snippet"
-waitfor "Add a snippet" 3000
-shot /tmp/snippet-add-dialog.png
+shot /tmp/snippet-add-editor.png
+click "Name"
 type Say hello
-key tab
+click "Command"
 type echo snippet-$((6*7))
 click "Set shortcut"
 waitfor "Press the keys" 2000
@@ -33,7 +33,7 @@ key cmd+shift+1
 waitfor "Cmd+Shift+1" 2000
 expect layout clean
 shot /tmp/snippet-shortcut-bound.png
-click "Save"
+settle 600
 waitfor "Cmd+Shift+1" 3000
 expect layout clean
 shot /tmp/snippet-page.png

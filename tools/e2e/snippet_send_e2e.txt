@@ -25,23 +25,23 @@ click "Hosts"
 click "Snippets"
 waitfor "No snippets" 3000
 click "Add snippet"
-waitfor "Add a snippet" 3000
+click "Name"
 type Say hello
-key tab
+click "Command"
 type echo hello-$((6*7))
-key tab
+click "Group"
 type Ops
 key enter
-click "Save"
+settle 600
 click "Add snippet"
-waitfor "Add a snippet" 3000
+click "Name"
 type Disk
-key tab
+click "Command"
 type df -h
-key tab
+click "Group"
 type Dev
 key enter
-click "Save"
+settle 600
 
 click "127.0.0.1:22601"
 settle 300
@@ -79,7 +79,7 @@ waitfor "Search snippets" 3000
 click "Choose"
 waitfor "Search connected" 3000
 shot /tmp/snippet-send-3.png
-click "127.0.0.1:22601-2"
+click id:command-palette/command-palette-items/#1
 shot /tmp/snippet-send-4.png
 click "Send a command"
 type echo chosen-$((6*7))
