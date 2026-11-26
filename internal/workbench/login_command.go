@@ -14,10 +14,22 @@ import (
 // maxLoginCommand bounds the command text a host types after login.
 const maxLoginCommand = 1000
 
-// loginPasswordPrompt matches an explicit password prompt, including the
-// common OpenSSH "user@host's password:" and key passphrase forms. Other
-// secret prompts, such as verification codes and tokens, remain blocked.
-var loginPasswordPrompt = regexp.MustCompile(`(?i)(?:\b(?:password|passwd|passphrase|passcode)\b|密码|口令)(?:\s+for\b[^:：?？]*)?\s*[:：?？]\s*$`)
+var (
+	// loginPasswordPrompt matches an explicit password prompt, including the
+	// common OpenSSH "user@host's password:" and key passphrase forms. Other
+	// secret prompts, such as verification codes and tokens, remain blocked.
+	loginPasswordPrompt = regexp.MustCompile(`(?i)^\s*(?:(?:[\w.-]+@[\w.:-]+(?:['’]s)?\s+)?(?:password|passwd|passphrase|passcode)|(?:please\s+)?(?:enter|type|input)\s+(?:your\s+)?(?:password|passwd|passphrase|passcode)|(?:please\s+)?(?:请输入|输入)(?:登录)?(?:密码|口令)|密码|口令)(?:\s+for\b[^:：?？]*)?\s*[:：?？]\s*$`)
+
+	// These are REPL and database prompts where sending the next configured line
+	// is a valid handoff. Pager prompts and Vim's colon prompt are deliberately
+	// excluded: the next line would be treated as a program keystroke.
+	loginProgramPrompt = regexp.MustCompile(`(?i)^\s*(?:>{3}\s*|\.{3}>\s*|(?:mysql|mariadb|sqlite3?|psql|redis-cli|redis|mongo|mongosh|node|deno|irb|pry|julia|scala|ghci|cqlsh|hive|spark-sql|jshell|trino|presto|duckdb|sqlplus|sql)\s*>(?:\s|$)|irb\([^)]*\)[^>]*>(?:\s|$)|pry\([^)]*\)[^>]*>(?:\s|$)|mariadb\s*\[[^\]]*\]>(?:\s|$)|(?:postgres|cockroachdb|yugabyte)\s*(?:=#|[#>])\s*$)`)
+
+	// Match prompt-shaped lines, not arbitrary output that happens to mention a
+	// prompt word. In particular, the line must start like a question or an
+	// instruction and end with the actual reply cue.
+	loginInteractivePrompt = regexp.MustCompile(`(?i)^\s*(?:(?:please\s+)?press\s+(?:enter|return|any\s+key)(?:\s+to\s+(?:continue|proceed))?|(?:are you sure|do you want|would you like|continue|proceed|accept|trust)[^\r\n]{0,120}(?:yes/no|\[\s*y\s*/\s*n\s*\]|\(\s*y\s*/\s*n\s*\))|yes/no|\[\s*y\s*/\s*n\s*\]|\(\s*y\s*/\s*n\s*\)|按回车(?:键)?(?:继续)?|按任意键(?:继续)?|是否继续|请选择[^，。！？?？:：]{0,24}|请输入[^，。！？?？:：]{0,24})[ \t]*[)\]）】?？:：!！。]*$`)
+)
 
 // loginFailurePolicy says how multi-line post-login execution reacts when one
 // command exits with a non-zero status.
@@ -390,20 +402,10 @@ func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) 
 	if cmdhistory.PasswordPrompt(rowText) {
 		return false
 	}
-	if cmdhistory.ProgramPrompt(rowText) {
+	if loginProgramPrompt.MatchString(rowText) {
 		return true
 	}
-	// Only recognizable prompt phrases may consume the next configured line.
-	// Generic status output is not enough: a quiet command can still be working.
-	lower := strings.ToLower(rowText)
-	if strings.Contains(lower, "press enter") || strings.Contains(lower, "press return") ||
-		strings.Contains(lower, "press any key") || strings.Contains(lower, "yes/no") ||
-		strings.Contains(lower, "[y/n]") || strings.Contains(lower, "(y/n)") ||
-		strings.Contains(rowText, "按回车") || strings.Contains(rowText, "按任意键") ||
-		strings.Contains(rowText, "是否继续") || strings.Contains(rowText, "请选择") || strings.Contains(rowText, "请输入") {
-		return true
-	}
-	return false
+	return loginInteractivePrompt.MatchString(rowText)
 }
 
 // loginUnapprovedSecretPromptReady reports a stable secret prompt that is not
@@ -415,6 +417,14 @@ func loginUnapprovedSecretPromptReady(t *terminal, now time.Duration) bool {
 	}
 	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
 	return rowText != "" && cmdhistory.PasswordPrompt(rowText) && !loginPasswordPrompt.MatchString(rowText)
+}
+
+// loginIncompletePromptReady preserves the shell-integration failure path: an
+// A marker without its matching B marker must not wait for the full command
+// timeout. A separately recognized interactive prompt may still hand off.
+func loginIncompletePromptReady(t *terminal, now time.Duration) bool {
+	return t != nil && t.screen != nil && t.promptStarted && !t.promptIdle() &&
+		t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0
 }
 
 func (state *State) loginStepFinished(session *Session, now time.Duration) bool {
@@ -630,6 +640,11 @@ func (state *State) runLoginCommand(session *Session) {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginIncompletePromptReady(t, now) &&
+			!state.loginInteractivePromptReady(t, now) {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return
+		}
 		if state.loginStepFinished(session, now) {
 			if !state.completeLoginStep(session) {
 				return
@@ -653,6 +668,11 @@ func (state *State) runLoginCommand(session *Session) {
 	}
 	if t.login.waitPrompt {
 		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginUnapprovedSecretPromptReady(t, now) {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return
+		}
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginIncompletePromptReady(t, now) &&
+			!state.loginInteractivePromptReady(t, now) {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
@@ -690,6 +710,9 @@ func (state *State) runLoginCommand(session *Session) {
 			return
 		}
 		if !state.loginInteractivePromptReady(t, now) {
+			if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginIncompletePromptReady(t, now) {
+				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			}
 			return
 		}
 	case t.login.quietWait(now, state.loginQuiet(session)) > 0:

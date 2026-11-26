@@ -141,13 +141,23 @@ func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
 		{name: "press enter", prompt: "Press Enter to continue", want: true},
 		{name: "press return", prompt: "Press Return to continue", want: true},
 		{name: "press any key", prompt: "Press any key to continue", want: true},
+		{name: "Chinese press enter", prompt: "按回车键继续", want: true},
 		{name: "Chinese continue", prompt: "是否继续？", want: true},
 		{name: "Chinese selection", prompt: "请选择操作", want: true},
 		{name: "Chinese input", prompt: "请输入命令", want: true},
 		{name: "verification code is secret", prompt: "请输入验证码", want: false},
 		{name: "token prompt is secret", prompt: "API token:", want: false},
 		{name: "REPL prompt", prompt: ">>> ", want: true},
+		{name: "database prompt", prompt: "mysql> ", want: true},
+		{name: "postgres prompt", prompt: "postgres=# ", want: true},
+		{name: "pager prompt", prompt: "--More--", want: false},
+		{name: "pager end prompt", prompt: "(END)", want: false},
+		{name: "Vim colon prompt", prompt: ":", want: false},
+		{name: "unknown angle prompt", prompt: "deploy>", want: false},
 		{name: "connection status ending in colon", prompt: "Connecting to host:", want: false},
+		{name: "prompt phrase in log but not at row end", prompt: "Step 3/5: running tests, please press enter to continue later", want: false},
+		{name: "Chinese prompt word in log", prompt: "Step 3/5: running tests, please select... 请选择", want: false},
+		{name: "yes no cue in log", prompt: "Build log: [y/n] will be shown later", want: false},
 		{name: "generic question", prompt: "Are you sure?", want: false},
 		{name: "generic angle bracket", prompt: "loading >", want: false},
 		{name: "incomplete prompt marker alone", prompt: "broken prompt>", want: false},
@@ -556,7 +566,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 			{name: "yes no", text: "Are you sure? (yes/no)"},
 			{name: "press enter", text: "Press Enter to continue"},
 			{name: "Chinese continue", text: "是否继续？"},
-			{name: "REPL", text: "\r\n>>> "},
+			{name: "REPL", text: ">>> "},
 		}
 		for _, prompt := range prompts {
 			t.Run(prompt.name, func(t *testing.T) {
@@ -569,7 +579,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 				if shell.typed() != "sudo -i\r" {
 					t.Fatalf("typed %q", shell.typed())
 				}
-				shell.say("\x1b]133;A;motty=" + token + "\x07" + prompt.text)
+				shell.say("\x1b]133;A;motty=" + token + "\x07\r\n" + prompt.text)
 				state.Wake()
 				*now += loginCommandGrace
 				state.Wake()
@@ -590,7 +600,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 
 		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
-		shell.say("\x1b]133;A;motty=" + token + "\x07root@example's password:")
+		shell.say("\x1b]133;A;motty=" + token + "\x07\r\nroot@example's password:")
 		state.Wake()
 		*now += loginCommandGrace
 		state.Wake()
@@ -610,7 +620,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 
 		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
-		shell.say("\x1b]133;A;motty=" + token + "\x07Verification code:")
+		shell.say("\x1b]133;A;motty=" + token + "\x07\r\nVerification code:")
 		state.Wake()
 		*now += loginCommandGrace
 		state.Wake()
@@ -620,6 +630,26 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		}
 		if shell.typed() != "ssh root@example\r" {
 			t.Fatalf("sent a configured reply at the verification-code prompt: %q", shell.typed())
+		}
+	})
+
+	t.Run("incomplete prompt marker aborts after grace", func(t *testing.T) {
+		state, shell, now := loginCommandSession(t, "sudo -i\necho after")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		shell.say("\x1b]133;A;motty=" + token + "\x07still running") // Missing matching 133;B.
+		state.Wake()
+		*now += loginCommandGrace
+		state.Wake()
+
+		if session.LoginCommandAborted() == "" {
+			t.Fatal("incomplete prompt marker should abort after the grace period")
+		}
+		if shell.typed() != "sudo -i\r" {
+			t.Fatalf("sent a configured reply at an incomplete prompt marker: %q", shell.typed())
 		}
 	})
 }
