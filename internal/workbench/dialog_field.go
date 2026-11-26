@@ -175,16 +175,57 @@ type dialogArea struct {
 	bound bool
 }
 
-// declare declares the area, height tall in all: the title over the rows.
-func (a *dialogArea) declare(c ui.C, id gfx.ID, editor *text.Editor, label, placeholder string, height float32) {
+// secretWords names the button that shows a secret area's text and hides it
+// again. The words say which secret it is, as "Show private key" does: each
+// field knows what it holds. Zero words are an area whose text always shows.
+type secretWords struct {
+	show, hide string
+}
+
+// declare declares the area, height tall in all: the title over the rows. A
+// secret one shows its text as bullets until its reveal button is pressed
+// (secretReveal, as for a single-line field's), and the button stands at the end
+// of the title, over the rows it shows.
+func (a *dialogArea) declare(c ui.C, state *State, id gfx.ID, editor *text.Editor, label, placeholder string, height float32, secret secretWords) {
 	if !a.bound {
 		a.input.Bind(editor)
 		a.bound = true
 	}
+	button := gfx.ID{}
+	if secret.show != "" {
+		button = revealButton(id)
+	}
+	revealed := false
+	if !button.IsZero() {
+		if index := state.reveal.index(button); index >= 0 {
+			state.reveal.shown[index].seen = true
+			revealed = true
+		}
+		if state.reveal.refocus == id {
+			// The button was pressed with the pointer: the keyboard goes back to where the user was.
+			state.reveal.refocus = gfx.ID{}
+			c.Canvas().RequestFocus(id)
+		}
+	}
+	a.input.Secure = secret.show != "" && !revealed
 	theme := c.Theme()
 	metrics := theme.Metrics
 	ui.Column(c).FillWidth().Height(height).Shrink(0).Gap(metrics.GapItem / 2).Children(func() {
-		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis().LabelFor(id)
+		title := func() {
+			ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(metrics.FontSizeM + 4).Ellipsis().LabelFor(id)
+		}
+		if button.IsZero() {
+			title()
+		} else {
+			icon, hint := uint8(iconEye), secret.show
+			if revealed {
+				icon, hint = iconEyeOff, secret.hide
+			}
+			ui.Row(c).Items(ui.Center).Children(func() {
+				ui.Column(c).Grow(1).Shrink(1).Children(title)
+				state.declareIconButton(c, button, icon, hint, false, iconButtonQuiet).Size(24, 24)
+			})
+		}
 		ui.TextArea(c, &a.input, label, placeholder, ui.WithID(id)).FillWidth().Grow(1)
 	})
 }

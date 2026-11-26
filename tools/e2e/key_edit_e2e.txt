@@ -1,0 +1,80 @@
+# lang: zh-CN
+# 端到端：密钥链里的密钥可以复制私钥、查看和编辑（t8y2/motty#1644）。
+# 粘贴一把测试密钥后：工具栏多出「复制私钥」和「编辑密钥」；复制私钥把保存的文本放到剪贴板；
+# 编辑密钥表单里私钥默认遮罩、点眼睛才显示、再点隐藏；改名保存后列表跟着更新，全程不漏出密钥文本。
+#
+#   python3 tools/headless_drive.py --build "$(mktemp -d)" tools/e2e/key_edit_e2e.txt
+
+resize 1400 900
+settle 500
+click "密钥链"
+settle 400
+click "添加密钥"
+click "粘贴私钥…"
+settle 300
+type -----BEGIN OPENSSH PRIVATE KEY-----
+key enter
+type b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
+key enter
+type QyNTUxOQAAACAwkhSpAVaoBwyStIj8e+A5IMlqD6RdMjQ/9n5au2mlqAAAAJDBQ+USwUPl
+key enter
+type EgAAAAtzc2gtZWQyNTUxOQAAACAwkhSpAVaoBwyStIj8e+A5IMlqD6RdMjQ/9n5au2mlqA
+key enter
+type AAAECalp/u8g6u0e09J/z7aZ+8gmdO0HW++911+VNxIsFwQDCSFKkBVqgHDJK0iPx74Dkg
+key enter
+type yWoPpF0yND/2flq7aaWoAAAACnBhc3RlZEBlMmUBAgM=
+key enter
+type -----END OPENSSH PRIVATE KEY-----
+key enter
+key tab
+type 演示密钥
+click "添加"
+expect text "SHA256:" within 3000
+settle 400
+expect no-text "OPENSSH PRIVATE KEY"
+expect layout clean
+expect state id:keys/keys-edit enabled
+expect state id:keys/keys-copy-private enabled
+shot /tmp/motty-key-edit-1-toolbar.png
+
+# 复制私钥：剪贴板里是这把密钥保存时的文本，公钥按钮之外的另一半。
+clip clear
+click "复制私钥"
+settle 200
+clip
+
+# 编辑密钥：名称在第一格，私钥读出来但默认遮罩，表单里看不到密钥文本。
+click "编辑密钥"
+expect text "编辑密钥" within 3000
+expect editor "演示密钥"
+expect exists "显示私钥"
+expect no-text "OPENSSH PRIVATE KEY"
+expect layout clean
+shot /tmp/motty-key-edit-2-concealed.png
+
+# 点眼睛才显示，再点隐藏。
+click "显示私钥"
+expect text "-----BEGIN OPENSSH PRIVATE KEY-----" within 3000
+expect exists "隐藏私钥"
+expect layout clean
+shot /tmp/motty-key-edit-3-shown.png
+click "隐藏私钥"
+expect absent "隐藏私钥"
+expect no-text "OPENSSH PRIVATE KEY"
+
+# 改名保存：同一行换成新名字，密钥文本不留在表单里。
+click id:form-dialog/form-field/#0
+key cmd+a
+type 演示密钥-改名
+click "保存"
+expect text "演示密钥-改名" within 3000
+expect absent "显示私钥"
+expect no-text "OPENSSH PRIVATE KEY"
+expect layout clean
+shot /tmp/motty-key-edit-4-saved.png
+
+# 再次打开仍是遮罩的：离开表单就收起显示。
+click "编辑密钥"
+expect text "编辑密钥" within 3000
+expect exists "显示私钥"
+expect no-text "OPENSSH PRIVATE KEY"

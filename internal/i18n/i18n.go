@@ -984,6 +984,17 @@ type Messages struct {
 	KeyDeleteDescriptionFmt     string
 	KeyDeleteConfirm            string
 	KeyDeletedFmt               string
+	KeyEdit                     string
+	KeyCopyPrivate              string
+	KeyEditHostsFollowFmt       string
+	KeyEditSubmit               string
+	KeyEditReadFailed           string
+	KeyPrivateCopiedFmt         string
+	KeyEditedFmt                string
+	KeyEditReplacedFmt          string
+	KeyEditUnverified           string
+	KeyShow                     string
+	KeyHide                     string
 
 	// Local SSH port forwarding.
 	ForwardTitle                  string

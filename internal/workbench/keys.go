@@ -178,8 +178,12 @@ func (state *State) clickKeys(id gfx.ID) {
 		state.openGenerateKeyForm()
 	case id == hitKeysCopyPublic:
 		state.copySelectedPublicKey()
+	case id == hitKeysCopyPrivate:
+		state.copySelectedPrivateKey()
 	case id == hitKeysExport:
 		state.exportSelectedKey()
+	case id == hitKeysEdit:
+		state.editSelectedKey()
 	case id == hitKeysRemove:
 		state.removeSelectedIdentity()
 	case id == hitKeysPassphrase:
@@ -580,6 +584,194 @@ func (state *State) pasteKey(name, text string) string {
 	})
 }
 
+// editSelectedKey opens the edit form of the selected key: only a key Motty
+// keeps itself is Motty's to rewrite. One that is a file is its owner's to edit,
+// and a security key's file is only a handle for the device.
+func (state *State) editSelectedKey() {
+	identity, ok := state.identityByID(state.selectedIdentityID)
+	if !ok || identity.Error != "" || !identity.Stored || identity.SecurityKey {
+		return
+	}
+	state.openEditKeyForm(identity)
+}
+
+// openEditKeyForm asks for the name and the text of a stored key, as they are
+// kept. The text is concealed until it is shown. What the form says warns of the
+// one thing its fields cannot: the hosts that sign in with this key take a
+// different private key along with them.
+func (state *State) openEditKeyForm(identity identityRecord) {
+	m := state.messages
+	vaultFile := state.secrets.vault
+	if vaultFile == nil {
+		state.showActionInfo(m.KeyEdit, m.VaultUnavailable)
+		return
+	}
+	if vaultFile.NeedsConversion() {
+		state.openVaultUnlock(nil, func() { state.openEditKeyForm(identity) })
+		return
+	}
+	key, err := readStoredKeyRecord(vaultFile, identity.Path)
+	if err != nil {
+		state.showFileReadFailure(m.KeyEdit, err, m.KeyEditReadFailed)
+		return
+	}
+	description := ""
+	if users := state.hostsUsingIdentity(identity.Fingerprint); len(users) > 0 {
+		description = fmt.Sprintf(m.KeyEditHostsFollowFmt, len(users))
+	}
+	form := state.openForm(formDialog{
+		title: m.KeyEdit, description: description, submit: m.KeyEditSubmit,
+		run: func(state *State, form *formDialog) string {
+			message := state.saveKeyEdit(identity, form.value(0), form.value(1))
+			if message == "" {
+				form.set(1, "") // the key does not stay in the form's memory
+			}
+			return message
+		},
+	},
+		formField{label: m.KeyNameLabel, placeholder: m.KeyNamePlaceholder},
+		formField{label: m.KeyTextLabel, placeholder: m.KeyTextPlaceholder, multiline: true, reveal: secretWords{show: m.KeyShow, hide: m.KeyHide}},
+	)
+	form.set(0, key.Name)
+	// The text opens at its first line, as a document does, where the caret is:
+	// a key is longer than its box, and its end is the part least worth seeing.
+	form.set(1, key.Key)
+	form.fields[1].editor.MoveTo(0, false)
+}
+
+// saveKeyEdit keeps name and text in place of the stored key identity: the same
+// row, reference and selection. Text that is the same key public half changes
+// nothing a host sees. Text that is another key takes the hosts pinning the old
+// one along, as a host's key file holds whatever its owner keeps in it: the host
+// names the entry, not the key, and each new key would otherwise leave those
+// hosts with no identity. A text whose public half stays locked behind its
+// passphrase cannot be known for the same key, so it is refused while hosts use
+// the old one. It returns what is wrong, "" when the key was saved.
+func (state *State) saveKeyEdit(identity identityRecord, name, text string) string {
+	m := state.messages
+	vaultFile := state.secrets.vault
+	if vaultFile == nil {
+		return m.VaultUnavailable
+	}
+	if vaultFile.NeedsConversion() {
+		state.openVaultUnlock(nil, func() {
+			if message := state.saveKeyEdit(identity, name, text); message != "" {
+				state.status = message
+			}
+		})
+		return ""
+	}
+	data, err := keyidentity.Normalize(text)
+	if err != nil {
+		return fmt.Sprintf(m.KeyInvalidTextFmt, err)
+	}
+	info, err := keyidentity.InspectData("", data)
+	if err != nil {
+		return fmt.Sprintf(m.KeyInvalidTextFmt, err)
+	}
+	stored, err := readStoredKeyRecord(vaultFile, identity.Path)
+	if err != nil {
+		return m.KeyEditReadFailed
+	}
+	if name = strings.TrimSpace(name); name == "" {
+		name = defaultKeyName(info)
+	}
+	users := state.hostsUsingIdentity(identity.Fingerprint)
+	another := info.Fingerprint != "" && identity.Fingerprint != "" && info.Fingerprint != identity.Fingerprint
+	switch {
+	case info.Fingerprint == "":
+		// Not a key whose public half can be read: it cannot take the hosts along.
+		if len(users) > 0 {
+			return m.KeyEditUnverified
+		}
+	case another:
+		for _, other := range state.identities {
+			if other.ID != identity.ID && other.Error == "" && other.Fingerprint == info.Fingerprint {
+				return fmt.Sprintf(m.KeyDuplicateFmt, other.Name)
+			}
+		}
+	}
+	// A certificate names the key it certifies, so it outlives an edit that keeps
+	// the key; until a locked text is opened at a connection, its match is checked there.
+	certificate := stored.Certificate
+	if another {
+		certificate = ""
+	}
+	changes := []vault.Change{{Name: identity.Path, Value: marshalStoredKey(storedKey{Name: name, Key: string(data), Certificate: certificate})}}
+	// A passphrase saved for the key is for the key as it was: one that no longer
+	// opens it, or an unencrypted key has no use for, is forgotten, so connecting
+	// asks instead of trying it.
+	if passphrase, found, err := vaultFile.Get(passphraseSecretName(identity.Path)); err != nil {
+		return fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err))
+	} else if found && (!info.Encrypted || info.SecurityKey) {
+		changes = append(changes, vault.Change{Name: passphraseSecretName(identity.Path), Delete: true})
+	} else if found {
+		secret := []byte(passphrase)
+		_, err := keyidentity.Parse(data, secret)
+		clear(secret)
+		if err != nil {
+			changes = append(changes, vault.Change{Name: passphraseSecretName(identity.Path), Delete: true})
+		}
+	}
+	if err := vaultFile.Apply(changes); err != nil {
+		return fmt.Sprintf(m.VaultSaveFailedFmt, state.vaultErrorText(err))
+	}
+	key := storedKey{Name: name, Key: string(data), Certificate: certificate}
+	for index := range state.identities {
+		if state.identities[index].ID == identity.ID {
+			state.identities[index] = inspectStoredIdentity(identity.ID, identity.Path, key, state.keyMessages())
+			break
+		}
+	}
+	if another {
+		state.retargetHosts(users, info.Fingerprint)
+	}
+	state.refreshIdentityCount()
+	if another && len(users) > 0 {
+		state.status = fmt.Sprintf(m.KeyEditReplacedFmt, name, len(users))
+	} else {
+		state.status = fmt.Sprintf(m.KeyEditedFmt, name)
+	}
+	state.save()
+	return ""
+}
+
+// hostsUsingIdentity names the hosts that sign in with the key of a fingerprint.
+func (state *State) hostsUsingIdentity(fingerprint string) []uint32 {
+	if fingerprint == "" {
+		return nil
+	}
+	var users []uint32
+	for _, host := range state.hosts {
+		if host.Auth == authPrivateKey && host.Identity == fingerprint {
+			users = append(users, host.ID)
+		}
+	}
+	return users
+}
+
+// retargetHosts makes each of the hosts sign in with the key of fingerprint: what
+// the user asked for by keeping the key's entry and changing the key in it.
+func (state *State) retargetHosts(hosts []uint32, fingerprint string) bool {
+	changed := false
+	for _, id := range hosts {
+		for index := range state.hosts {
+			host := state.hosts[index]
+			if host.ID != id || host.Auth != authPrivateKey || host.Identity == fingerprint {
+				continue
+			}
+			updated := host
+			updated.Identity = fingerprint
+			state.replaceHost(index, host, updated)
+			changed = true
+		}
+	}
+	if changed {
+		state.hostDataChanged()
+	}
+	return changed
+}
+
 // openGenerateKeyForm asks for the name, and optionally the passphrase, of a new
 // key. The name is also the comment the public key carries, which is what
 // identifies it in a server's authorized_keys.
@@ -635,6 +827,32 @@ func (state *State) copySelectedPublicKey() {
 		return
 	}
 	state.status = fmt.Sprintf(state.messages.KeyPublicCopiedFmt, identity.Name)
+}
+
+// copySelectedPrivateKey puts the text of the selected key on the clipboard,
+// exactly as it is kept and as Export Key saves it: a passphrase-protected key
+// stays protected. A security key has no private key in its file to copy.
+func (state *State) copySelectedPrivateKey() {
+	identity, ok := state.identityByID(state.selectedIdentityID)
+	if !ok || identity.Error != "" || identity.SecurityKey {
+		return
+	}
+	m := state.messages
+	if vaultFile := state.secrets.vault; identity.Stored && vaultFile != nil && vaultFile.NeedsConversion() {
+		state.openVaultUnlock(nil, state.copySelectedPrivateKey)
+		return
+	}
+	data, err := state.identityKeyData(identity)
+	if err != nil {
+		state.showFileReadFailure(m.KeyCopyPrivate, err, m.KeyExportReadFailed)
+		return
+	}
+	defer clear(data)
+	if err := state.options.SetClipboardText(string(data)); err != nil {
+		state.status = fmt.Sprintf(m.StatusClipboardFailedFmt, err)
+		return
+	}
+	state.status = fmt.Sprintf(m.KeyPrivateCopiedFmt, identity.Name)
 }
 
 // exportSelectedKey saves the selected private key to a file the user chooses,

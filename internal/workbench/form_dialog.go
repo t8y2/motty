@@ -44,12 +44,14 @@ type formField struct {
 	editor             text.Editor
 	// pageField and pageBound are the page field declared over the editor; row is its
 	// labelled row and shown reveals a secret one. A multiline field is a page text
-	// area, area, bound to the same editor.
+	// area, area, bound to the same editor; reveal is, for a secret one, the words
+	// of the button that shows and hides its text.
 	pageField ui.Field
 	pageBound bool
 	row       ui.FormFieldState
 	shown     bool
 	area      dialogArea
+	reveal    secretWords
 }
 
 // formDialog is the open form. run is called when the user submits: it returns
@@ -336,7 +338,7 @@ func (state *State) declareFormDialogBody(c ui.C) {
 			if field.multiline {
 				height := form.slotHeight(c.Theme(), index) - 4
 				ui.Column(c).Height(height).Shrink(0).MarginSides(0, 0, 4, 0).Children(func() {
-					field.area.declare(c, hitFormFieldList.At(index), &field.editor, field.label, field.placeholder, height)
+					field.area.declare(c, state, hitFormFieldList.At(index), &field.editor, field.label, field.placeholder, height, field.reveal)
 				})
 			} else {
 				state.declareFormField(c, index)

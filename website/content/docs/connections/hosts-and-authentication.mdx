@@ -54,8 +54,12 @@ public key is copied so you can add it to the server's `~/.ssh/authorized_keys`)
 Every key is kept encrypted in the vault, so it follows the vault to your other
 computers. **Copy Public Key** copies the selected key's public half at any time,
 and **Certificate** attaches or renews the OpenSSH user certificate of the
-selected key. Deleting a key kept in Motty is final: there is no file to fall
-back on.
+selected key. **Copy Private Key** and **Export Key** give the private key as it
+is kept (a passphrase-protected key stays protected), and **Edit Key** opens the
+key's name and text with the text hidden until you show it. Saving another key's
+text under the same entry takes the hosts that sign in with it along; the form
+says so before you do. Deleting a key kept in Motty is final: there is no file to
+fall back on.
 
 ### Certificates and the agent
 
