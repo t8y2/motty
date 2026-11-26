@@ -393,7 +393,13 @@ func (w *sftpWindow) declareStatusLine(c ui.C) {
 		status = w.view.errorText
 	}
 	if !w.connected() {
-		status = m.SFTPWindow.Disconnected
+		if w.ownsConnection && w.session.reconnectPending {
+			status = w.owner.reconnectStatusText(c.Canvas(), &w.session)
+		} else if w.connecting() {
+			status = fmt.Sprintf(m.SFTPWindow.ConnectingFmt, w.session.Title)
+		} else {
+			status = m.SFTPWindow.Disconnected
+		}
 	}
 	if status == "" {
 		if w.browse.enabled {
@@ -575,7 +581,7 @@ func (w *sftpWindow) declarePane(c ui.C, s *sftpWindowScratch) {
 			}
 			if local || bounds.Width >= 340 {
 				icon(sftpWindowUp[sideIndex(local)], iconSFTPUp, m.SFTPUp, folder.path == "" || !local && (w.view.busy || !w.connected()), iconButtonQuiet)
-				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || !w.connected()), iconButtonQuiet)
+				icon(sftpWindowRefresh[sideIndex(local)], iconRefresh, m.SFTPRefresh, !local && (w.view.busy || (!w.connected() && !w.canReconnectOwned())), iconButtonQuiet)
 			}
 			if folder.showHidden {
 				icon(sftpWindowHidden[sideIndex(local)], iconEye, m.Tools.FilesHideHidden, false, iconButtonActive)

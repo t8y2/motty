@@ -149,6 +149,20 @@ func (state *State) updateReconnect(session *Session, status sshconn.Status) {
 	}
 }
 
+func (state *State) takeDueReconnect(session *Session, now time.Duration) bool {
+	if !session.reconnectPending || now < session.reconnectDue {
+		return false
+	}
+	if session.reconnectStop != nil {
+		session.reconnectStop()
+		session.reconnectStop = nil
+	}
+	session.reconnectPending = false
+	state.reconnectWaiters--
+	session.reconnectDue = 0
+	return true
+}
+
 func (state *State) advanceReconnects() {
 	if state.reconnectWaiters == 0 {
 		return
@@ -156,17 +170,17 @@ func (state *State) advanceReconnects() {
 	now := state.now()
 	for index := range state.sessions {
 		session := &state.sessions[index]
-		if !session.reconnectPending || now < session.reconnectDue {
+		if state.takeDueReconnect(session, now) {
+			state.startConnectionMode(session, session.host, true)
+		}
+	}
+	for _, w := range state.sftpWindows {
+		if w == nil || w.closed || !w.ownsConnection {
 			continue
 		}
-		if session.reconnectStop != nil {
-			session.reconnectStop()
-			session.reconnectStop = nil
+		if state.takeDueReconnect(&w.session, now) {
+			w.dialOwned(true)
 		}
-		session.reconnectPending = false
-		state.reconnectWaiters--
-		session.reconnectDue = 0
-		state.startConnectionMode(session, session.host, true)
 	}
 }
 
@@ -178,6 +192,12 @@ func (state *State) requestReconnectFrames(canvas *gfx.Canvas) {
 			continue
 		}
 		canvas.RequestFrameIn(max(session.reconnectDue-now, time.Millisecond))
+	}
+	for _, w := range state.sftpWindows {
+		if w == nil || w.closed || !w.ownsConnection || !w.session.reconnectPending {
+			continue
+		}
+		canvas.RequestFrameIn(max(w.session.reconnectDue-now, time.Millisecond))
 	}
 	// A tunnel waiting for its own retry is a waiter too, even when no tab is.
 	for _, tunnel := range state.forwardTunnels {
@@ -218,25 +238,33 @@ func (state *State) setReconnectPolicy(policy reconnectPolicy) bool {
 	return true
 }
 
+func (state *State) applySessionReconnectPolicy(session *Session, policy reconnectPolicy) {
+	if policy == reconnectOff {
+		state.cancelReconnect(session)
+		return
+	}
+	if policy == reconnectThree && session.reconnectAttempt >= 3 && session.reconnectPending {
+		if session.reconnectStop != nil {
+			session.reconnectStop()
+			session.reconnectStop = nil
+		}
+		session.reconnectPending = false
+		state.reconnectWaiters--
+		session.reconnectDue = 0
+		session.reconnectExhausted = true
+		session.reconnectText = ""
+	}
+}
+
 // applyReconnectPolicy applies the policy the page's choice already wrote.
 func (state *State) applyReconnectPolicy() {
 	policy := state.connectionReconnect
 	for index := range state.sessions {
-		session := &state.sessions[index]
-		if policy == reconnectOff {
-			state.cancelReconnect(session)
-			continue
-		}
-		if policy == reconnectThree && session.reconnectAttempt >= 3 && session.reconnectPending {
-			if session.reconnectStop != nil {
-				session.reconnectStop()
-				session.reconnectStop = nil
-			}
-			session.reconnectPending = false
-			state.reconnectWaiters--
-			session.reconnectDue = 0
-			session.reconnectExhausted = true
-			session.reconnectText = ""
+		state.applySessionReconnectPolicy(&state.sessions[index], policy)
+	}
+	for _, w := range state.sftpWindows {
+		if w != nil && !w.closed && w.ownsConnection {
+			state.applySessionReconnectPolicy(&w.session, policy)
 		}
 	}
 	// Forwards that waited for a retry this change took away stop now.
