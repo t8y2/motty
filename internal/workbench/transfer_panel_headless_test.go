@@ -158,3 +158,38 @@ func TestTransferConflictQuickDialogUploadsAcrossSurfaces(t *testing.T) {
 		}
 	}
 }
+
+func TestTransferConflictPromptWaitsForExistingBatchConfirmation(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	browser, remote := bulkTestView(t, state)
+	bulkConflict(t, state, browser, remote, "first", "old")
+	state.transfers.open = true
+	state.clickTransferBulk(hitTransfersReplaceVisible)
+	if len(state.transfers.batch.targets) != 1 {
+		t.Fatal("the existing batch confirmation did not open")
+	}
+	bulkConflict(t, state, browser, remote, "later", "old")
+	state.showTransferConflict(browser)
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Width: 1100, Height: 760, Tree: Tree(), Paint: state.Paint,
+		OnPointer: state.Pointer, OnKey: state.Key,
+	}), nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if _, shown := findSnapshotHit(view.Snapshot(), hitTransferConflictReplaceAll); shown {
+		t.Fatal("a new conflict prompt interrupted the existing batch confirmation")
+	}
+	dualClickID(t, view, hitTransfersBulkCancel)
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if _, shown := findSnapshotHit(view.Snapshot(), hitTransferConflictReplaceAll); !shown {
+		t.Fatal("the waiting conflict prompt did not appear after the batch was dismissed")
+	}
+}

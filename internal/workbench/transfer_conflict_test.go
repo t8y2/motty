@@ -74,3 +74,30 @@ func TestTransferConflictReplaceHandlesOneFileWithoutASecondConfirmation(t *test
 	state.Click(hitTransferConflictReplace)
 	bulkAwait(t, state, view, second, sftpclient.TransferCompleted)
 }
+
+func TestTransferConflictWaitsForAnotherConnectionsFileDialog(t *testing.T) {
+	for _, surface := range []string{"panel", "tab"} {
+		t.Run(surface, func(t *testing.T) {
+			var state *State
+			var active *sftpView
+			if surface == "tab" {
+				s, _, w, _, _ := openSFTPTabFixture(t)
+				state, active = s, w.view
+			} else {
+				s, session, _, _ := openTestSFTP(t)
+				state, active = s, session.files
+			}
+			background, remote := bulkTestView(t, state)
+			bulkConflict(t, state, background, remote, "background", "old")
+			state.showTransferConflict(background)
+			state.openSFTPDialog(active, sftpDialogCreateDirectory)
+			if state.transferConflictView() != nil {
+				t.Fatal("a background conflict interrupted the active connection's dialog")
+			}
+			state.closeSFTPDialog(active)
+			if state.transferConflictView() != background {
+				t.Fatal("the background conflict was lost while waiting for the dialog")
+			}
+		})
+	}
+}

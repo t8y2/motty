@@ -34,8 +34,18 @@ func (state *State) transferConflictView() *sftpView {
 	}
 	// A file tab declares its own prompt; prioritize it so another connection
 	// cannot declare a second dialog over that same page.
-	if w := state.activeSFTPWindow(); w != nil && state.transferConflictAllowed(w.view) && state.pruneTransferConflict(w.view) {
-		return w.view
+	if w := state.activeSFTPWindow(); w != nil {
+		if !state.transferConflictAllowed(w.view) {
+			return nil
+		}
+		if state.pruneTransferConflict(w.view) {
+			return w.view
+		}
+	}
+	if state.activeSection == sectionTerminal && state.filesPanelShown() {
+		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.files != nil && session.files.dialog != sftpDialogNone {
+			return nil
+		}
 	}
 	for index := range state.transfers.entries {
 		view := state.transfers.entries[index].owner
@@ -54,7 +64,11 @@ func (state *State) transferConflictAllowed(view *sftpView) bool {
 		return false
 	}
 	w := view.detached
-	return w == nil || !w.closeConfirm && w.externalConflict == 0 && !w.bookmark.open && !w.fileProperties.open
+	// A new automatic prompt must wait for an existing choice on this page.
+	if (w == nil || w == state.activeSFTPWindow()) && state.transfers.open && len(state.transfers.batch.targets) > 0 {
+		return false
+	}
+	return w == nil || !w.closeConfirm && w.externalConflict == 0 && !w.bookmark.open && !w.fileProperties.open && len(w.ui.queueBatch.targets) == 0
 }
 
 func (state *State) declareTransferConflict(c ui.C, view *sftpView) {
