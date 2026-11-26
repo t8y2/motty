@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode"
 
+	"motty/internal/i18n"
 	"motty/internal/localshell"
 	"motty/internal/sshconn"
 )
@@ -44,10 +45,10 @@ func wslHostSystem(distro string) sshconn.RemoteSystem {
 	return sshconn.SystemLinux
 }
 
-func newWSLHostConn(host Host, directory string, resolveDefault func() string) *localConn {
+func newWSLHostConn(host Host, directory string, resolveDefault func() string, messages i18n.WSLMessages) *localConn {
 	conn := newLocalConn("", networkProxyDirect)
 	if !validWSLEndpoint(host) || !validWSLDirectory(host.WSLDirectory) {
-		conn.startErr = errors.New("invalid WSL distribution, user or startup directory")
+		conn.startErr = errors.New(messages.ErrInvalidHost)
 		return conn
 	}
 	distro := host.Address
@@ -55,7 +56,7 @@ func newWSLHostConn(host Host, directory string, resolveDefault func() string) *
 		distro = resolveDefault()
 	}
 	if !validEndpoint(protocolWSL, distro) || distro == "" {
-		conn.startErr = errors.New("no default WSL distribution is registered")
+		conn.startErr = errors.New(messages.ErrNoDefaultDistribution)
 		return conn
 	}
 	conn.shell = localshell.WSLShell(distro)
@@ -75,10 +76,10 @@ func (state *State) localConnection(session *Session, host Host) *localConn {
 	}
 	if runtime.GOOS != "windows" {
 		conn := newLocalConn("", networkProxyDirect)
-		conn.startErr = errors.New("WSL sessions require Windows")
+		conn.startErr = errors.New(state.messages.WSL.ErrNeedsWindows)
 		return conn
 	}
-	conn := newWSLHostConn(host, session.localDirectory, localshell.DefaultWSLDistro)
+	conn := newWSLHostConn(host, session.localDirectory, localshell.DefaultWSLDistro, state.messages.WSL)
 	if distro, ok := localshell.WSLDistro(conn.shell); ok {
 		if host.Address == "" {
 			state.localShellMenu.defaultWSLDistro = distro

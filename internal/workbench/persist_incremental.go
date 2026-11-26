@@ -296,6 +296,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.Address == right.Address && left.User == right.User && left.Port == right.Port &&
 		left.System == right.System &&
 		left.Protocol == right.Protocol && left.Encoding == right.Encoding &&
+		left.WSLDirectory == right.WSLDirectory && left.WSLNoGUI == right.WSLNoGUI &&
 		left.Terminal == right.Terminal &&
 		left.Line == right.Line && left.Flow == right.Flow && left.Backspace == right.Backspace &&
 		sameSavedProxy(left.Proxy, right.Proxy) &&

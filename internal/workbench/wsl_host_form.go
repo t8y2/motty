@@ -3,7 +3,6 @@ package workbench
 import (
 	"slices"
 
-	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/localshell"
 )
@@ -46,10 +45,6 @@ func (state *State) declareWSLEndpoint(c ui.C, slots *hostEndpointSlots, height 
 					state.dialogError = ""
 				}
 			})
-		})
-		ui.Column(c).Grow(1).Children(func() {
-			ui.Text(c, m.LaunchMethod).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).LineHeight(20)
-			ui.Text(c, "wsl.exe").FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(24).MarginTop(6)
 		})
 	})
 	ui.Row(c).Height(height).Gap(8).Items(ui.Center).Children(func() {

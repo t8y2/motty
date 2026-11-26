@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
+	"motty/internal/i18n"
 	"motty/internal/localshell"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
@@ -64,7 +65,7 @@ func TestSavedWSLHostKeepsItsCatalogIdentityAndSettings(t *testing.T) {
 
 func TestSavedWSLHostSharesDistributionBetweenShellFilesAndMonitor(t *testing.T) {
 	host := Host{ID: 42, Protocol: protocolWSL, User: "alice", WSLDirectory: "/home/alice/my project", LoginCommand: "echo ready", WSLNoGUI: true}
-	conn := newWSLHostConn(host, "", func() string { return "Ubuntu-22.04" })
+	conn := newWSLHostConn(host, "", func() string { return "Ubuntu-22.04" }, i18n.For(i18n.English).WSL)
 	if conn.startErr != nil {
 		t.Fatal(conn.startErr)
 	}
