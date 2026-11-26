@@ -1,0 +1,42 @@
+# End to end: a paste in the assistant's message box with files on the clipboard
+# attaches them, the way a file manager's copy is pasted into a chat, and the
+# saved conversation shows the questions at the end of their rows. Needs a
+# headless Viva with the `clipfiles` command and a conversation seeded with
+# heroseed (no model or key):
+#
+#   home=$(mktemp -d); mkdir -p "$home/motty-data"; dir=$(mktemp -d)
+#   printf 'WARN slow query ms=412\n' > "$dir/app.log"
+#   go run ./tools/e2e/heroseed "$home/motty-data/ai.db" "$dir/app.log"
+#   printf 'deploy plan\n' > "$dir/notes.md"
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   MOTTY_LANG=zh-CN python3 tools/headless_drive.py "$home" /tmp/ai-paste-files.txt   # clipfiles paths substituted
+#
+# Substitution is done with sed because the driver sends lines as typed. Look
+# at the shot: a text file and a picture wait as chips above the message box,
+# their names are not in the message box, and no model chip opened. The second
+# paste, after text was copied, enters the box as text.
+
+resize 1400 900
+appearance dark
+settle 600
+click id:ai-panel/ai-toggle
+settle 1200
+click id:ai-panel/ai-history
+settle 900
+click 1200 118
+settle 1500
+shot /tmp/issue1624-layout.png
+click id:ai-panel/ai-input
+settle 300
+clipfiles __NOTES__ __SHOT__
+key cmd+v
+waitfor "notes.md" 5000
+settle 800
+expect count button:移除 2
+editor
+settle 800
+shot /tmp/issue1624-paste-files.png
+clip 部署计划.docx
+key cmd+v
+expect editor contains 部署计划.docx
+expect count button:移除 2

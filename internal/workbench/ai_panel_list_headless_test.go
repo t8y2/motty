@@ -552,3 +552,67 @@ func TestHeadlessWrappedRowHeightFollowsTheWidth(t *testing.T) {
 		t.Fatalf("narrowing the panel did not wrap the message further: %.1f -> %.1f", wide, narrow)
 	}
 }
+
+// TestHeadlessQuestionsSitAtTheEndOfTheirRows checks a conversation reads as
+// a chat: each question's bubble ends at the end of its row and takes no more
+// of it than a bubble's share, while the answer keeps the row from its start.
+// The widths cover the section card, and the drawer a narrow window opens.
+func TestHeadlessQuestionsSitAtTheEndOfTheirRows(t *testing.T) {
+	state, _ := panelState(t, nil)
+	withModel(t, state)
+	state.ai.items = []aiItem{
+		{kind: aiUser, text: "why?"},
+		{kind: aiAssistant, text: "Because " + strings.Repeat("it wraps ", 30)},
+		{kind: aiUser, text: strings.Repeat("a long question ", 30), attachments: []aiAttachmentRef{{Name: "notes.md"}}},
+		{kind: aiAssistant, text: "A second answer."},
+	}
+	state.ai.open = true
+	view := openAIPanelView(t, state)
+	defer view.Close()
+	for _, size := range [][2]int{{1400, 900}, {800, 700}} {
+		if err := view.Resize(size[0], size[1]); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Rest(); err != nil {
+			t.Fatal(err)
+		}
+		panel := &state.ai.panel
+		start, end := panel.list.X+aiPad, panel.list.X+panel.list.Width-aiPad
+		for index := range state.ai.items {
+			view := &panel.rows[index]
+			if !view.textSlotSet[aiTextPrimary] {
+				// Only the rows the window shows were laid out.
+				continue
+			}
+			text := view.textSlots[aiTextPrimary].Rect()
+			inside := func(what string) {
+				t.Helper()
+				if text.X < start-1 || text.X+text.Width > end+1 {
+					t.Fatalf("width %d: %s lies outside the row: text=%v row=%.1f..%.1f", size[0], what, text, start, end)
+				}
+			}
+			switch state.ai.items[index].kind {
+			case aiUser:
+				inside("the question")
+				if bubble := text.X + text.Width + aiUserPadX; abs32(bubble-end) > 1 {
+					t.Fatalf("width %d: question %d's bubble ends at %.2f, the row at %.2f", size[0], index, bubble, end)
+				}
+				if bubble := text.Width + 2*aiUserPadX; bubble > (end-start)*aiUserWidth+1 {
+					t.Fatalf("width %d: question %d's bubble is %.2f wide, more than a bubble's share of %.2f", size[0], index, bubble, end-start)
+				}
+			case aiAssistant:
+				inside("the answer")
+				if abs32(text.X-start) > 1 {
+					t.Fatalf("width %d: answer %d starts at %.2f, the row at %.2f", size[0], index, text.X, start)
+				}
+			}
+		}
+	}
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}

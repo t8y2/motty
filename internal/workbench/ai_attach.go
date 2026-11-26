@@ -142,6 +142,23 @@ func (state *State) aiPasteImage() {
 	}()
 }
 
+// aiPasteFiles attaches the files the clipboard holds, as a file manager's
+// copy leaves them, through the same reading as the paperclip's dialog, and
+// reports whether it did: a clipboard that holds no files, or that cannot be
+// asked on this target, leaves the paste to the text and the picture. A paste
+// read that fails for another reason is not one either: the clipboard's text
+// is still pasted, and on a clipboard whose owner answers slowly the text is
+// the part that worked. The files' names are on the clipboard as text as
+// well, which is why the caller asks here before it inserts any.
+func (state *State) aiPasteFiles() bool {
+	paths, err := state.options.ClipboardFiles()
+	if err != nil || len(paths) == 0 {
+		return false
+	}
+	state.aiAttachPaths(paths)
+	return true
+}
+
 const (
 	// aiLongTextChars is the character count at which pasted text is turned into
 	// a file attachment to keep the composer responsive and within renderer limits.
