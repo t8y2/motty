@@ -126,6 +126,48 @@ func TestLoginCommandFallsBackToQuietWhenNoPromptIsReported(t *testing.T) {
 	}
 }
 
+func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
+	tests := []struct {
+		name   string
+		prompt string
+		want   bool
+	}{
+		{name: "password is not an automatic reply", prompt: "Password:", want: false},
+		{name: "yes no question", prompt: "Are you sure you want to continue? (yes/no)", want: true},
+		{name: "yes no shorthand", prompt: "Continue? [y/N]", want: true},
+		{name: "press enter", prompt: "Press Enter to continue", want: true},
+		{name: "press return", prompt: "Press Return to continue", want: true},
+		{name: "press any key", prompt: "Press any key to continue", want: true},
+		{name: "Chinese continue", prompt: "是否继续？", want: true},
+		{name: "Chinese selection", prompt: "请选择操作", want: true},
+		{name: "Chinese input", prompt: "请输入命令", want: true},
+		{name: "verification code is secret", prompt: "请输入验证码", want: false},
+		{name: "REPL prompt", prompt: ">>> ", want: true},
+		{name: "connection status ending in colon", prompt: "Connecting to host:", want: false},
+		{name: "generic question", prompt: "Are you sure?", want: false},
+		{name: "generic angle bracket", prompt: "loading >", want: false},
+		{name: "incomplete prompt marker alone", prompt: "broken prompt>", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			state, shell, now := loginCommandSession(t, "")
+			term := state.sessions[0].term
+			shell.say(tt.prompt)
+			state.Wake()
+			term.login.seen = true
+			term.login.last = *now
+			term.promptStarted = true // A prompt-start marker alone is not enough.
+			term.promptReady = false
+			term.promptDirty = false
+			*now += loginCommandGrace
+
+			if got := state.loginInteractivePromptReady(term, *now); got != tt.want {
+				t.Fatalf("loginInteractivePromptReady(%q) = %t, want %t", tt.prompt, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoginCommandStaysOutOfTheCommandHistory(t *testing.T) {
 	state, shell, _ := loginCommandSession(t, "sudo -i")
 	var remembered []string
@@ -502,29 +544,82 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		}
 	})
 
-	t.Run("interactive prompt", func(t *testing.T) {
+	t.Run("allowlisted interactive prompts", func(t *testing.T) {
+		prompts := []struct {
+			name string
+			text string
+		}{
+			{name: "yes no", text: "Are you sure? (yes/no)"},
+			{name: "press enter", text: "Press Enter to continue"},
+			{name: "Chinese continue", text: "是否继续？"},
+			{name: "REPL", text: "\r\n>>> "},
+		}
+		for _, prompt := range prompts {
+			t.Run(prompt.name, func(t *testing.T) {
+				state, shell, now := loginCommandSession(t, "sudo -i\necho after")
+				session := &state.sessions[0]
+				token := session.term.folderToken
+
+				shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+				state.Wake()
+				if shell.typed() != "sudo -i\r" {
+					t.Fatalf("typed %q", shell.typed())
+				}
+				shell.say("\x1b]133;A;motty=" + token + "\x07" + prompt.text)
+				state.Wake()
+				*now += loginCommandGrace
+				state.Wake()
+				if session.LoginCommandAborted() != "" {
+					t.Fatalf("prompt aborted remaining commands: %q", session.LoginCommandAborted())
+				}
+				if shell.typed() != "sudo -i\recho after\r" {
+					t.Fatalf("next prompt answer was not sent: %q", shell.typed())
+				}
+			})
+		}
+	})
+
+	t.Run("password prompt keeps the abort policy", func(t *testing.T) {
 		state, shell, now := loginCommandSession(t, "sudo -i\necho after")
 		session := &state.sessions[0]
 		token := session.term.folderToken
 
 		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
-		if shell.typed() != "sudo -i\r" {
-			t.Fatalf("typed %q", shell.typed())
-		}
-		// An incomplete prompt (133;A without 133;B) that stays quiet past grace
-		// receives the next configured line instead of aborting the sequence.
-		shell.say("\x1b]133;A;motty=" + token + "\x07broken prompt>")
+		shell.say("\x1b]133;A;motty=" + token + "\x07Password:")
 		state.Wake()
 		*now += loginCommandGrace
 		state.Wake()
-		if session.LoginCommandAborted() != "" {
-			t.Fatalf("prompt aborted remaining commands: %q", session.LoginCommandAborted())
+
+		if session.LoginCommandAborted() == "" {
+			t.Fatal("password prompt should abort the remaining configured command")
 		}
-		if shell.typed() != "sudo -i\recho after\r" {
-			t.Fatalf("next prompt answer was not sent: %q", shell.typed())
+		if shell.typed() != "sudo -i\r" {
+			t.Fatalf("sent a configured reply at the password prompt: %q", shell.typed())
 		}
 	})
+}
+
+func TestMultilineLoginCommandDoesNotAdvanceOnSlowOutputWithColon(t *testing.T) {
+	state, shell, now := loginCommandSession(t, "ssh root@example\necho after")
+	token := state.sessions[0].term.folderToken
+
+	shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	if shell.typed() != "ssh root@example\r" {
+		t.Fatalf("typed %q", shell.typed())
+	}
+
+	shell.say("ssh root@example\r\nConnecting to host:")
+	state.Wake()
+	*now += loginCommandGrace
+	state.Wake()
+	if shell.typed() != "ssh root@example\r" {
+		t.Fatalf("advanced on intermediate output: %q", shell.typed())
+	}
+	if aborted := state.sessions[0].LoginCommandAborted(); aborted != "" {
+		t.Fatalf("aborted while the command was still producing output: %q", aborted)
+	}
 }
 
 func TestMultilineLoginCommandFallsBackToQuietStepByStepWhenUnintegrated(t *testing.T) {

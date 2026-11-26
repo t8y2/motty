@@ -378,18 +378,14 @@ func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) 
 	if rowText == "" {
 		return false
 	}
-	if t.promptStarted && !t.promptReady {
-		return true
-	}
 	if cmdhistory.PasswordPrompt(rowText) {
-		return true
+		return false
 	}
 	if cmdhistory.ProgramPrompt(rowText) {
 		return true
 	}
-	// Interactive SSH and application prompts usually end in punctuation,
-	// unlike command output that is still changing. Let a stable prompt accept
-	// the next configured answer instead of aborting the whole sequence.
+	// Only recognizable prompt phrases may consume the next configured line.
+	// Generic status output is not enough: a quiet command can still be working.
 	lower := strings.ToLower(rowText)
 	if strings.Contains(lower, "press enter") || strings.Contains(lower, "press return") ||
 		strings.Contains(lower, "press any key") || strings.Contains(lower, "yes/no") ||
@@ -398,9 +394,18 @@ func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) 
 		strings.Contains(rowText, "是否继续") || strings.Contains(rowText, "请选择") || strings.Contains(rowText, "请输入") {
 		return true
 	}
-	return strings.HasSuffix(rowText, "?") || strings.HasSuffix(rowText, "？") ||
-		strings.HasSuffix(rowText, ":") || strings.HasSuffix(rowText, "：") ||
-		strings.HasSuffix(rowText, ">") || strings.HasSuffix(rowText, "›")
+	return false
+}
+
+// loginPasswordPromptReady reports a stable prompt for a secret. Login scripts
+// must stop at these prompts instead of sending the next configured line as a
+// possible password.
+func loginPasswordPromptReady(t *terminal, now time.Duration) bool {
+	if t == nil || t.screen == nil || !t.login.seen || t.login.quietWait(now, loginCommandGrace) > 0 {
+		return false
+	}
+	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
+	return rowText != "" && cmdhistory.PasswordPrompt(rowText)
 }
 
 func (state *State) loginStepFinished(session *Session, now time.Duration) bool {
@@ -419,7 +424,7 @@ func (state *State) loginStepFinished(session *Session, now time.Duration) bool 
 	}
 	if !t.folderIntegrationSeen && t.login.seen && t.login.quietWait(now, loginCommandQuiet) == 0 {
 		rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
-		if rowText != "" {
+		if rowText != "" && !cmdhistory.PasswordPrompt(rowText) {
 			return true
 		}
 	}
@@ -612,6 +617,10 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	if t.login.running {
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginPasswordPromptReady(t, now) {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return
+		}
 		if state.loginStepFinished(session, now) {
 			if !state.completeLoginStep(session) {
 				return
@@ -634,6 +643,10 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	if t.login.waitPrompt {
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginPasswordPromptReady(t, now) {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return
+		}
 		if t.login.isWorkspaceStep {
 			if !t.promptIdle() || t.promptDirty || t.promptVersion <= t.login.promptVersion {
 				return
