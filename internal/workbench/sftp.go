@@ -2683,7 +2683,7 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 		if len(sources) > 1 || recursive {
 			queued = view.worker.ChmodSelection(sources, os.FileMode(mode), recursive)
 			operation = sftpclient.OperationChmodSelection
-			status = fmt.Sprintf(state.messages.SFTPChangingPermissionsCountFmt, len(sources), mode)
+			status = fmt.Sprintf(state.messages.SFTPChangingPermissionsCountFmt, len(sources))
 		} else {
 			queued = view.worker.Chmod(sources[0], os.FileMode(mode))
 			operation = sftpclient.OperationChmod

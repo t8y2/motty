@@ -1224,7 +1224,7 @@ var TraditionalMessages = Messages{
 	SFTPDeletedCountFmt:         "已刪除 %d 個項目",
 	SFTPPermissionsTitle:        "修改權限",
 	SFTPPermissionsDescription:  "輸入三位八進位制權限，例如 644 或 755；所有選取項目都將套用此權限。",
-	SFTPPermissionsRecursive:    "套用於子目錄",
+	SFTPPermissionsRecursive:    "套用到所有子項目",
 	SFTPPermissionsMode:         "八進位制權限",
 	SFTPPermissionsSubmit:       "應用",
 	SFTPPermissionsOwner:        "所有者",

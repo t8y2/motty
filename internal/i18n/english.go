@@ -1224,7 +1224,7 @@ var EnglishMessages = Messages{
 	SFTPDeletedCountFmt:         "Deleted %d items",
 	SFTPPermissionsTitle:        "Change Permissions",
 	SFTPPermissionsDescription:  "Enter a three-digit octal mode such as 644 or 755. Every selected item gets it.",
-	SFTPPermissionsRecursive:    "Apply to subdirectories",
+	SFTPPermissionsRecursive:    "Apply to all enclosed items",
 	SFTPPermissionsMode:         "Octal mode",
 	SFTPPermissionsSubmit:       "Apply",
 	SFTPPermissionsOwner:        "Owner",

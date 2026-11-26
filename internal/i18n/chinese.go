@@ -1224,7 +1224,7 @@ var ChineseMessages = Messages{
 	SFTPDeletedCountFmt:         "已删除 %d 个项目",
 	SFTPPermissionsTitle:        "修改权限",
 	SFTPPermissionsDescription:  "输入三位八进制权限，例如 644 或 755；所有选中项目都将应用此权限。",
-	SFTPPermissionsRecursive:    "应用于子目录",
+	SFTPPermissionsRecursive:    "应用到所有子项目",
 	SFTPPermissionsMode:         "八进制权限",
 	SFTPPermissionsSubmit:       "应用",
 	SFTPPermissionsOwner:        "所有者",
