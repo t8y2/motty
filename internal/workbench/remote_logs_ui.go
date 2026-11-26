@@ -443,7 +443,7 @@ func (state *State) declareRemoteLogStatus(c ui.C, session *Session, view *remot
 func (view *remoteLogView) editPath(mode remoteLogForm, path remoteLogPath) {
 	view.formMode, view.formOriginal, view.formError = mode, path, ""
 	view.name.SetText(path.Name)
-	view.path.SetText(path.Path)
+	view.path = *text.NewEditor(path.Path)
 }
 
 func (state *State) declareRemoteLogForm(c ui.C, session *Session, view *remoteLogView) {
@@ -471,7 +471,15 @@ func (state *State) declareRemoteLogForm(c ui.C, session *Session, view *remoteL
 				ui.Text(c, m.Name)
 				ui.TextField(c, &view.name, m.Name, "", ui.WithID(hitRemoteLogName)).Height(32)
 				ui.Text(c, m.Path)
-				ui.TextField(c, &view.path, m.Path, "/var/log/app.log", ui.WithID(hitRemoteLogPath)).Height(32)
+				ui.Slot(c).FillWidth().Height(32).Draw(func(d *ui.DrawContext) {
+					value := view.path.String()
+					focused := d.Canvas.Focused() == hitRemoteLogPath
+					// Let the native editor scroll with the caret instead of clipping a long path at its start.
+					components.PaintInput(d.Canvas, *d.Theme, d.Rect, components.InputSnapshot{
+						ID: hitRemoteLogPath, Label: m.Path, Value: value, Placeholder: "/var/log/app.log",
+						Focused: focused, PlatformEditing: focused && value != "",
+					})
+				})
 			}
 			if view.formError != "" {
 				ui.Text(c, view.formError).Color(state.pal.danger).FillWidth()
@@ -484,7 +492,7 @@ func (state *State) declareRemoteLogForm(c ui.C, session *Session, view *remoteL
 		}
 		if ui.Button(c, title).Clicked() {
 			c.After(func() {
-				path := remoteLogPath{Name: strings.TrimSpace(view.name.Text()), Path: view.path.Text()}
+				path := remoteLogPath{Name: strings.TrimSpace(view.name.Text()), Path: view.path.String()}
 				if err := state.saveRemoteLogPath(session, view.formOriginal, path, deleting); err != nil {
 					view.formError = err.Error()
 					return

@@ -1554,6 +1554,13 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if editor := state.sftpEditor(hit); editor != nil {
 			return editor
 		}
+		if hit == hitRemoteLogPath && state.terminalPage() {
+			if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+				if view := session.remoteLogs; view != nil && (view.formMode == remoteLogFormAdd || view.formMode == remoteLogFormEdit) {
+					return &view.path
+				}
+			}
+		}
 		if hit == hitSearch && state.activeSection == sectionHosts && !state.hostSort.enabled {
 			return &state.search
 		}
