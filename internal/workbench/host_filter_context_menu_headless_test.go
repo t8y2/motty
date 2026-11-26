@@ -58,6 +58,11 @@ func hostFilterContextClick(t *testing.T, view *headless.Session, id gfx.ID, sec
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A click can change the page's layout (a selection adds an action row), and
+	// the next click aims at the settled frame, as a person's would.
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func hostFilterContextShot(t *testing.T, view *headless.Session, name string) {

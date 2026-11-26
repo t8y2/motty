@@ -50,17 +50,20 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		"background_output_alerts": true,
 		"tab_orientation":          true, "vertical_tabs_auto_hide": true,
 
-		// Whether the fullscreen desktop's bar stays pinned is this computer's
-		// own presentation choice, like the sidebar's auto-hide above.
+		// Whether the fullscreen desktop's bar stays pinned, and the edge it is
+		// docked to, are this computer's own presentation choices, like the
+		// sidebar's auto-hide above.
 		"desktop_fullscreen_bar_auto_hide": true,
+		"desktop_fullscreen_bar_dock":      true,
+		"desktop_fullscreen_bar_x":         true,
+		"desktop_fullscreen_bar_y":         true,
 
-		"tab_double_click":       true,
-		"tab_numbers":            true,
-		"vertical_tabs_grouping": true,
-		"workspace_layouts":      true,
-		"sftp_local_bookmarks":   true,
-		"sftp_columns":           true, "sftp_download_directory": true, "default_editor": true,
-		"sftp_window_order": true, "sftp_open_mode": true, "sftp_directory_tree": true, "custom_editor_path": true,
+		"tab_double_click":        true,
+		"tab_numbers":             true,
+		"vertical_tabs_grouping":  true,
+		"workspace_layouts":       true,
+		"sftp_local_bookmarks":    true,
+		"sftp_download_directory": true, "default_editor": true, "custom_editor_path": true,
 		"sftp_transfer_filter":   true,
 		"forward_bind_addresses": true,
 		// Whether the new-tab picker lists its shells expanded is this
@@ -115,7 +118,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 func richState() savedState {
 	return savedState{
 		Version: stateFileVersion, HostCatalogVersion: hostCatalogSchemaVersion, ShortcutVersion: shortcutSchemaVersion,
-		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, FullscreenBarAutoHide: true, LocalShell: "/opt/local-shell/bin/shell", LocalStartupCommands: map[string]string{"/opt/local-shell/bin/shell": "export LANG=zh_CN.UTF-8"}, TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
+		Language: "zh-CN", Theme: "dark", NetworkProxy: "system", TabOrientation: "vertical", VerticalTabsAutoHide: true, FullscreenBarAutoHide: true, FullscreenBarDock: "free", FullscreenBarX: 0.25, FullscreenBarY: 0.75, LocalShell: "/opt/local-shell/bin/shell", LocalStartupCommands: map[string]string{"/opt/local-shell/bin/shell": "export LANG=zh_CN.UTF-8"}, TerminalFontSize: 15, TerminalScrollback: 5000, TerminalPadding: "roomy", TerminalWordSeparators: "-/", HiddenHostTags: []string{"dev", "prod"},
 		RecentConnectSort: true, RecentConnections: map[string]time.Time{"host_b": time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)},
 		SFTPParallel: 2, SFTPTerminalFollow: true, SFTPTransferFilter: 1, CommandHistory: true,
 		Hosts: []savedHost{

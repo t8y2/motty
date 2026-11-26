@@ -67,6 +67,7 @@ func TestHostCatalogControlsNativeSelectionOrderingAndExport(t *testing.T) {
 								t.Fatalf("disabled native control %s", tree.Text(id))
 							}
 							must(view.Click(control.Bounds.X+control.Bounds.Width/2, control.Bounds.Y+control.Bounds.Height/2))
+							must(view.Rest()) // the next click aims at the settled layout
 						}
 						shot := func(name string) {
 							t.Helper()

@@ -649,7 +649,7 @@ func (session *Session) onPointer(update *rdpcore.PointerUpdate) {
 }
 
 // shapeFrom copies an update into a desktop shape, RGBA to BGRA as the
-// presenter takes it.
+// presenter takes it, keeping the pixels the remote's pointer inverts.
 func (session *Session) shapeFrom(update *rdpcore.PointerUpdate) desktop.PointerShape {
 	shape := desktop.PointerShape{
 		Width:  int(update.Width),
@@ -663,6 +663,10 @@ func (session *Session) shapeFrom(update *rdpcore.PointerUpdate) desktop.Pointer
 		shape.BGRA[index+1] = update.Data[index+1]
 		shape.BGRA[index+2] = update.Data[index]
 		shape.BGRA[index+3] = update.Data[index+3]
+	}
+	if len(update.Invert) > 0 {
+		shape.Invert = make([]bool, len(update.Invert))
+		copy(shape.Invert, update.Invert)
 	}
 	return shape
 }

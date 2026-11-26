@@ -57,6 +57,59 @@ func TestLoginCommandWaitsForThePromptTheShellReports(t *testing.T) {
 	}
 }
 
+// A PowerShell integration wraps the shell's prompt, as Windows Terminal does:
+// every prompt reports its start, the folder and its end, and none is preceded
+// by a command start, because the shell has no hook before a line runs. The
+// first such prompt is the shell waiting for input, which is all a login
+// command needs to be typed.
+func TestLoginCommandRunsInAShellThatReportsItsPromptButNotCommandStarts(t *testing.T) {
+	state, shell, _ := loginCommandSession(t, "cd /tmp/projects")
+	token := state.sessions[0].term.folderToken
+	prompt := "\x1b]133;A;motty=" + token + "\x07PS C:\\Users\\me> \x1b]7;file://box/C:/Users/me\x07\x1b]133;B;motty=" + token + "\x07"
+
+	shell.say(prompt)
+	state.Wake()
+	if shell.typed() != "cd /tmp/projects\r" {
+		t.Fatalf("typed %q once the prompt was ready", shell.typed())
+	}
+
+	// The next prompt redraws with nothing new to send: a single-line command is
+	// handed to the shell once.
+	shell.say("cd /tmp/projects\r\n" + prompt)
+	state.Wake()
+	if shell.typed() != "cd /tmp/projects\r" {
+		t.Fatalf("typed the command again: %q", shell.typed())
+	}
+}
+
+// Without a command start there is no exit report either, so a multi-line login
+// command advances when the shell's prompt comes back: the prompt function runs
+// only while the shell waits for a line, so its report follows the last command.
+func TestMultilineLoginCommandRunsStepByStepWithoutCommandReports(t *testing.T) {
+	state, shell, _ := loginCommandSession(t, "cd /tmp/projects\ngit status")
+	token := state.sessions[0].term.folderToken
+	prompt := "\x1b]133;A;motty=" + token + "\x07PS C:\\Users\\me> \x1b]7;file://box/C:/Users/me\x07\x1b]133;B;motty=" + token + "\x07"
+
+	shell.say(prompt)
+	state.Wake()
+	if shell.typed() != "cd /tmp/projects\r" {
+		t.Fatalf("typed %q, want only the first line", shell.typed())
+	}
+
+	// The first line's own echo is not its completion.
+	shell.say("cd /tmp/projects\r\n")
+	state.Wake()
+	if shell.typed() != "cd /tmp/projects\r" {
+		t.Fatalf("sent the second line before the prompt came back: %q", shell.typed())
+	}
+
+	shell.say(prompt)
+	state.Wake()
+	if shell.typed() != "cd /tmp/projects\rgit status\r" {
+		t.Fatalf("typed %q, want the second line after its prompt", shell.typed())
+	}
+}
+
 func TestLoginCommandFallsBackToQuietWhenNoPromptIsReported(t *testing.T) {
 	state, shell, now := loginCommandSession(t, "cd /srv")
 	shell.say("banner\r\n$ ")

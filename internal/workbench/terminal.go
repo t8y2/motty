@@ -89,6 +89,10 @@ type terminal struct {
 	// the next read completes it. It is nil for a UTF-8 shell.
 	encoding string
 	decoder  *charset.Decoder
+	// backspace is the byte the Backspace key sends: DEL unless the session's
+	// host chose Ctrl+H. Zero is that default, which a terminal with no session
+	// of its own (the AI CLI sign-in) sends.
+	backspace backspaceKey
 	// pumpBudget is the window-thread time a Wake may spend parsing this
 	// terminal's output; see pumpBudget.
 	pumpBudget time.Duration
@@ -638,6 +642,26 @@ func (t *terminal) resetFolderSync() {
 	t.promptVersion++
 }
 
+// promptIdle reports whether the shell is waiting for a line at a prompt it
+// drew. A shell that reports command starts proves it: promptReady needs one,
+// and the prompt end that sets it follows the last command. A shell whose
+// prompt reports never carry a command start reports the same state the only
+// way it has: its prompt start was seen and its line editor owns the cursor
+// (inputLine). That is a PowerShell wrapping its prompt (the Windows Terminal
+// and SSH integrations), CMD's PROMPT, and a local shell before its first
+// command. Submissions are not counted here: without a command report nothing
+// clears the count, and the prompt start that follows each one already takes
+// the shell out of this state. This is readiness to type a line, not proof that
+// no command is running: a prompt-only shell cannot tell the two apart, so
+// anything that types into it later — the file panel following its navigation,
+// completion — must keep asking for commandReporting.
+func (t *terminal) promptIdle() bool {
+	if t.promptReady {
+		return true
+	}
+	return t.folderIntegrationSeen && !t.commandReporting && t.promptStarted && t.inputLine
+}
+
 // Local messages are drawn with the terminal's own colors, so a connection's
 // story looks like the program output that follows it.
 const (
@@ -1056,7 +1080,7 @@ func (state *State) openShell(session *Session) {
 		return
 	}
 	size := state.terminalSize(t.screen.Size())
-	config := sshconn.ShellConfig{Cols: size.Cols, Rows: size.Rows, PixelWidth: size.PixelWidth, PixelHeight: size.PixelHeight, Notify: state.notifyFor(session), Command: session.containerCommand}
+	config := sshconn.ShellConfig{Cols: size.Cols, Rows: size.Rows, PixelWidth: size.PixelWidth, PixelHeight: size.PixelHeight, Notify: state.notifyFor(session), Command: session.containerCommand, Erase: session.host.Backspace.byte()}
 	// Local directory restoration needs reports even with file-panel following
 	// off. SSH also needs reports for automatic completion, independently of
 	// file-panel following and path tabs. A host confined to the interactive
@@ -1211,6 +1235,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	// A new shell is a new byte stream: choose its charset and drop any partial
 	// character a previous shell left in the decoder.
 	t.setEncoding(session.host.Encoding)
+	t.backspace = session.host.Backspace
 	if t.decoder != nil {
 		t.decoder.Reset()
 	}
@@ -2184,7 +2209,7 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		}
 	}
 	if len(bytes) == 0 {
-		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys)
+		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys, t.backspace.byte())
 	}
 	if len(bytes) > 0 {
 		if event.Release || event.Key.IsModifier() {
@@ -2537,7 +2562,7 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 			key, lines = gfx.KeyUp, -lines
 		}
 		for range min(lines, 5) {
-			t.send(term.EncodeKey(key, 0, "", modes.AppCursorKeys))
+			t.send(term.EncodeKey(key, 0, "", modes.AppCursorKeys, term.DeleteByte))
 		}
 		return gfx.EventResult{Handled: true}
 	}

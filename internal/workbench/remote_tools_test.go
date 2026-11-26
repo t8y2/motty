@@ -219,6 +219,8 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.containerInspect), nil
 		}
 		return []byte(containerInspectFixture), nil
+	case command == "motty-container-runtime":
+		return []byte("docker\n"), nil
 	case strings.HasPrefix(command, "docker images"):
 		return []byte(imageFixture), nil
 	case strings.HasPrefix(command, "docker volume ls"):
@@ -420,6 +422,8 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 0) // web
 	clickRemoteToolsAction(t, state, hitRemoteLogs)
+	// The command is built for the server's engine off the window thread.
+	waitFor(t, state, func() bool { return strings.Contains(shell.typed(), "docker logs -f --tail 200 0f1e2d3c4b5a\r") })
 	if state.modal != modalNone || !strings.Contains(shell.typed(), "docker logs -f --tail 200 0f1e2d3c4b5a\r") {
 		t.Fatalf("modal %d, the terminal got %q", state.modal, shell.typed())
 	}

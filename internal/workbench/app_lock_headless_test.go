@@ -3,6 +3,7 @@
 package workbench
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -13,6 +14,74 @@ import (
 	"github.com/vivaui/viva/text"
 	"motty/internal/i18n"
 )
+
+func TestAppLockKeepsWindowChromeAvailable(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	if err := finishAppLock(t, state, appLockEnable, "", "fixture password"); err != nil {
+		t.Fatal(err)
+	}
+	state.lockApplication()
+	if !state.appLocked() {
+		t.Fatal("profile did not lock")
+	}
+
+	config := state.WindowConfig(app.Config{
+		Title: "Motty", Width: 1200, Height: 840, Tree: Tree(),
+		WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight,
+		WindowControls: state.WindowControlsStyle, Paint: state.Paint, OnPointer: state.Pointer,
+	})
+	var releaseTarget gfx.ID
+	var releaseHandled bool
+	pointer := config.OnPointer
+	config.OnPointer = func(event gfx.PointerEvent) gfx.EventResult {
+		result := pointer(event)
+		if event.Kind == gfx.PointerUp {
+			releaseTarget, releaseHandled = event.Target, result.Handled
+		}
+		return result
+	}
+	var canvas gfx.Canvas
+	driver, err := app.NewDriver(config, &canvas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer driver.Close()
+	x := state.viewport.Width / 2
+	if got := driver.PressAt(x, windowBarHeight/2); got != app.PressMove {
+		t.Errorf("locked titlebar press=%v, want a native move region", got)
+	}
+	if got := driver.PressAt(x, windowBarHeight+1); got != app.PressClient {
+		t.Errorf("press below the titlebar=%v, want client area", got)
+	}
+	stale := gfx.PointerEvent{Kind: gfx.PointerUp, X: 20, Y: 20, Viewport: state.viewport, Target: hitWindowSettings}
+	if !pointer(stale).Handled {
+		t.Fatal("lock screen let a stale workbench control handle a release")
+	}
+	if runtime.GOOS == "windows" && config.OnShortcut(gfx.KeyEvent{Text: " ", Modifiers: gfx.ModifierAlt}).Handled {
+		t.Error("lock screen consumed the Windows window-menu shortcut")
+	}
+	if state.titlebarTrailing == 0 {
+		return // The system draws and routes the buttons.
+	}
+
+	style := state.WindowControlsStyle()
+	for _, label := range []string{style.Minimize, style.Maximize, style.CloseName} {
+		hit, ok := hitByLabelRoleLast(&canvas, label, gfx.RoleButton)
+		if !ok {
+			t.Fatalf("missing window button %q", label)
+		}
+		x, y := hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2
+		if got := driver.PressAt(x, y); got != app.PressControl {
+			t.Errorf("window button %q press=%v, want a control", label, got)
+		}
+		if err := driver.Click(x, y); err != nil {
+			t.Fatal(err)
+		}
+		if releaseTarget != hit.ID || releaseHandled {
+			t.Errorf("window button %q release target=%v, handled=%t", label, releaseTarget, releaseHandled)
+		}
+	}
+}
 
 func TestAppLockHeadlessEnableLockAndPasswordUnlock(t *testing.T) {
 	_, options := newWorld(t)

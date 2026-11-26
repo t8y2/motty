@@ -13,6 +13,7 @@ func TestVerticalTabsSettingsPersistAndSupportKeyboard(t *testing.T) {
 		t.Fatal("old or invalid settings must keep horizontal tabs")
 	}
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
 	for _, label := range []string{state.messages.SettingsTabsHorizontal, state.messages.SettingsTabsVertical} {

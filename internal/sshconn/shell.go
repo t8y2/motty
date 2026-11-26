@@ -65,6 +65,10 @@ type ShellConfig struct {
 	// A host whose remote charset is configured (e.g. GB18030) wants the server
 	// to keep its own locale; the client decodes that stream instead.
 	SkipUTF8Locale bool
+	// Erase is the byte the Backspace key sends, which the pty names as its
+	// erase character so that the server's line editor deletes what the key
+	// deletes: DEL (0x7f) or Ctrl+H (0x08). Zero means DEL.
+	Erase byte
 }
 
 // Size is the terminal size the config describes: the grid in cells and the
@@ -142,7 +146,7 @@ func (conn *Conn) OpenShell(config ShellConfig) (*Shell, error) {
 		term = "xterm-256color"
 	}
 	size := config.Size()
-	if err := requestPty(session, term, size, ptyModes()); err != nil {
+	if err := requestPty(session, term, size, ptyModes(config.Erase)); err != nil {
 		session.Close()
 		return nil, fmt.Errorf("request pty: %w", err)
 	}
@@ -420,15 +424,20 @@ func (queue *inputQueue) close() {
 	queue.ready.Broadcast()
 }
 
-// backspaceByte is what the terminal sends for Backspace (term.EncodeKey).
-const backspaceByte = 0x7f
+// deleteByte is DEL, the byte the Backspace key sends unless a host chose
+// Ctrl+H (term.EncodeKey).
+const deleteByte byte = 0x7f
 
 // ptyModes are the terminal modes a pty is asked for. They name the erase
 // character, as OpenSSH does from its own terminal: a system whose terminals
 // erase with Control+H by default, AIX and HP-UX among them, would otherwise
-// echo every Backspace as ^? instead of deleting.
-func ptyModes() ssh.TerminalModes {
-	return ssh.TerminalModes{ssh.ECHO: 1, ssh.VERASE: backspaceByte, ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
+// echo every Backspace as ^? instead of deleting. erase is the byte the
+// Backspace key sends, so the server erases what the key erases.
+func ptyModes(erase byte) ssh.TerminalModes {
+	if erase == 0 {
+		erase = deleteByte
+	}
+	return ssh.TerminalModes{ssh.ECHO: 1, ssh.VERASE: uint32(erase), ssh.TTY_OP_ISPEED: 38400, ssh.TTY_OP_OSPEED: 38400}
 }
 
 // requestPty sends RFC 4254's pty-req for the given terminal. ssh.Session's own

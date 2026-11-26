@@ -536,6 +536,10 @@ func (state *State) askPullImage() {
 					state.status = command
 					return nil
 				})
+			// The command is built off the window thread, and its result is
+			// applied only where the tools are on show: the form gives way to them
+			// rather than to nothing, as its cancel does.
+			back(state)
 			return ""
 		},
 		cancel: back,

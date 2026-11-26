@@ -201,7 +201,7 @@ func (conn *Conn) openRelayShell(client *ssh.Client, endpoint Endpoint, nonce st
 	// The terminal is wide so that a long typed line is not wrapped by the
 	// shell's own line editor. Its size is a stream this client only relays, so
 	// it has no pixels to report.
-	if err := requestPty(session, "xterm", termsize.Size{Cols: 240, Rows: 24}, ptyModes()); err != nil {
+	if err := requestPty(session, "xterm", termsize.Size{Cols: 240, Rows: 24}, ptyModes(deleteByte)); err != nil {
 		session.Close()
 		return nil, fmt.Errorf("open a terminal on %s: %w", endpoint.address(), err)
 	}

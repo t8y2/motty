@@ -565,8 +565,13 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 		if state.modal == modalAppLock && state.appLockBusy() {
 			return gfx.EventResult{Handled: true}
 		}
-		if state.appAccessBlocked() && (!appLockOwns(event.Target)) {
-			return gfx.EventResult{Handled: true}
+		if state.appAccessBlocked() && !appLockOwns(event.Target) {
+			// Viva runs its window buttons after OnPointer. Leave the trailing
+			// titlebar inset unhandled without routing it to the workbench page.
+			buttons := gfx.Rect{
+				X: event.Viewport.Width - state.titlebarTrailing, Width: state.titlebarTrailing, Height: windowBarHeight,
+			}
+			return gfx.EventResult{Handled: !pointInRect(event.X, event.Y, buttons)}
 		}
 		return pointer(event)
 	}
@@ -1032,6 +1037,11 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, backdrop boo
 				})
 				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)
 			})
+			if !probe {
+				// Over the tab row, as the stack's later child: the arrows take no
+				// width from it, and their margin leaves the new-tab button clear.
+				state.declareWindowBarTabArrows(c)
+			}
 			if probe {
 				chrome.probeArea = area
 			}
@@ -1191,6 +1201,12 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 	if probe {
 		return ui.Slot(c).Size(barButtonSize, barButtonSize)
 	}
+	return state.barIconButton(c, id, icon, label, label)
+}
+
+// barIconButton is a window-bar button drawn now, with its tooltip given apart:
+// hint is what the tooltip shows, and empty when the icon's meaning needs none.
+func (state *State) barIconButton(c ui.C, id gfx.ID, icon uint8, label, hint string) ui.Box {
 	pal, canvas := state.pal, c.Canvas()
 	foreground := pal.muted
 	var fill gfx.Color
@@ -1201,7 +1217,7 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 		fill, foreground = pal.tabHover, pal.text
 	}
 	return ui.Row(c).Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
-		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: label}).Children(func() {
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: hint}).Children(func() {
 		ui.Icon(c, lucideIcons[icon]).Color(foreground)
 	})
 }
@@ -1211,7 +1227,7 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 // the layout kept for them, and the session's name.
 func (state *State) paintWindowBarParts(canvas *gfx.Canvas, strip gfx.Rect) {
 	bar := &state.chrome.bar
-	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
+	state.paintWorkspaceTabParts(canvas, state.windowBarTabsRoom(canvas, strip), bar.tabs)
 	state.paintWindowBarTitle(canvas)
 	state.paintToolbarDockTop(canvas)
 }
@@ -3300,12 +3316,30 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				// delivers a click lays out what it did before it, the choice writes
 				// its value at the end, and the next frame draws it.
 				if editor.protocol == protocolSerial {
-					// The device and line rows are the page's fields; the flow control
-					// takes the row under them.
+					// The device and line rows are the page's fields; the flow
+					// control and the Backspace key share the row under them.
 					endpoint := b.endpoint
 					endpoint.Children(func() {
-						ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Height(rowHeight).Children(func() {
-							b.flow = state.declareHostFlowChoice(c)
+						ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Children(func() {
+							ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+								// A zero basis: with Grow alone the wider choice starts ahead and
+								// takes more than half the row.
+								ui.Column(c).Basis(0).Grow(1).Children(func() {
+									b.flow = state.declareHostFlowChoice(c)
+								})
+								ui.Column(c).Basis(0).Grow(1).Children(func() {
+									b.backspace = state.declareHostBackspaceChoice(c)
+								})
+							})
+						})
+					})
+				}
+				if editor.protocol == protocolTelnet {
+					// Telnet has the Backspace key alone, under its address.
+					endpoint := b.endpoint
+					endpoint.Children(func() {
+						ui.Column(c).Absolute().Left(0).Right(0).Top(rowHeight).Height(rowHeight).Children(func() {
+							b.backspace = state.declareHostBackspaceChoice(c)
 						})
 					})
 				}
@@ -3424,6 +3458,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if b.flow.Valid() {
 		state.rememberHostChoice(canvas, b.flow.Rect(), &editor.form.choiceIDs.flow, state.hostFlowChoiceLabel(editor.flow))
 	}
+	if b.backspace.Valid() {
+		state.rememberHostChoice(canvas, b.backspace.Rect(), &editor.form.choiceIDs.backspace, state.hostBackspaceChoiceLabel(editor.backspace))
+	}
 	if b.transfer.Valid() {
 		state.rememberHostChoice(canvas, b.transfer.Rect(), &editor.form.choiceIDs.transfer, state.hostTransferChoiceLabel(editor.transfer))
 	}
@@ -3432,6 +3469,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	}
 	if editor.form.algoBody.loginPolicy.Valid() {
 		state.rememberHostChoice(canvas, editor.form.algoBody.loginPolicy.Rect(), &editor.form.choiceIDs.loginPolicy, state.hostLoginPolicyChoiceLabel(editor.loginFailurePolicy))
+	}
+	if editor.form.algoBody.backspace.Valid() {
+		state.rememberHostChoice(canvas, editor.form.algoBody.backspace.Rect(), &editor.form.choiceIDs.backspace, state.hostBackspaceChoiceLabel(editor.backspace))
 	}
 	editor.form.clipped = false
 }
