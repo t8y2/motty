@@ -143,8 +143,8 @@ type savedTransport struct {
 	Encoding string `json:"encoding,omitempty"`
 	Line     string `json:"line,omitempty"` // serial: "115200 8N1"
 	Flow     string `json:"flow,omitempty"` // serial: "rtscts" or "xonxoff"
-	// Backspace is "ctrl-h" for a serial or Telnet host whose Backspace key
-	// sends BS instead of DEL; empty (or missing) sends DEL, as a host that
+	// Backspace is "ctrl-h" for a serial, Telnet or SSH host whose Backspace
+	// key sends BS instead of DEL; empty (or missing) sends DEL, as a host that
 	// never chose one always did.
 	Backspace string `json:"backspace,omitempty"`
 	// Proxy is nil when this host inherits the global outbound proxy. An entry
@@ -278,6 +278,8 @@ func (host Host) transport() savedTransport {
 	mode, list := host.savedAlgo()
 	if host.mosh() {
 		transport.Terminal = "mosh"
+	} else if host.Backspace == backspaceCtrlH {
+		transport.Backspace = "ctrl-h"
 	}
 	transport.Algorithms, transport.AlgorithmList = mode, list
 	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
@@ -354,6 +356,10 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 			host.InteractiveOnly = false
 		default:
 			return false
+		}
+		host.Backspace = backspaceDEL
+		if !host.mosh() {
+			host.Backspace = restoredBackspace(transport.Backspace)
 		}
 		return host.applyTransfer(transport.Transfer) && host.applyAlgo(transport.Algorithms, transport.AlgorithmList)
 	case "telnet":

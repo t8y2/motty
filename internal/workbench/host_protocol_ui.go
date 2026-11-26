@@ -675,6 +675,9 @@ func (state *State) sshAdvancedRowsHeight() float32 {
 	if state.editor.algoMode == algoCustom {
 		rows++
 	}
+	if !state.editor.moshTerminal() {
+		rows++
+	}
 	return rows*hostFormRowHeight + loginCommandAreaHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + state.sshSwitchRowsHeight()
 }
 
@@ -771,8 +774,8 @@ type hostVNCRowsBody struct {
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
 type hostAlgoRowsBody struct {
-	algo, custom, login, loginPolicy, otp, scan, paste, remove ui.Box
-	identitiesOnlyHelp, agentHelp                              ui.Box
+	algo, custom, login, loginPolicy, backspace, otp, scan, paste, remove ui.Box
+	identitiesOnlyHelp, agentHelp                                         ui.Box
 }
 
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
@@ -844,6 +847,12 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 			})
 		}
 		heading(m.AdvancedSession)
+		if !editor.moshTerminal() {
+			b.backspace = hostFormChoice(c, m.FieldBackspace, rowHeight, &editor.backspace, hostBackspaceChoices[:], state.hostBackspaceChoiceLabel)
+			if b.backspace.Changed() {
+				state.dialogError = ""
+			}
+		}
 		state.declareDialogCheck(c, hitDialogForwardX11, m.X11Forward, editor.forwardX11, 4, 0)
 		state.declareDialogCheck(c, hitDialogAgentForward, m.AgentForward, editor.agentForward, 12, 0)
 		state.declareDialogCheck(c, hitDialogNoHistory, state.messages.History.HostNoRecord, editor.noHistory, 12, 0)

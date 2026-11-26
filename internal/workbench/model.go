@@ -34,10 +34,10 @@ type Host struct {
 	// carries the terminal over UDP. It is meaningful only for protocolSSH.
 	Terminal hostTerminal
 	Line     serial.Settings
-	// Backspace is the byte the Backspace key sends in a serial or Telnet
-	// host's terminals: DEL, or Ctrl+H for a device console whose line editor
-	// erases on BS alone. Meaningful only for the protocols hostAsksBackspace
-	// names.
+	// Backspace is the byte the Backspace key sends: DEL, or Ctrl+H for a
+	// console whose line editor erases on BS alone, or an SSH server that
+	// expects BS. It is also the pty's erase character for an SSH host.
+	// Meaningful only where hostAsksBackspace says the host has the choice.
 	Backspace backspaceKey
 	// Algo, when set, replaces the default SSH algorithms for this host. Nil is
 	// the default, so a host that never asked costs one pointer.
@@ -178,11 +178,16 @@ func reusePolicyFor(host Host) reuseHostPolicy {
 		desktopWidth: host.DesktopWidth, desktopHeight: host.DesktopHeight}
 }
 
-// hostAsksBackspace reports whether the form lets a host of the protocol
-// choose its Backspace key. A serial line and Telnet have no handshake for the
-// erase character, unlike the pty of an SSH session, so a console whose line
-// editor erases on BS alone needs the choice made per host.
-func hostAsksBackspace(protocol hostProtocol) bool {
+// hostAsksBackspace reports whether the form lets a host of the protocol and
+// terminal choose its Backspace key. A serial line and Telnet have no handshake
+// for the erase character, so a console whose line editor erases on BS alone
+// needs the choice made per host. An SSH host has the choice too, for a server
+// whose terminals erase with Ctrl+H; a mosh terminal runs on mosh-server, not on
+// the SSH pty, so it has none.
+func hostAsksBackspace(protocol hostProtocol, terminal hostTerminal) bool {
+	if protocol == protocolSSH {
+		return terminal != terminalMosh
+	}
 	return protocol == protocolSerial || protocol == protocolTelnet
 }
 

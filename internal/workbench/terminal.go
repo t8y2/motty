@@ -1080,7 +1080,7 @@ func (state *State) openShell(session *Session) {
 		return
 	}
 	size := state.terminalSize(t.screen.Size())
-	config := sshconn.ShellConfig{Cols: size.Cols, Rows: size.Rows, PixelWidth: size.PixelWidth, PixelHeight: size.PixelHeight, Notify: state.notifyFor(session), Command: session.containerCommand}
+	config := sshconn.ShellConfig{Cols: size.Cols, Rows: size.Rows, PixelWidth: size.PixelWidth, PixelHeight: size.PixelHeight, Notify: state.notifyFor(session), Command: session.containerCommand, Erase: session.host.Backspace.byte()}
 	// Local directory restoration needs reports even with file-panel following
 	// off. SSH also needs reports for automatic completion, independently of
 	// file-panel following and path tabs. A host confined to the interactive

@@ -3465,6 +3465,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if editor.form.algoBody.loginPolicy.Valid() {
 		state.rememberHostChoice(canvas, editor.form.algoBody.loginPolicy.Rect(), &editor.form.choiceIDs.loginPolicy, state.hostLoginPolicyChoiceLabel(editor.loginFailurePolicy))
 	}
+	if editor.form.algoBody.backspace.Valid() {
+		state.rememberHostChoice(canvas, editor.form.algoBody.backspace.Rect(), &editor.form.choiceIDs.backspace, state.hostBackspaceChoiceLabel(editor.backspace))
+	}
 	editor.form.clipped = false
 }
 

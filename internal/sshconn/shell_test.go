@@ -366,6 +366,28 @@ func TestPtyRequestNamesTheByteBackspaceSends(t *testing.T) {
 	})
 	w := openShell(t, connect(t, server), 80, 24)
 	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome") })
+	if erase := ptyErase(server); erase != 0x7f {
+		t.Fatalf("pty erase = %#x, want the DEL that Backspace sends", erase)
+	}
+}
+
+// A host whose Backspace key sends Ctrl+H asks for that byte as the pty's erase
+// character too, so the server's line editor and the key agree.
+func TestPtyRequestNamesTheEraseByteAHostChose(t *testing.T) {
+	server := startServer(t, func(server *testServer) {
+		server.password = "secret"
+		server.shell = echoShell
+	})
+	w := openShellWith(t, connect(t, server), ShellConfig{Cols: 80, Rows: 24, Erase: 0x08})
+	w.until("the greeting", func(output string) bool { return strings.Contains(output, "welcome") })
+	if erase := ptyErase(server); erase != 0x08 {
+		t.Fatalf("pty erase = %#x, want the Ctrl+H the host chose", erase)
+	}
+}
+
+// ptyErase reads the erase character the pty request named for the server's
+// shell session.
+func ptyErase(server *testServer) uint32 {
 	server.mu.Lock()
 	shell := server.lastShell
 	server.mu.Unlock()
@@ -378,9 +400,7 @@ func TestPtyRequestNamesTheByteBackspaceSends(t *testing.T) {
 			erase = binary.BigEndian.Uint32(modes[1:5])
 		}
 	}
-	if erase != 0x7f {
-		t.Fatalf("pty erase = %#x, want the DEL that Backspace sends", erase)
-	}
+	return erase
 }
 
 // fakeShellState reads the single shell session the server is running.

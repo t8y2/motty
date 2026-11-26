@@ -131,7 +131,7 @@ type hostEditor struct {
 	connection       hostConnectionType
 	connectionBefore hostConnectionType
 	flow             serial.Flow
-	// backspace is the byte the serial or Telnet host's Backspace key sends.
+	// backspace is the byte the Backspace key of a host that asks for it sends.
 	backspace backspaceKey
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
 	// console, noAudio, standardSecurity and legacyTLS are RDP's own: the
@@ -393,7 +393,7 @@ func (editor *hostEditor) load(host Host) {
 	editor.icon, editor.iconChosen, editor.system = host.Icon, true, host.System
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
 	editor.backspace = backspaceDEL
-	if hostAsksBackspace(host.Protocol) {
+	if hostAsksBackspace(host.Protocol, host.Terminal) {
 		editor.backspace = host.Backspace
 	}
 	editor.terminal = host.Terminal
@@ -444,7 +444,7 @@ func (editor *hostEditor) host(id uint32) Host {
 	} else {
 		host.Port, _ = editor.portNumber()
 	}
-	if hostAsksBackspace(editor.protocol) {
+	if hostAsksBackspace(editor.protocol, editor.terminal) {
 		host.Backspace = editor.backspace
 	}
 	if editor.protocol == protocolVNC || editor.protocol == protocolRDP {
@@ -610,6 +610,12 @@ func (editor *hostEditor) applyProtocol(previous hostProtocol) {
 				break
 			}
 		}
+	}
+	// The Backspace key belongs to the console protocols that ask for it, and
+	// serial and Telnet keep the choice between them. An SSH host starts on
+	// DEL, so a choice made for a console is not carried into one, nor back.
+	if protocol == protocolSSH || previous == protocolSSH {
+		editor.backspace = backspaceDEL
 	}
 	editor.protocol = protocol
 	if protocol != protocolSSH {

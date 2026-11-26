@@ -61,8 +61,8 @@ func (protocol hostProtocol) formName(state *State) string {
 }
 
 // Such a host can make its key send Ctrl+H. The choice is the form's, is saved
-// only when it is not the default, and comes back; a host whose shell
-// negotiates its erase character is not offered it.
+// only when it is not the default, and comes back. An SSH host has the same
+// choice under Advanced; see TestSSHHostsChooseTheBackspaceKeyUnderAdvanced.
 func TestConsoleHostsKeepTheByteTheirBackspaceKeysSend(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	m := state.messages.Tools
@@ -100,7 +100,7 @@ func TestConsoleHostsKeepTheByteTheirBackspaceKeysSend(t *testing.T) {
 	state.Click(hitAddHost)
 	clickHostChoice(t, state, m.ProtocolSSH)
 	if state.hostFormOffersBackspaceKey() {
-		t.Fatalf("an SSH host asks for the %q; its pty is told the erase character", m.FieldBackspace)
+		t.Fatalf("an SSH host offers %q with Advanced closed", m.FieldBackspace)
 	}
 	// A choice made for a console is not carried over to another protocol.
 	clickHostChoice(t, state, m.ProtocolSerial)
@@ -215,4 +215,78 @@ func TestConsoleSessionBackspaceSendsTheByteItsHostChose(t *testing.T) {
 			})
 		}
 	}
+}
+
+// An SSH host has the same Backspace key choice, under Advanced with the other
+// session options. The choice is saved only when it is Ctrl+H, comes back, and
+// reaches the pty as the erase character. A mosh terminal runs on mosh-server,
+// not on this pty, so it is not offered the choice.
+func TestSSHHostsChooseTheBackspaceKeyUnderAdvanced(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	m := state.messages.Tools
+	state.Click(hitAddHost)
+	clickHostChoice(t, state, m.ProtocolSSH)
+	if state.hostFormOffersBackspaceKey() {
+		t.Fatalf("an SSH host offers %q with Advanced closed", m.FieldBackspace)
+	}
+	state.editor.advancedOpen = true
+	if !state.hostFormOffersBackspaceKey() {
+		t.Fatalf("an SSH host does not offer %q and %q under Advanced", m.BackspaceDEL, m.BackspaceCtrlH)
+	}
+	typeInto(state, hitDialogLabel, "Box")
+	typeInto(state, hitDialogAddress, "box.example.com")
+	clickHostChoice(t, state, m.BackspaceCtrlH)
+	state.Click(hitDialogSubmit)
+	if state.modal == modalNewHost {
+		t.Fatalf("dialog stayed open: %q", state.dialogError)
+	}
+	saved := state.hosts[len(state.hosts)-1]
+	if saved.Protocol != protocolSSH || saved.Backspace != backspaceCtrlH {
+		t.Fatalf("saved host = %+v, want the Ctrl+H key kept with the SSH host", saved)
+	}
+	state.openEditHostID(saved.ID)
+	if state.editor.backspace != backspaceCtrlH {
+		t.Fatalf("form backspace = %v when editing a Ctrl+H SSH host", state.editor.backspace)
+	}
+	if state.hostFormOffersBackspaceKey() {
+		t.Fatal("editing an SSH host opens Advanced; it starts closed")
+	}
+	state.editor.advancedOpen = true
+	if !state.hostFormOffersBackspaceKey() {
+		t.Fatal("editing an SSH host under Advanced lost the Backspace key's choice")
+	}
+	state.Click(hitDialogCancel)
+
+	chosen, err := json.Marshal(saved.transport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(chosen), `"backspace":"ctrl-h"`) {
+		t.Fatalf("SSH host saves %s without the choice", chosen)
+	}
+	var read savedTransport
+	if err := json.Unmarshal(chosen, &read); err != nil {
+		t.Fatal(err)
+	}
+	var restored Host
+	if !restored.applyTransport(read) || restored.Backspace != backspaceCtrlH || restored.Protocol != protocolSSH {
+		t.Fatalf("SSH host round trips as %+v without the choice", restored)
+	}
+	plain, err := json.Marshal(Host{Protocol: protocolSSH, Line: serial.Default}.transport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(plain), "backspace") {
+		t.Fatalf("an SSH host on the default saves %s", plain)
+	}
+
+	// A mosh terminal is not offered the choice, and never saves one.
+	state.Click(hitAddHost)
+	clickHostChoice(t, state, m.ProtocolSSH)
+	state.editor.advancedOpen = true
+	clickHostChoice(t, state, m.ProtocolMosh)
+	if state.hostFormOffersBackspaceKey() {
+		t.Fatalf("a mosh terminal offers %q", m.FieldBackspace)
+	}
+	state.Click(hitDialogCancel)
 }
