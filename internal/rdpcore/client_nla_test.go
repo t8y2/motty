@@ -257,3 +257,114 @@ func mustTestPort(t *testing.T, text string) int {
 	}
 	return port
 }
+
+// TestCredSSPVersionProbeRetriesSPNEGOOnLegacyTLS reproduces issue #1612:
+// when a legacy Windows server rejects CredSSP v6 before the NTLM Challenge
+// (e.g. with a TLS internal_error), tryCredSSP switches to raw NTLM for that
+// dial. Subsequent (TLS version, CredSSP version) probes must still try SPNEGO
+// first rather than staying stuck on raw NTLM, which Windows rejects.
+func TestCredSSPVersionProbeRetriesSPNEGOOnLegacyTLS(t *testing.T) {
+	certificateServer := httptest.NewTLSServer(nil)
+	certificate := certificateServer.TLS.Certificates[0]
+	certificateServer.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	var spnegoV2Reached atomic.Bool
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			func() {
+				defer conn.Close()
+				var header [4]byte
+				if _, err := io.ReadFull(conn, header[:]); err != nil {
+					return
+				}
+				size := int(binary.BigEndian.Uint16(header[2:4])) - 4
+				if size < 8 || size > 4096 {
+					return
+				}
+				request := make([]byte, size)
+				if _, err := io.ReadFull(conn, request); err != nil {
+					return
+				}
+				requestedProtos := binary.LittleEndian.Uint32(request[len(request)-4:])
+				if requestedProtos&2 == 0 {
+					// Server requires NLA (HYBRID_REQUIRED_BY_SERVER = 0x05).
+					_, _ = conn.Write([]byte{3, 0, 0, 19, 14, 0xd0, 0, 0, 0, 0, 0, 3, 0, 8, 0, 5, 0, 0, 0})
+					return
+				}
+				if _, err := conn.Write([]byte{3, 0, 0, 19, 14, 0xd0, 0, 0, 0, 0, 0, 2, 0, 8, 0, 2, 0, 0, 0}); err != nil {
+					return
+				}
+				secured := tls.Server(conn, &tls.Config{
+					Certificates: []tls.Certificate{certificate},
+					MinVersion:   tls.VersionTLS10,
+					MaxVersion:   tls.VersionTLS10,
+					CipherSuites: []uint16{tls.TLS_RSA_WITH_AES_128_CBC_SHA},
+				})
+				if err := secured.Handshake(); err != nil {
+					return
+				}
+				first, err := readNLATestRequest(secured)
+				if err != nil || len(first.NegoTokens) != 1 {
+					return
+				}
+				raw := bytes.HasPrefix(first.NegoTokens[0].Data, []byte("NTLMSSP\x00"))
+				if raw || first.Version > 2 {
+					// Legacy Windows tears down TLS when it rejects the initial
+					// CredSSP version or an unwrapped NTLM token.
+					return
+				}
+				spnegoV2Reached.Store(true)
+				body, _ := asn1.Marshal(struct {
+					State asn1.Enumerated `asn1:"explicit,tag:0"`
+					Token []byte          `asn1:"explicit,tag:2"`
+				}{State: 1, Token: clientTestNTLMChallenge()})
+				token, _ := asn1.Marshal(asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: true, Bytes: body})
+				challenge := nlaTestRequest{Version: 2}
+				challenge.NegoTokens = append(challenge.NegoTokens, struct {
+					Data []byte `asn1:"explicit,tag:0"`
+				}{Data: token})
+				if err := writeNLATestRequest(secured, challenge); err != nil {
+					return
+				}
+				if _, err := readNLATestRequest(secured); err != nil {
+					return
+				}
+				_ = writeNLATestRequest(secured, nlaTestRequest{Version: 2, ErrorCode: 0xC000006D})
+			}()
+		}
+	}()
+
+	host, port, _ := net.SplitHostPort(listener.Addr().String())
+	options := DefaultOptions()
+	options.Host, options.Port = host, mustTestPort(t, port)
+	options.Username, options.Domain, options.Password = "User", "Domain", "Password"
+	options.LegacyTLS = true
+	client, err := NewClient(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.Connect()
+	client.Close()
+	listener.Close()
+	<-serverDone
+
+	if !spnegoV2Reached.Load() {
+		t.Fatalf("CredSSP version probe never retried SPNEGO at v2; got err = %v", err)
+	}
+	if !errors.Is(err, ErrAuthFailed) {
+		t.Fatalf("Connect error = %v, want ErrAuthFailed after reaching SPNEGO v2", err)
+	}
+}
