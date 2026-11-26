@@ -197,7 +197,7 @@ func (state *State) declareHostKeyDeployment(c ui.C) {
 					case !deployHostSupported(host):
 						status = m.KeyDeployHostUnsupported
 					case done && result.Error != "":
-						status, color = state.hostKeyDeployError(result.Error), state.pal.danger
+						status, color = state.hostKeyDeployError(result), state.pal.danger
 					case done && result.Switched:
 						status, color = m.KeyDeploySwitched, state.pal.text
 					case done && result.Imported:
@@ -223,36 +223,37 @@ func (state *State) declareHostKeyDeployment(c ui.C) {
 	})
 }
 
-func (state *State) hostKeyDeployError(message string) string {
+func (state *State) hostKeyDeployError(result hostKeyDeployResult) string {
 	m := state.messages
-	switch {
-	case message == "The selected SSH key is unavailable.":
+	switch result.Error {
+	case hostKeyDeployErrorKeyUnavailable:
 		return m.KeyDeployKeyUnavailable
-	case message == "Requires an SSH host that supports non-interactive Unix commands.":
+	case hostKeyDeployErrorUnsupportedHost:
 		return m.KeyDeployHostUnsupported
-	case message == "The connection route is unavailable or not supported for batch import.":
+	case hostKeyDeployErrorRoute:
 		return m.KeyDeployRouteUnsupported
-	case message == "The server did not confirm installation in ~/.ssh/authorized_keys.":
+	case hostKeyDeployErrorNotConfirmed:
 		return m.KeyDeployNotConfirmed
-	case message == "Public key installed. This identity has a certificate attached; automatic switching is not supported.":
+	case hostKeyDeployErrorCertificate:
 		return m.KeyDeployCertUnsupported
-	case strings.HasPrefix(message, "Public key installed, but key-only login was not verified:"):
+	case hostKeyDeployErrorNotVerified:
 		return m.KeyDeployNotVerified
-	case strings.HasPrefix(message, "Public key installed, but login settings were kept"):
+	case hostKeyDeployErrorCanceled:
 		return m.KeyDeploySwitchedNotSaved
-	case strings.HasPrefix(message, "Public key installed, but the saved host or key changed"):
+	case hostKeyDeployErrorHostChanged, hostKeyDeployErrorRouteChanged:
 		return m.KeyDeployChanged
-	case strings.HasPrefix(message, "Public key installed, but the connection route changed"):
-		return m.KeyDeployChanged
-	case strings.HasPrefix(message, "Host key is unknown or changed"),
-		strings.HasPrefix(message, "Host key changed"):
+	case hostKeyDeployErrorSave:
+		return m.KeyDeploySwitchedNotSaved
+	case hostKeyDeployErrorHostKey:
 		return m.KeyDeployHostKey
-	case strings.Contains(message, "saved password"), strings.Contains(message, "No saved login password"):
-		return m.KeyDeployNoPassword
-	case strings.Contains(message, "authentication failed"):
+	case hostKeyDeployErrorAuth:
 		return m.KeyDeployAuthFailed
-	case strings.Contains(message, "timed out"), strings.Contains(message, "Canceled"):
+	case hostKeyDeployErrorNoPassword:
+		return m.KeyDeployNoPassword
+	case hostKeyDeployErrorTimeout:
 		return m.KeyDeployTimeout
+	case hostKeyDeployErrorConnection, hostKeyDeployErrorOther:
+		return m.KeyDeployFailed
 	}
-	return message
+	return m.KeyDeployFailed
 }

@@ -987,6 +987,7 @@ var EnglishMessages = Messages{
 	KeyDeployTimeout:            "The connection timed out or was canceled",
 	KeyDeployKeyUnavailable:     "This key is not available. Only keys stored in Motty can be deployed.",
 	KeyDeployNoHosts:            "No saved SSH hosts to choose from.",
+	KeyDeployFailed:             "Deployment failed.",
 	KeyExportTitle:              "Export private key",
 	KeyExportedFmt:              "Exported key %s",
 	KeyExportReadFailed:         "Could not read this key. Check that it is still saved in Motty.",

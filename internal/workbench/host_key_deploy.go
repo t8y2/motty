@@ -57,11 +57,53 @@ printf '%s\n' motty-key-installed
 
 var hostKeyInstallCommand = "sh -c '" + strings.ReplaceAll(hostKeyInstallScript, "'", "'\"'\"'") + "'"
 
+// hostKeyDeployErrorCode is a stable reason the dialog localizes. The detail
+// carries the server's own words for the cases an operator should see; code
+// never depends on matching those words.
+type hostKeyDeployErrorCode string
+
+const (
+	hostKeyDeployErrorKeyUnavailable  hostKeyDeployErrorCode = "key-unavailable"
+	hostKeyDeployErrorUnsupportedHost hostKeyDeployErrorCode = "unsupported-host"
+	hostKeyDeployErrorRoute           hostKeyDeployErrorCode = "route-unsupported"
+	hostKeyDeployErrorNotConfirmed    hostKeyDeployErrorCode = "not-confirmed"
+	hostKeyDeployErrorCertificate     hostKeyDeployErrorCode = "certificate"
+	hostKeyDeployErrorNotVerified     hostKeyDeployErrorCode = "not-verified"
+	hostKeyDeployErrorCanceled        hostKeyDeployErrorCode = "canceled"
+	hostKeyDeployErrorHostChanged     hostKeyDeployErrorCode = "host-changed"
+	hostKeyDeployErrorRouteChanged    hostKeyDeployErrorCode = "route-changed"
+	hostKeyDeployErrorSave            hostKeyDeployErrorCode = "save-failed"
+	hostKeyDeployErrorHostKey         hostKeyDeployErrorCode = "host-key"
+	hostKeyDeployErrorAuth            hostKeyDeployErrorCode = "auth-failed"
+	hostKeyDeployErrorNoPassword      hostKeyDeployErrorCode = "no-password"
+	hostKeyDeployErrorTimeout         hostKeyDeployErrorCode = "timeout"
+	hostKeyDeployErrorConnection      hostKeyDeployErrorCode = "connection"
+	hostKeyDeployErrorOther           hostKeyDeployErrorCode = "other"
+)
+
+// hostKeyDeployFailure carries a reason code through the connection code. Its
+// text is only a fallback for logs and for a code this build does not know.
+type hostKeyDeployFailure struct {
+	code   hostKeyDeployErrorCode
+	detail string
+}
+
+func (failure *hostKeyDeployFailure) Error() string { return failure.detail }
+
+func hostKeyDeployFailureDetails(err error) (hostKeyDeployErrorCode, string) {
+	var failure *hostKeyDeployFailure
+	if errors.As(err, &failure) {
+		return failure.code, failure.detail
+	}
+	return hostKeyDeployErrorOther, err.Error()
+}
+
 type hostKeyDeployResult struct {
 	HostID   uint32
 	Imported bool
 	Switched bool
-	Error    string
+	Error    hostKeyDeployErrorCode
+	Detail   string
 	host     Host
 	login    string
 	route    connectionRoute
@@ -120,7 +162,11 @@ func (state *State) startHostKeyDeployment(hostIDs []uint32, keyRef string, swit
 	}
 	if err != nil || public == nil || !sshconn.IsStoredKey(keyRef) {
 		for _, id := range hostIDs {
-			deploy.results = append(deploy.results, hostKeyDeployResult{HostID: id, Error: "The selected SSH key is unavailable."})
+			deploy.results = append(deploy.results, hostKeyDeployResult{
+				HostID: id,
+				Error:  hostKeyDeployErrorKeyUnavailable,
+				Detail: "The selected SSH key is unavailable.",
+			})
 		}
 		return
 	}
@@ -138,13 +184,21 @@ func (state *State) startHostKeyDeployment(hostIDs []uint32, keyRef string, swit
 		seen[id] = true
 		host, ok := state.hostByID(id)
 		if !ok || !host.isSSH() || host.InteractiveOnly || host.mosh() || host.tunnel || host.CatalogID == "" || host.System == sshconn.SystemWindows {
-			deploy.results = append(deploy.results, hostKeyDeployResult{HostID: id, Error: "Requires an SSH host that supports non-interactive Unix commands."})
+			deploy.results = append(deploy.results, hostKeyDeployResult{
+				HostID: id,
+				Error:  hostKeyDeployErrorUnsupportedHost,
+				Detail: "Requires an SSH host that supports non-interactive Unix commands.",
+			})
 			continue
 		}
 		config, route, valid := state.hostCatalog.sshConfigFor(host, host, env)
 		config.NoProbes = true
 		if !valid || len(config.Relays) != 0 || (config.Proxy != nil && config.Proxy.Err != nil) {
-			deploy.results = append(deploy.results, hostKeyDeployResult{HostID: id, Error: "The connection route is unavailable or not supported for batch import."})
+			deploy.results = append(deploy.results, hostKeyDeployResult{
+				HostID: id,
+				Error:  hostKeyDeployErrorRoute,
+				Detail: "The connection route is unavailable or not supported for batch import.",
+			})
 			continue
 		}
 		passwords := make(map[sshconn.Endpoint]string)
@@ -187,18 +241,20 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 	defer cancel()
 	first, err := task.connect(ctx, task.config, false)
 	if err != nil {
-		out.Error = err.Error()
+		out.Error, out.Detail = hostKeyDeployFailureDetails(err)
 		return out
 	}
 	result, err := first.RunCommandInput(ctx, hostKeyInstallCommand, public, 4096)
 	first.Cancel()
 	if err != nil {
-		out.Error = "The server did not confirm installation in ~/.ssh/authorized_keys."
+		out.Error = hostKeyDeployErrorNotConfirmed
+		out.Detail = err.Error()
 		return out
 	}
 	marker := strings.TrimSpace(string(result))
 	if marker != "motty-key-installed" && marker != "motty-key-already-present" {
-		out.Error = "The server did not confirm installation in ~/.ssh/authorized_keys."
+		out.Error = hostKeyDeployErrorNotConfirmed
+		out.Detail = "The server did not confirm installation in ~/.ssh/authorized_keys."
 		return out
 	}
 	out.Imported = true
@@ -207,7 +263,8 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 	}
 
 	if task.certified {
-		out.Error = "Public key installed. This identity has a certificate attached; automatic switching is not supported."
+		out.Error = hostKeyDeployErrorCertificate
+		out.Detail = "Public key installed. This identity has a certificate attached; automatic switching is not supported."
 		return out
 	}
 
@@ -221,7 +278,7 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 	readKey := config.StoredKey
 	config.StoredKey = func(ref string) ([]byte, error) {
 		if readKey == nil {
-			return nil, errors.New("stored key is unavailable")
+			return nil, &hostKeyDeployFailure{code: hostKeyDeployErrorKeyUnavailable, detail: "stored key is unavailable"}
 		}
 		private, err := readKey(ref)
 		if err != nil || ref != keyRef {
@@ -230,7 +287,7 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 		info, err := keyidentity.InspectData(ref, private)
 		if err != nil || info.Fingerprint != fingerprint || info.SecurityKey {
 			clear(private)
-			return nil, errors.New("stored key changed during verification")
+			return nil, &hostKeyDeployFailure{code: hostKeyDeployErrorKeyUnavailable, detail: "stored key changed during verification"}
 		}
 		return private, nil
 	}
@@ -243,7 +300,10 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 	}
 	verified, err := task.connect(ctx, config, true)
 	if err != nil {
-		out.Error = "Public key installed, but key-only login was not verified: " + err.Error()
+		out.Error, out.Detail = hostKeyDeployFailureDetails(err)
+		if out.Error == hostKeyDeployErrorOther {
+			out.Detail = "Public key installed, but key-only login was not verified: " + err.Error()
+		}
 		return out
 	}
 	verified.Cancel()
@@ -253,7 +313,7 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 
 func (task hostKeyDeployTask) connect(ctx context.Context, config sshconn.Config, verify bool) (*sshconn.Conn, error) {
 	if ctx.Err() != nil {
-		return nil, errors.New("Canceled before connecting.")
+		return nil, &hostKeyDeployFailure{code: hostKeyDeployErrorCanceled, detail: "Canceled before connecting."}
 	}
 	ticks := make(chan struct{}, 1)
 	config.Notify = func() {
@@ -263,11 +323,14 @@ func (task hostKeyDeployTask) connect(ctx context.Context, config sshconn.Config
 		}
 	}
 	conn := sshconn.Dial(config)
-	fail := func(message string) (*sshconn.Conn, error) { conn.Cancel(); return nil, errors.New(message) }
+	fail := func(code hostKeyDeployErrorCode, message string) (*sshconn.Conn, error) {
+		conn.Cancel()
+		return nil, &hostKeyDeployFailure{code: code, detail: message}
+	}
 	var version uint64
 	for {
 		if ctx.Err() != nil {
-			return fail("Connection timed out or was canceled.")
+			return fail(hostKeyDeployErrorTimeout, "Connection timed out or was canceled.")
 		}
 		status := conn.Status()
 		if status.Version != version || status.Phase == sshconn.PhaseConnected {
@@ -275,22 +338,22 @@ func (task hostKeyDeployTask) connect(ctx context.Context, config sshconn.Config
 			switch status.Phase {
 			case sshconn.PhaseConnected:
 				if verify && status.Method != "publickey" {
-					return fail("The server did not authenticate with the selected public key.")
+					return fail(hostKeyDeployErrorNotVerified, "The server did not authenticate with the selected public key.")
 				}
 				return conn, nil
 			case sshconn.PhaseHostKeyPrompt:
-				return fail("Host key is unknown or changed. Verify the fingerprint in a normal connection first.")
+				return fail(hostKeyDeployErrorHostKey, "Host key is unknown or changed. Verify the fingerprint in a normal connection first.")
 			case sshconn.PhasePasswordPrompt:
 				if (verify && status.EndpointRole == sshconn.EndpointTarget) || status.Attempt > 1 || !isPasswordQuestion(status.Questions) {
-					return fail("Login requires manual verification or the saved password was refused.")
+					return fail(hostKeyDeployErrorNoPassword, "Login requires manual verification or the saved password was refused.")
 				}
 				secret := task.passwords[status.Endpoint]
 				if secret == "" || task.secrets == nil {
-					return fail("No saved login password is available.")
+					return fail(hostKeyDeployErrorNoPassword, "No saved login password is available.")
 				}
 				password, ok, err := task.secrets.Get(secret)
 				if err != nil || !ok || password == "" {
-					return fail("No saved login password is available.")
+					return fail(hostKeyDeployErrorNoPassword, "No saved login password is available.")
 				}
 				conn.SubmitPassword(password)
 			case sshconn.PhaseKeyPassphrasePrompt:
@@ -305,17 +368,17 @@ func (task hostKeyDeployTask) connect(ctx context.Context, config sshconn.Config
 			case sshconn.PhaseFailed, sshconn.PhaseClosed:
 				switch {
 				case errors.Is(status.Err, sshconn.ErrHostKeyChanged):
-					return fail("Host key changed. Verify the fingerprint in a normal connection first.")
+					return fail(hostKeyDeployErrorHostKey, "Host key changed. Verify the fingerprint in a normal connection first.")
 				case errors.Is(status.Err, sshconn.ErrAuthFailed):
-					return fail("SSH authentication failed.")
+					return fail(hostKeyDeployErrorAuth, "SSH authentication failed.")
 				default:
-					return fail("SSH connection could not be established.")
+					return fail(hostKeyDeployErrorConnection, "SSH connection could not be established.")
 				}
 			}
 		}
 		select {
 		case <-ctx.Done():
-			return fail("Connection timed out or was canceled.")
+			return fail(hostKeyDeployErrorTimeout, "Connection timed out or was canceled.")
 		case <-ticks:
 		}
 	}
@@ -332,9 +395,10 @@ func (state *State) pollHostKeyDeployment() {
 				return
 			}
 			if result.verified && !deploy.canceled {
-				result.Switched, result.Error = state.switchHostAfterKeyVerification(result, deploy.ref, deploy.fingerprint)
+				result.Switched, result.Error, result.Detail = state.switchHostAfterKeyVerification(result, deploy.ref, deploy.fingerprint)
 			} else if result.verified {
-				result.Error = "Public key installed, but login settings were kept because the job was canceled."
+				result.Error = hostKeyDeployErrorCanceled
+				result.Detail = "Public key installed, but login settings were kept because the job was canceled."
 			}
 			deploy.results = append(deploy.results, result)
 		default:
@@ -343,34 +407,34 @@ func (state *State) pollHostKeyDeployment() {
 	}
 }
 
-func (state *State) switchHostAfterKeyVerification(result hostKeyDeployResult, ref, fingerprint string) (bool, string) {
+func (state *State) switchHostAfterKeyVerification(result hostKeyDeployResult, ref, fingerprint string) (bool, hostKeyDeployErrorCode, string) {
 	index := state.hostIndex(result.HostID)
 	identity, ok := state.hostCatalog.identityForFingerprint(fingerprint)
 	if index < 0 || !ok || identity.Path != ref ||
 		!reflect.DeepEqual(state.hosts[index], result.host) || state.hostCatalog.login(state.hosts[index]) != result.login {
-		return false, "Public key installed, but the saved host or key changed during verification. Login settings were kept."
+		return false, hostKeyDeployErrorHostChanged, "Public key installed, but the saved host or key changed during verification. Login settings were kept."
 	}
 	before := state.hosts[index]
 	env := state.connectionEnv(nil)
 	env.ProxyCommandRefused = errors.New("batch import does not run ProxyCommand")
 	_, route, valid := state.hostCatalog.sshConfigFor(before, before, env)
 	if !valid || !reflect.DeepEqual(route, result.route) {
-		return false, "Public key installed, but the connection route changed during verification. Login settings were kept."
+		return false, hostKeyDeployErrorRouteChanged, "Public key installed, but the connection route changed during verification. Login settings were kept."
 	}
 	after := before
 	after.Auth, after.Identity = authPrivateKey, fingerprint
 	if before.Auth == after.Auth && before.Identity == after.Identity {
-		return true, ""
+		return true, "", ""
 	}
 	state.replaceHost(index, before, after)
 	if err := state.saveWithResult(); err != nil {
 		if current := state.hostIndex(result.HostID); current >= 0 && reflect.DeepEqual(state.hosts[current], after) {
 			state.replaceHost(current, after, before)
 		}
-		return false, "Public key installed and verified, but Motty could not save the login settings."
+		return false, hostKeyDeployErrorSave, "Public key installed and verified, but Motty could not save the login settings."
 	}
 	state.hostDataChanged()
-	return true, ""
+	return true, "", ""
 }
 
 func deploymentEndpoint(e sshconn.Endpoint) sshconn.Endpoint {

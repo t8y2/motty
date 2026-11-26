@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/i18n"
 	"motty/internal/sshconn"
 )
 
@@ -63,8 +64,22 @@ func TestDeployingAnUnavailableKeyReportsEveryChosenHost(t *testing.T) {
 	if state.hostKeyDeploy.running || len(state.hostKeyDeploy.results) != 1 {
 		t.Fatalf("deployment = %+v", state.hostKeyDeploy)
 	}
-	if result := state.hostKeyDeploy.results[0]; result.Imported || result.Error != "The selected SSH key is unavailable." {
+	if result := state.hostKeyDeploy.results[0]; result.Imported || result.Error != hostKeyDeployErrorKeyUnavailable {
 		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestDeploymentErrorsUseLocalizedCopyInsteadOfTheServerDetail(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.setLanguage(i18n.Chinese)
+	for _, code := range []hostKeyDeployErrorCode{
+		hostKeyDeployErrorKeyUnavailable, hostKeyDeployErrorHostKey, hostKeyDeployErrorNoPassword,
+		hostKeyDeployErrorAuth, hostKeyDeployErrorTimeout, hostKeyDeployErrorNotConfirmed,
+	} {
+		got := state.hostKeyDeployError(hostKeyDeployResult{Error: code, Detail: "English server detail"})
+		if got == "" || got == "English server detail" {
+			t.Fatalf("%s used the server detail: %q", code, got)
+		}
 	}
 }
 

@@ -987,6 +987,7 @@ var TraditionalMessages = Messages{
 	KeyDeployTimeout:            "連線逾時或被取消",
 	KeyDeployKeyUnavailable:     "這把金鑰無法使用。只有儲存在 Motty 中的金鑰才能匯出。",
 	KeyDeployNoHosts:            "沒有可選擇的已儲存 SSH 主機。",
+	KeyDeployFailed:             "匯出失敗。",
 	KeyExportTitle:              "匯出私密金鑰",
 	KeyExportedFmt:              "已匯出金鑰 %s",
 	KeyExportReadFailed:         "無法讀取這個金鑰，請確認它仍儲存在 Motty 中。",

@@ -987,6 +987,7 @@ var ChineseMessages = Messages{
 	KeyDeployTimeout:            "连接超时或被取消",
 	KeyDeployKeyUnavailable:     "这把密钥不可用。只有保存在 Motty 中的密钥才能导出。",
 	KeyDeployNoHosts:            "没有可选择的已保存 SSH 主机。",
+	KeyDeployFailed:             "导出失败。",
 	KeyExportTitle:              "导出私钥",
 	KeyExportedFmt:              "已导出密钥 %s",
 	KeyExportReadFailed:         "无法读取这个密钥，请确认它仍保存在 Motty 中。",

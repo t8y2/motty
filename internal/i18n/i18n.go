@@ -998,6 +998,7 @@ type Messages struct {
 	KeyDeployTimeout            string
 	KeyDeployKeyUnavailable     string
 	KeyDeployNoHosts            string
+	KeyDeployFailed             string
 	KeyExportTitle              string
 	KeyExportedFmt              string
 	KeyExportReadFailed         string
