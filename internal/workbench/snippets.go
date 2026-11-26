@@ -90,6 +90,7 @@ var (
 	// Inline editor controls on the Snippets page.
 	hitSnippetInlineName         = tree.ID(snippetsHits, "snippet-inline-name")
 	hitSnippetInlineCommand      = tree.ID(snippetsHits, "snippet-inline-command")
+	hitSnippetInlineCommandHelp  = tree.ID(snippetsHits, "snippet-inline-command-help")
 	hitSnippetInlineGroup        = tree.ID(snippetsHits, "snippet-inline-group")
 	hitSnippetInlineGroupTrigger = tree.ID(snippetsHits, "snippet-inline-group-trigger")
 	hitSnippetInlineGroupClear   = tree.ID(snippetsHits, "snippet-inline-group-clear")

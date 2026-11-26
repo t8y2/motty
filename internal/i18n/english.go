@@ -1966,6 +1966,7 @@ var englishTools = ToolsMessages{
 	StatusSnippetNoTerminal:   "Open a terminal to send a snippet to.",
 	StatusSnippetNotConnected: "The terminal is not connected. Connect it before sending the command.",
 	SnippetVarTitle:           "Snippet Variables",
+	SnippetVarNote:            "Type {{name}} for a variable you fill in before the command is sent; {{name:default}} gives it a default.",
 	SnippetVarDescFmt:         "Fill in values for \"%s\" before running.",
 	SnippetVarHint:            "Values are inserted as-is into the command (not shell-escaped).",
 	SnippetVarPreview:         "Preview",

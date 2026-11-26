@@ -1966,6 +1966,7 @@ var traditionalTools = ToolsMessages{
 	StatusSnippetNoTerminal:   "請先開啟一個終端機再傳送快速指令。",
 	StatusSnippetNotConnected: "終端機未連線，請連線後再傳送。",
 	SnippetVarTitle:           "填寫變數",
+	SnippetVarNote:            "寫 {{name}} 定義變數，傳送到終端機前會要求填寫；{{name:default}} 可指定預設值。",
 	SnippetVarDescFmt:         "執行「%s」前請填寫以下變數。",
 	SnippetVarHint:            "變數值將原樣插入命令（不會進行 shell 轉義）。",
 	SnippetVarPreview:         "預覽",

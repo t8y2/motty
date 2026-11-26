@@ -1,0 +1,71 @@
+# End to end: the Snippets editor says how a variable is written in the help
+# beside its Command title; sent to the terminal, the command asks for each
+# variable first, runs with a required one filled and a default kept, and the
+# terminal receives the line with the values in place. Against the loopback SSH
+# fixture:
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd . && /tmp/e2esshd 22647 &)
+#   make head
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/snippet_variables_e2e.txt
+#
+# What to look for:
+# - Rested on, the help beside "命令" shows "{{name}}" and "{{name:default}}".
+# - "发送到终端" opens "填写变量"; "运行" with the required one empty stays open;
+#   once filled the terminal gets "…one:feature-x-latest".
+
+# lang: zh-CN
+click id:shell/search
+type tester@127.0.0.1:22647
+click id:shell/connect
+wait 600
+click "信任并保存"
+wait 600
+click "密码"
+type secret
+key enter
+waitfor "tester@e2e" 8000
+wait 500
+
+click id:shell/home
+wait 400
+click "快捷命令"
+wait 400
+click "添加命令"
+wait 300
+click id:snippet-inline-name
+type 拉取镜像
+click id:snippet-inline-command
+type docker pull registry.example.com/one:{{后端分支}}-{{后端版本号:latest}}
+settle 800
+settle 800
+expect exists id:snippet-inline-command-help within 3000
+shot /tmp/snippet-variables-1.png
+layout
+
+# The help's centre at the default window: `find id:snippet-inline-command-help`
+# prints it. A tooltip opens when the pointer rests, not after a press.
+move 530 253
+wait 1200
+expect text "{{name}}" within 3000
+expect text "{{name:default}}" within 3000
+shot /tmp/snippet-variables-2.png
+move 700 780
+wait 400
+
+click id:snippet-send
+wait 800
+expect text "填写变量" within 3000
+shot /tmp/snippet-variables-3.png
+
+# The required one empty: Run keeps the dialog and says why.
+click "运行"
+expect text "请填写所有必填变量" within 2000
+
+# Fill the required one; the other keeps its default.
+click id:snippet-var-field/#0
+type feature-x
+click "运行"
+wait 800
+expect text "$ docker pull registry.example.com/one:feature-x-latest" within 4000
+expect no-text "填写变量" within 3000
+shot /tmp/snippet-variables-4.png

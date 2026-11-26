@@ -944,8 +944,16 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 				inline.commandArea.bound = true
 			}
 			theme := c.Theme()
+			titleHeight := theme.Metrics.FontSizeM + 4
 			ui.Column(c).FillWidth().Height(cmdHeight).Shrink(0).Gap(theme.Metrics.GapItem / 2).Children(func() {
-				ui.Text(c, m.SnippetCommand).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(theme.Metrics.FontSizeM + 4).Ellipsis().LabelFor(hitSnippetInlineCommand)
+				// The title, then the help that says how a variable is written in
+				// the command; the rest of the row stays empty.
+				ui.Row(c).FillWidth().Height(titleHeight).Gap(8).Items(ui.Center).Children(func() {
+					ui.Text(c, m.SnippetCommand).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(titleHeight).Ellipsis().LabelFor(hitSnippetInlineCommand)
+					ui.Icon(c, lucideIcons[iconHelp]).Size(16, 16).Muted().Shrink(0).
+						HitWith(hitSnippetInlineCommandHelp, m.SnippetVarNote, gfx.HitOptions{SkipFocus: true}).Tooltip(m.SnippetVarNote)
+					ui.Spacer(c).Grow(1)
+				})
 				area := ui.TextArea(c, &inline.commandArea.input, m.SnippetCommand, m.SnippetCommandPlaceholder, ui.WithID(hitSnippetInlineCommand)).FillWidth().Grow(1)
 				if area.Changed() {
 					state.applyInlineSnippetEdits()

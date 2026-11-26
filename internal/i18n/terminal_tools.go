@@ -144,6 +144,9 @@ type ToolsMessages struct {
 	StatusSnippetSentFmt      string
 	StatusSnippetNoTerminal   string
 	StatusSnippetNotConnected string
+	// SnippetVarNote is the help beside the Command title of the snippet
+	// editor: how a variable is written in the command.
+	SnippetVarNote string
 	// Snippet dynamic variables.
 	SnippetVarTitle        string
 	SnippetVarDescFmt      string

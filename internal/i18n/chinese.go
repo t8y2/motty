@@ -1966,6 +1966,7 @@ var chineseTools = ToolsMessages{
 	StatusSnippetNoTerminal:   "请先打开一个终端再发送快捷命令。",
 	StatusSnippetNotConnected: "终端未连接，请连接后再发送。",
 	SnippetVarTitle:           "填写变量",
+	SnippetVarNote:            "写 {{name}} 定义变量，发送到终端前会要求填写；{{name:default}} 可指定默认值。",
 	SnippetVarDescFmt:         "运行“%s”前请填写以下变量。",
 	SnippetVarHint:            "变量值将原样插入命令（不会进行 shell 转义）。",
 	SnippetVarPreview:         "预览",

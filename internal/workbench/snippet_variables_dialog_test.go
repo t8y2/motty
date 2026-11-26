@@ -4,12 +4,15 @@ package workbench
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
+
+	"motty/internal/i18n"
 )
 
 func TestSnippetDynamicVariablesDialogFlow(t *testing.T) {
@@ -137,6 +140,68 @@ func TestSnippetDynamicVariablesFromPage(t *testing.T) {
 	}
 	if !strings.Contains(shell.typed(), "systemctl restart nginx\r") {
 		t.Fatalf("expected command to be sent, got %q", shell.typed())
+	}
+}
+
+// The help beside the Command title is where the editor tells how a variable is
+// written (#1647): a user who wrote another client's syntax got no prompt and no
+// hint. It sits in the title row, after the title and clear of the command area,
+// for a saved snippet as much as for a new one.
+func TestSnippetEditorTellsHowAVariableIsWritten(t *testing.T) {
+	state := snippetTestState(t, snippet{Name: "deploy", Command: "make deploy"})
+	check := func(t *testing.T) {
+		t.Helper()
+		m := state.messages.Tools
+		canvas, _ := paintedTexts(state)
+		help, ok := hitByID(canvas, hitSnippetInlineCommandHelp)
+		if !ok {
+			t.Fatalf("the Command title has no help beside it: hits=%+v", canvas.Hits())
+		}
+		if help.Hint != m.SnippetVarNote {
+			t.Fatalf("help hint = %q, want %q", help.Hint, m.SnippetVarNote)
+		}
+		control, ok := hitByID(canvas, hitSnippetInlineCommand)
+		if !ok {
+			t.Fatal("the command area is not on the page")
+		}
+		var title gfx.Rect
+		for _, text := range canvas.Texts() {
+			if text.Value == m.SnippetCommand {
+				title = text.Bounds
+			}
+		}
+		place := help.Bounds
+		if title.Width <= 0 || place.Width <= 0 || place.X < title.X+title.Width ||
+			place.Y < title.Y || place.Y+place.Height > title.Y+title.Height {
+			t.Fatalf("help %+v is not beside the title %+v", place, title)
+		}
+		if place.Y+place.Height > control.Bounds.Y {
+			t.Fatalf("help %+v lies over the command area %+v", place, control.Bounds)
+		}
+	}
+	check(t)
+	state.startInlineSnippetDraft("")
+	check(t)
+}
+
+// What the note shows has to be what the parser reads, in every catalog: one
+// variable, and one with a default.
+func TestSnippetVariableNoteShowsSyntaxTheParserReads(t *testing.T) {
+	example := regexp.MustCompile(`\{\{[^{}]*\}\}`)
+	for _, language := range []i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese} {
+		note := i18n.For(language).Tools.SnippetVarNote
+		plain, withDefault := false, false
+		for _, token := range example.FindAllString(note, -1) {
+			variables := parseSnippetVariables(token)
+			if len(variables) != 1 {
+				t.Fatalf("%v: %q in %q is not read as one variable: %+v", language, token, note, variables)
+			}
+			plain = plain || !variables[0].HasDefault
+			withDefault = withDefault || variables[0].HasDefault
+		}
+		if !plain || !withDefault {
+			t.Fatalf("%v: note %q does not show a variable (%v) and one with a default (%v)", language, note, plain, withDefault)
+		}
 	}
 }
 
