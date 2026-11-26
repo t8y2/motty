@@ -275,6 +275,7 @@ func (t *Terminal) control(b byte) {
 		t.pend = false
 		if t.cx > 0 {
 			t.cx--
+			t.notePromptColumn()
 		}
 	case 0x09: // HT
 		t.tabForward(1)
@@ -287,6 +288,7 @@ func (t *Terminal) control(b byte) {
 	case 0x0D: // CR
 		t.pend = false
 		t.cx = 0
+		t.notePromptColumn()
 	case 0x0E: // SO
 		t.gl = 1
 	case 0x0F: // SI
@@ -314,6 +316,7 @@ func (t *Terminal) tabBackward(n int) {
 		}
 		t.cx = max(x, 0)
 	}
+	t.notePromptColumn()
 }
 
 // escape handles the byte after ESC.
@@ -531,7 +534,7 @@ func (t *Terminal) endOSC() {
 		}
 		if value == "C"+suffix {
 			t.inputStartSet = false
-			t.promptActive, t.promptStale = false, false
+			t.promptActive, t.promptDrawing, t.promptWrote, t.promptStale = false, false, false, false
 			t.dropPromptRows()
 			if t.commandStartFn != nil {
 				t.commandStartFn()
@@ -539,7 +542,7 @@ func (t *Terminal) endOSC() {
 		}
 		if strings.HasPrefix(value, "D;") && strings.HasSuffix(value, suffix) {
 			t.inputStartSet = false
-			t.promptActive, t.promptStale = false, false
+			t.promptActive, t.promptDrawing, t.promptWrote, t.promptStale = false, false, false, false
 			t.dropPromptRows()
 			status := strings.TrimSuffix(value[2:], suffix)
 			if code, err := strconv.Atoi(status); err == nil && code >= 0 && code <= 255 && strconv.Itoa(code) == status {
