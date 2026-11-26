@@ -224,6 +224,12 @@ func ProbeModel(ctx context.Context, provider store.Provider, modelName string, 
 	}
 }
 
+func probeHTTPClient(provider store.Provider, timeout time.Duration) *http.Client {
+	client := llm.NewHTTPClient(llm.Config{ProxyURL: provider.ProxyURL, ProxyPassword: provider.ProxyPassword})
+	client.Timeout = timeout
+	return client
+}
+
 func probeOllama(ctx context.Context, provider store.Provider, modelName string, timeout time.Duration) (time.Duration, error) {
 	start := time.Now()
 	url := ollamaAPIBase(provider.BaseURL) + "/api/show"
@@ -237,7 +243,7 @@ func probeOllama(ctx context.Context, provider store.Provider, modelName string,
 		req.Header.Set("Authorization", "Bearer "+provider.APIKey)
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := probeHTTPClient(provider, timeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
@@ -289,7 +295,7 @@ func probeEmbedding(ctx context.Context, provider store.Provider, modelName stri
 		req.Header.Set("Authorization", "Bearer "+provider.APIKey)
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := probeHTTPClient(provider, timeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
@@ -324,7 +330,7 @@ func probeRerank(ctx context.Context, provider store.Provider, modelName string,
 		req.Header.Set("Authorization", "Bearer "+provider.APIKey)
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := probeHTTPClient(provider, timeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err

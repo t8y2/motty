@@ -17,6 +17,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/ai/llm"
 	"motty/internal/ai/mcp"
 	"motty/internal/ai/probe"
 	"motty/internal/ai/reasoning"
@@ -53,6 +54,7 @@ var (
 	hitAISetFormName        = tree.ID(aiSettingsHits, "ai-set-form-name")
 	hitAISetFormURL         = tree.ID(aiSettingsHits, "ai-set-form-url")
 	hitAISetFormModelsURL   = tree.ID(aiSettingsHits, "ai-set-form-models-url")
+	hitAISetFormProxy       = tree.ID(aiSettingsHits, "ai-set-form-proxy")
 	hitAISetFormKey         = tree.ID(aiSettingsHits, "ai-set-form-key")
 	hitAISetFormCLIPath     = tree.ID(aiSettingsHits, "ai-set-form-cli-path")
 	hitAISetConfirmCancel   = tree.ID(aiSettingsHits, "ai-set-confirm-cancel")
@@ -170,6 +172,7 @@ const (
 	aiFormFocusCLIPath
 	aiFormFocusURL
 	aiFormFocusModelsURL
+	aiFormFocusProxy
 	aiFormFocusKey
 )
 
@@ -186,6 +189,7 @@ type aiSettingsUI struct {
 	name           text.Editor
 	baseURL        text.Editor
 	modelsURL      text.Editor
+	proxyURL       text.Editor
 	apiKey         text.Editor
 	cliPath        text.Editor
 	cliAutoPath    string
@@ -267,7 +271,11 @@ type aiSettingsUI struct {
 	formCLIPath   ui.Field
 	formBaseURL   ui.Field
 	formModelsURL ui.Field
+	formProxyURL  ui.Field
 	formAPIKey    ui.Field
+	// proxyHadPassword says a proxy password is in the vault; leaving the proxy
+	// address unchanged keeps it.
+	proxyHadPassword bool
 	// inputBound says the model-name and step-count fields are bound.
 	inputBound bool
 	// formKeyShown shows the API key instead of its bullets.
@@ -652,9 +660,10 @@ func (state *State) aiCloseDialog() {
 	cfg.dialog, cfg.editID, cfg.deleteID, cfg.formErr, cfg.hadKey = aiDialogNone, "", "", "", false
 	cfg.formFocus = aiFormFocusNone
 	cfg.notice = ""
-	cfg.name, cfg.baseURL, cfg.modelsURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
+	cfg.name, cfg.baseURL, cfg.modelsURL, cfg.proxyURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
 	cfg.cliPath, cfg.authStyle, cfg.apiFormat = text.Editor{}, "", ""
 	cfg.cliAutoPath, cfg.cliPathMissing = "", false
+	cfg.proxyHadPassword = false
 	cfg.formKeyShown = false
 	// The import candidates hold credentials in memory; closing the dialog is
 	// also how they are forgotten.
@@ -735,7 +744,7 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	if event.Key == gfx.KeyEnter && !event.Repeat {
 		switch {
-		case cfg.dialog == aiDialogProvider && (event.Target == hitAISetFormName || event.Target == hitAISetFormURL || event.Target == hitAISetFormModelsURL || event.Target == hitAISetFormKey || event.Target == hitAISetFormCLIPath):
+		case cfg.dialog == aiDialogProvider && (event.Target == hitAISetFormName || event.Target == hitAISetFormURL || event.Target == hitAISetFormModelsURL || event.Target == hitAISetFormProxy || event.Target == hitAISetFormKey || event.Target == hitAISetFormCLIPath):
 			state.aiSubmitProvider()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
 		case cfg.dialog == aiDialogNone && event.Target == hitAISetModelInput:
@@ -760,6 +769,8 @@ func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
 		return &cfg.baseURL
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormModelsURL && !store.IsCLIKind(cfg.kind):
 		return &cfg.modelsURL
+	case cfg.dialog == aiDialogProvider && hit == hitAISetFormProxy && !store.IsCLIKind(cfg.kind):
+		return &cfg.proxyURL
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormKey && !store.IsCLIKind(cfg.kind):
 		return &cfg.apiKey
 	}
@@ -868,6 +879,7 @@ func (state *State) aiOpenProviderForm(id string) {
 	// silently shorten such a provider when it is opened for an unrelated edit.
 	cfg.baseURL.Restrict(printableLine, aiproviderimport.MaxURLRunes)
 	cfg.modelsURL.Restrict(printableLine, aiproviderimport.MaxURLRunes)
+	cfg.proxyURL.Restrict(printableLine, aiproviderimport.MaxURLRunes)
 	cfg.apiKey.Restrict(printableLine, 600)
 	cfg.cliPath.Restrict(printableLine, 4096)
 	if id == "" {
@@ -879,10 +891,12 @@ func (state *State) aiOpenProviderForm(id string) {
 		return
 	}
 	cfg.editID, cfg.kind, cfg.hadKey = provider.ID, provider.Kind, provider.HasKey
+	cfg.proxyHadPassword = provider.HasProxyPassword
 	cfg.authStyle, cfg.apiFormat = provider.AuthStyle, provider.APIFormat
 	cfg.name.Insert(provider.Name)
 	cfg.baseURL.Insert(provider.BaseURL)
 	cfg.modelsURL.Insert(provider.ModelsURL)
+	cfg.proxyURL.Insert(provider.ProxyURL)
 	cfg.cliPath.Insert(provider.CLIPath)
 	state.aiDiscoverCLIPath()
 }
@@ -918,10 +932,13 @@ func (state *State) aiSubmitProvider() {
 	name := strings.TrimSpace(cfg.name.String())
 	base := strings.TrimSpace(cfg.baseURL.String())
 	modelsURL := strings.TrimSpace(cfg.modelsURL.String())
+	proxyRaw := strings.TrimSpace(cfg.proxyURL.String())
 	key := strings.TrimSpace(cfg.apiKey.String())
 	cliProvider := store.IsCLIKind(cfg.kind)
+	proxyAddress, proxyPassword, proxyOK := llm.ParseProxyURL(proxyRaw)
 	if cliProvider {
-		base, modelsURL, key = "", "", ""
+		base, modelsURL, proxyRaw, key = "", "", "", ""
+		proxyAddress, proxyPassword, proxyOK = "", "", true
 	}
 	switch {
 	case name == "":
@@ -936,12 +953,19 @@ func (state *State) aiSubmitProvider() {
 		cfg.formErr = m.ErrFormModelsURL
 		cfg.formFocus = aiFormFocusModelsURL
 		return
+	case !cliProvider && !proxyOK:
+		cfg.formErr = m.ErrFormProxyURL
+		cfg.formFocus = aiFormFocusProxy
+		return
 	case !cliProvider && base == "" && key == "" && !cfg.hadKey:
 		cfg.formErr = m.ErrFormKey
 		cfg.formFocus = aiFormFocusKey
 		return
 	}
-	provider := store.Provider{ID: cfg.editID, Name: name, Kind: cfg.kind, BaseURL: base, ModelsURL: modelsURL, APIKey: key, HasKey: key != "", Enabled: true}
+	provider := store.Provider{
+		ID: cfg.editID, Name: name, Kind: cfg.kind, BaseURL: base, ModelsURL: modelsURL,
+		ProxyURL: proxyAddress, APIKey: key, HasKey: key != "", Enabled: true,
+	}
 	if cliProvider {
 		provider.CLIPath = strings.TrimSpace(cfg.cliPath.String())
 		if provider.CLIPath == cfg.cliAutoPath {
@@ -955,28 +979,53 @@ func (state *State) aiSubmitProvider() {
 	// A new provider, or one reached differently, has models nobody has listed yet.
 	refetch := cfg.editID == ""
 	resetAuth := false
+	old, editing := store.Provider{}, false
 	if cfg.editID == "" {
 		provider.ID = newProviderID()
-	} else if old, ok := state.aiProviderByID(cfg.editID); ok {
+	} else if previous, ok := state.aiProviderByID(cfg.editID); ok {
+		old, editing = previous, true
 		provider.Enabled = old.Enabled
 		if key == "" && !cliProvider {
 			provider.APIKey, provider.HasKey = old.APIKey, old.HasKey // the field is left empty to keep the key
 		}
-		refetch = provider.Kind != old.Kind || provider.BaseURL != old.BaseURL || provider.ModelsURL != old.ModelsURL || provider.APIKey != old.APIKey || provider.CLIPath != old.CLIPath
+		refetch = provider.Kind != old.Kind || provider.BaseURL != old.BaseURL || provider.ModelsURL != old.ModelsURL ||
+			provider.ProxyURL != old.ProxyURL || provider.APIKey != old.APIKey || provider.CLIPath != old.CLIPath
 		resetAuth = cliProvider && (provider.Kind != old.Kind || provider.CLIPath != old.CLIPath)
 	}
-	db, err := state.aiStore()
-	if err == nil && key != "" {
-		err = state.aiSaveKey(provider.ID, key)
+	// A proxy password is a secret like the API key: the URL keeps only the
+	// address and user name, and the password goes to the vault.
+	var proxyChanges []vault.Change
+	if proxyPassword != "" {
+		provider.HasProxyPassword = true
+		proxyChanges = append(proxyChanges, vault.Change{Name: aiProxyPasswordSecretName(provider.ID), Value: proxyPassword})
+	} else if editing && proxyAddress == old.ProxyURL {
+		provider.HasProxyPassword = old.HasProxyPassword
+	} else if editing && old.HasProxyPassword {
+		proxyChanges = append(proxyChanges, vault.Change{Name: aiProxyPasswordSecretName(provider.ID), Delete: true})
 	}
+	db, err := state.aiStore()
 	if err == nil {
-		err = db.SaveProvider(provider)
-		if err != nil && key != "" && cfg.editID == "" {
-			_ = state.secrets.vault.Delete(aiKeySecretName(provider.ID))
+		var changes []vault.Change
+		if key != "" {
+			changes = append(changes, vault.Change{Name: aiKeySecretName(provider.ID), Value: key})
+		}
+		changes = append(changes, proxyChanges...)
+		commit := func() error { return db.SaveProvider(provider) }
+		switch {
+		case len(changes) == 0:
+			err = commit()
+		case state.secrets.vault == nil:
+			err = errors.New(state.messages.VaultUnavailable)
+		default:
+			err = state.secrets.vault.ApplyWithCommit(changes, commit)
 		}
 	}
 	if err != nil {
-		cfg.formErr = fmt.Sprintf(m.ErrFormSaveFmt, state.aiScrub(err.Error(), key))
+		message := state.aiScrub(err.Error(), key)
+		if proxyPassword != "" {
+			message = strings.ReplaceAll(message, proxyPassword, "***")
+		}
+		cfg.formErr = fmt.Sprintf(m.ErrFormSaveFmt, message)
 		return
 	}
 	if cfg.editID == "" {
@@ -1006,6 +1055,17 @@ func (state *State) aiSaveKey(providerID, key string) error {
 	return nil
 }
 
+// deleteSecretsUntilError deletes the named secrets in order and stops at the
+// first failure, so that a later success cannot hide it.
+func deleteSecretsUntilError(names []string, del func(string) error) error {
+	for _, name := range names {
+		if err := del(name); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (state *State) aiDeleteProvider(id string) {
 	if state.ai.login != nil && state.ai.login.provider.ID == id {
 		state.aiStopCLILogin()
@@ -1017,13 +1077,20 @@ func (state *State) aiDeleteProvider(id string) {
 	cfg := &state.ai.cfg
 	db, err := state.aiStore()
 	if err == nil {
-		// CLI providers have no API key. Asking for the master password just to
-		// delete one is both surprising and unnecessary.
+		// CLI providers have no API key or proxy password. Asking for the master
+		// password just to delete one is both surprising and unnecessary.
 		provider, hasProvider := state.aiProviderByID(id)
-		if opened := state.secrets.vault; hasProvider && provider.HasKey && opened != nil {
-			// The key goes first, so a failure leaves the provider whole. A locked
-			// vault is opened and the deletion tried again.
-			switch err = opened.Delete(aiKeySecretName(id)); {
+		if opened := state.secrets.vault; hasProvider && opened != nil {
+			var names []string
+			if provider.HasKey {
+				names = append(names, aiKeySecretName(id))
+			}
+			if provider.HasProxyPassword {
+				names = append(names, aiProxyPasswordSecretName(id))
+			}
+			// The secrets go first, so a failure leaves the provider whole. A
+			// locked vault is opened and the deletion tried again.
+			switch err = deleteSecretsUntilError(names, opened.Delete); {
 			case errors.Is(err, vault.ErrNeedsConversion):
 				state.openVaultUnlock(nil, func() { state.aiDeleteProvider(id) })
 				return

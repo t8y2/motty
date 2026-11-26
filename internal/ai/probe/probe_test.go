@@ -5,11 +5,34 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"motty/internal/ai/llm"
 	"motty/internal/ai/store"
 )
+
+func TestProbeEmbeddingUsesTheProviderProxy(t *testing.T) {
+	var seen atomic.Bool
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Host != "llm.invalid" {
+			t.Errorf("probe request host = %q", r.URL.Host)
+		}
+		seen.Store(true)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[{"embedding":[0.1]}]}`))
+	}))
+	defer proxy.Close()
+
+	provider := store.Provider{BaseURL: "http://llm.invalid/v1", ProxyURL: proxy.URL}
+	if _, err := probeEmbedding(context.Background(), provider, "text-embedding-3-small", time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if !seen.Load() {
+		t.Fatal("the probe did not use the provider proxy")
+	}
+}
 
 func TestClassifyModel(t *testing.T) {
 	cases := []struct {

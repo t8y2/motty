@@ -4,7 +4,9 @@
 //
 // Security notes: provider API keys are not stored here any more. They live in
 // the encrypted saved-passwords vault; the store only remembers whether a
-// provider has one (Provider.HasKey). The legacy api_key column of schema v1
+// provider has one (Provider.HasKey). Provider proxy passwords are kept the
+// same way (Provider.HasProxyPassword); the proxy URL itself keeps only the
+// address and user name. The legacy api_key column of schema v1
 // is kept so old databases can be migrated, but nothing writes it, and
 // LegacyKeys/ClearLegacyKey let the caller move and wipe what is left. The
 // file and its parent directory are created with owner-only permissions
@@ -76,7 +78,7 @@ func (e *LimitError) Error() string {
 // Is makes errors.Is(err, ErrTooLarge) true.
 func (e *LimitError) Is(target error) bool { return target == ErrTooLarge }
 
-const schemaVersion = 8
+const schemaVersion = 9
 
 var migrations = [...]string{
 	// version 1
@@ -147,6 +149,10 @@ var migrations = [...]string{
 	`ALTER TABLE models ADD COLUMN reasoning_enabled INTEGER NOT NULL DEFAULT 0;
 	ALTER TABLE models ADD COLUMN reasoning_levels TEXT NOT NULL DEFAULT '';
 	ALTER TABLE models ADD COLUMN reasoning_default TEXT NOT NULL DEFAULT '';`,
+	// version 9: an HTTP or SOCKS proxy for one provider's requests. The URL
+	// never carries a password; has_proxy_password says the vault holds one.
+	`ALTER TABLE providers ADD COLUMN proxy_url TEXT NOT NULL DEFAULT '';
+	ALTER TABLE providers ADD COLUMN has_proxy_password INTEGER NOT NULL DEFAULT 0;`,
 }
 
 const sqliteMagic = "SQLite format 3\x00"
@@ -359,19 +365,27 @@ func ValidProviderKind(kind string) bool {
 	return kind == KindOpenAI || kind == KindAnthropic || IsCLIKind(kind)
 }
 
-// Provider is a configured model endpoint. The API key is not persisted by
-// the store: HasKey says a key exists in the vault, and APIKey is an in-memory
-// field the caller fills from the vault (Providers always leaves it empty).
+// Provider is a configured model endpoint. The API key and proxy password are
+// not persisted by the store: HasKey and HasProxyPassword say a secret exists in
+// the vault, and APIKey/ProxyPassword are in-memory fields the caller fills from
+// the vault (Providers always leaves them empty).
 type Provider struct {
 	ID        string
 	Name      string
 	Kind      string
 	BaseURL   string
 	ModelsURL string
-	CLIPath   string // Machine-local; never included in provider sync records.
-	APIKey    string
-	HasKey    bool
-	Enabled   bool
+	// ProxyURL is the provider's own outbound proxy: http, https, socks5 or
+	// socks5h. Empty keeps the existing environment/system proxy behavior. A
+	// password in the URL is moved to the vault, so it never reaches the
+	// database or a sync record; HasProxyPassword says the vault holds one.
+	ProxyURL         string
+	CLIPath          string // Machine-local; never included in provider sync records.
+	APIKey           string
+	HasKey           bool
+	ProxyPassword    string // In-memory only; filled from the vault when needed.
+	HasProxyPassword bool
+	Enabled          bool
 	// AuthStyle selects the Anthropic request header. Empty has the historical
 	// meaning: x-api-key for Anthropic, bearer for OpenAI-compatible endpoints.
 	AuthStyle string
@@ -385,8 +399,8 @@ func (p Provider) redacted() string {
 	if p.APIKey != "" {
 		key = "<redacted>"
 	}
-	return fmt.Sprintf("Provider{ID:%q Name:%q Kind:%q BaseURL:%q ModelsURL:%q AuthStyle:%q APIFormat:%q APIKey:%q HasKey:%t Enabled:%t}",
-		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, p.AuthStyle, p.APIFormat, key, p.HasKey, p.Enabled)
+	return fmt.Sprintf("Provider{ID:%q Name:%q Kind:%q BaseURL:%q ModelsURL:%q ProxyURL:%q AuthStyle:%q APIFormat:%q APIKey:%q HasKey:%t HasProxyPassword:%t Enabled:%t}",
+		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, p.ProxyURL, p.AuthStyle, p.APIFormat, key, p.HasKey, p.HasProxyPassword, p.Enabled)
 }
 
 // String implements fmt.Stringer and hides the API key.
@@ -396,13 +410,17 @@ func (p Provider) String() string { return p.redacted() }
 func (p Provider) GoString() string { return p.redacted() }
 
 // SaveProvider inserts or updates a provider by ID. It never writes the API
-// key; a legacy plaintext key already in the row is left for ClearLegacyKey.
+// key or proxy password; a legacy plaintext key already in the row is left for
+// ClearLegacyKey.
 func (s *Store) SaveProvider(p Provider) error {
 	if p.ID == "" || !ValidProviderKind(p.Kind) {
 		return fmt.Errorf("%w: provider needs an id and a supported kind", ErrInvalid)
 	}
-	if IsCLIKind(p.Kind) && (p.BaseURL != "" || p.ModelsURL != "" || p.APIKey != "" || p.HasKey || p.AuthStyle != "" || p.APIFormat != "") {
+	if IsCLIKind(p.Kind) && (p.BaseURL != "" || p.ModelsURL != "" || p.ProxyURL != "" || p.APIKey != "" || p.HasKey || p.ProxyPassword != "" || p.HasProxyPassword || p.AuthStyle != "" || p.APIFormat != "") {
 		return fmt.Errorf("%w: CLI providers use their own authentication", ErrInvalid)
+	}
+	if p.HasProxyPassword && p.ProxyURL == "" {
+		return fmt.Errorf("%w: a proxy password needs a proxy URL", ErrInvalid)
 	}
 	if !ValidAuthStyle(p.AuthStyle) {
 		return fmt.Errorf("%w: unsupported authentication style", ErrInvalid)
@@ -422,17 +440,18 @@ func (s *Store) SaveProvider(p Provider) error {
 	if p.Kind != KindOpenAI || apiFormat == APIFormatChat {
 		apiFormat = ""
 	}
-	_, err := s.db.Exec(`INSERT INTO providers(id,name,kind,base_url,models_url,api_key,has_key,enabled,cli_path,auth_style,api_format) VALUES(?,?,?,?,?,'',?,?,?,?,?)
+	_, err := s.db.Exec(`INSERT INTO providers(id,name,kind,base_url,models_url,proxy_url,api_key,has_key,has_proxy_password,enabled,cli_path,auth_style,api_format) VALUES(?,?,?,?,?,?,'',?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, kind=excluded.kind,
-		base_url=excluded.base_url, models_url=excluded.models_url, has_key=excluded.has_key, enabled=excluded.enabled,
+		base_url=excluded.base_url, models_url=excluded.models_url, proxy_url=excluded.proxy_url,
+		has_key=excluded.has_key, has_proxy_password=excluded.has_proxy_password, enabled=excluded.enabled,
 		cli_path=excluded.cli_path, auth_style=excluded.auth_style, api_format=excluded.api_format`,
-		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, b2i(p.HasKey), b2i(p.Enabled), p.CLIPath, authStyle, apiFormat)
+		p.ID, p.Name, p.Kind, p.BaseURL, p.ModelsURL, p.ProxyURL, b2i(p.HasKey), b2i(p.HasProxyPassword), b2i(p.Enabled), p.CLIPath, authStyle, apiFormat)
 	return wrapDB(err)
 }
 
 // Providers lists all providers ordered by name then ID.
 func (s *Store) Providers() ([]Provider, error) {
-	rows, err := s.db.Query(`SELECT id,name,kind,base_url,models_url,has_key,enabled,cli_path,auth_style,api_format FROM providers ORDER BY name, id`)
+	rows, err := s.db.Query(`SELECT id,name,kind,base_url,models_url,proxy_url,has_key,has_proxy_password,enabled,cli_path,auth_style,api_format FROM providers ORDER BY name, id`)
 	if err != nil {
 		return nil, wrapDB(err)
 	}
@@ -440,11 +459,12 @@ func (s *Store) Providers() ([]Provider, error) {
 	var out []Provider
 	for rows.Next() {
 		var p Provider
-		var hk, en int
-		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &p.ModelsURL, &hk, &en, &p.CLIPath, &p.AuthStyle, &p.APIFormat); err != nil {
+		var hk, hpk, en int
+		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.BaseURL, &p.ModelsURL, &p.ProxyURL, &hk, &hpk, &en, &p.CLIPath, &p.AuthStyle, &p.APIFormat); err != nil {
 			return nil, wrapDB(err)
 		}
 		p.HasKey = hk != 0
+		p.HasProxyPassword = hpk != 0
 		p.Enabled = en != 0
 		out = append(out, p)
 	}

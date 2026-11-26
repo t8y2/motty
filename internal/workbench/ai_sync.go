@@ -20,6 +20,10 @@ type savedAIProvider struct {
 	Kind      string `json:"kind"`
 	BaseURL   string `json:"base_url,omitempty"`
 	ModelsURL string `json:"models_url,omitempty"`
+	// ProxyURL never carries a password; the password travels as an aikey:
+	// secret, like the API key. HasProxyPassword says one is expected.
+	ProxyURL         string `json:"proxy_url,omitempty"`
+	HasProxyPassword bool   `json:"has_proxy_password,omitempty"`
 	// AuthStyle is empty for the kind's default. It stays out of the payload
 	// when it is empty so records written before bearer authentication read
 	// back unchanged.
@@ -59,7 +63,7 @@ func (state *State) savedAIProviderCollection(cli bool) *[]savedAIProvider {
 		}
 		entry := savedAIProvider{
 			ID: provider.ID, Name: provider.Name, Kind: provider.Kind, BaseURL: provider.BaseURL,
-			ModelsURL: provider.ModelsURL,
+			ModelsURL: provider.ModelsURL, ProxyURL: provider.ProxyURL, HasProxyPassword: provider.HasProxyPassword,
 			AuthStyle: provider.AuthStyle, APIFormat: provider.APIFormat, Enabled: provider.Enabled, HasKey: provider.HasKey,
 		}
 		for _, model := range ai.models {
@@ -110,7 +114,7 @@ func (state *State) importAIProviderCollections(http, cli *[]savedAIProvider) {
 			continue
 		}
 		wanted[entry.ID] = true
-		provider := store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, ModelsURL: entry.ModelsURL, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled}
+		provider := store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, ModelsURL: entry.ModelsURL, ProxyURL: entry.ProxyURL, HasProxyPassword: entry.HasProxyPassword, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled}
 		for _, local := range current {
 			if local.ID == entry.ID && local.Kind == entry.Kind {
 				provider.CLIPath = local.CLIPath
@@ -173,7 +177,7 @@ func (state *State) adoptRecordedProviders(db *store.Store) {
 			continue
 		}
 		present[entry.ID] = true
-		_ = db.SaveProvider(store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled})
+		_ = db.SaveProvider(store.Provider{ID: entry.ID, Name: entry.Name, Kind: entry.Kind, BaseURL: entry.BaseURL, ModelsURL: entry.ModelsURL, ProxyURL: entry.ProxyURL, HasProxyPassword: entry.HasProxyPassword, AuthStyle: entry.AuthStyle, APIFormat: entry.APIFormat, HasKey: entry.HasKey, Enabled: entry.Enabled})
 		models := make([]store.Model, 0, len(entry.Models))
 		for _, model := range entry.Models {
 			models = append(models, store.Model{ProviderID: entry.ID, Name: model.Name, Enabled: model.Enabled})

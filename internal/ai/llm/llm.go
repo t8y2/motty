@@ -1,7 +1,7 @@
 // Package llm is a small streaming client for two LLM wire protocols:
 // OpenAI-compatible Chat Completions and Anthropic Messages. It uses only the
-// standard library, never logs, and never lets the API key reach an error
-// message or an event.
+// standard library, never logs, and never lets the API key or proxy password
+// reach an error message or an event.
 package llm
 
 import (
@@ -180,6 +180,11 @@ type Config struct {
 	BaseURL   string
 	ModelsURL string
 	APIKey    string
+	// ProxyURL is the provider's own outbound proxy: http, https, socks5 or
+	// socks5h. Empty follows the environment's proxy settings. A password in
+	// the URL is used as-is; ProxyPassword is the vault-backed equivalent.
+	ProxyURL      string
+	ProxyPassword string
 	// AuthStyle applies to Anthropic only. AuthStyleBearer sends the key as
 	// Authorization: Bearer instead of x-api-key. OpenAI-compatible requests
 	// always use bearer authentication.
@@ -228,6 +233,7 @@ type base struct {
 	endpoint  string // normalized base, no trailing slash
 	key       string
 	authStyle string
+	proxyPass string
 	client    *http.Client
 	max       int64
 	idle      time.Duration
@@ -236,7 +242,7 @@ type base struct {
 func newBase(cfg Config, endpoint string) base {
 	c := cfg.Client
 	if c == nil {
-		c = defaultClient()
+		c = defaultClient(cfg)
 	}
 	m := cfg.MaxResponseBytes
 	if m <= 0 {
@@ -246,13 +252,17 @@ func newBase(cfg Config, endpoint string) base {
 	if idle <= 0 {
 		idle = defaultIdle
 	}
-	return base{endpoint: endpoint, key: cfg.APIKey, authStyle: cfg.AuthStyle, client: c, max: m, idle: idle}
+	_, proxyPass, _ := ParseProxyURL(cfg.ProxyURL)
+	if cfg.ProxyPassword != "" {
+		proxyPass = cfg.ProxyPassword
+	}
+	return base{endpoint: endpoint, key: cfg.APIKey, authStyle: cfg.AuthStyle, proxyPass: proxyPass, client: c, max: m, idle: idle}
 }
 
-func defaultClient() *http.Client {
+func defaultClient(cfg Config) *http.Client {
 	d := &net.Dialer{Timeout: 15 * time.Second, KeepAlive: 30 * time.Second}
 	return &http.Client{Transport: &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
+		Proxy:                 proxyFor(cfg.ProxyURL, cfg.ProxyPassword),
 		DialContext:           d.DialContext,
 		TLSHandshakeTimeout:   15 * time.Second,
 		ResponseHeaderTimeout: 120 * time.Second,
@@ -261,14 +271,16 @@ func defaultClient() *http.Client {
 	}}
 }
 
-// scrub removes the API key (raw and JSON-escaped) from s.
+// scrub removes the API key and proxy password (raw and JSON-escaped) from s.
 func (b *base) scrub(s string) string {
-	if b.key == "" {
-		return s
-	}
-	s = strings.ReplaceAll(s, b.key, "***")
-	if esc, err := json.Marshal(b.key); err == nil && len(esc) > 2 {
-		s = strings.ReplaceAll(s, string(esc[1:len(esc)-1]), "***")
+	for _, secret := range []string{b.key, b.proxyPass} {
+		if secret == "" {
+			continue
+		}
+		s = strings.ReplaceAll(s, secret, "***")
+		if esc, err := json.Marshal(secret); err == nil && len(esc) > 2 {
+			s = strings.ReplaceAll(s, string(esc[1:len(esc)-1]), "***")
+		}
 	}
 	return s
 }
@@ -282,10 +294,10 @@ func (e *scrubbedError) Error() string { return e.msg }
 func (e *scrubbedError) Unwrap() error { return e.err }
 
 func (b *base) scrubErr(err error) error {
-	if err == nil || b.key == "" {
+	if err == nil || (b.key == "" && b.proxyPass == "") {
 		return err
 	}
-	if m := err.Error(); strings.Contains(m, b.key) || b.scrub(m) != m {
+	if m := err.Error(); strings.Contains(m, b.key) || (b.proxyPass != "" && strings.Contains(m, b.proxyPass)) || b.scrub(m) != m {
 		return &scrubbedError{msg: b.scrub(m), err: errors.Unwrap(err)}
 	}
 	return err

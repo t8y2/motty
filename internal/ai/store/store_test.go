@@ -112,6 +112,33 @@ func TestProvidersModelsSettings(t *testing.T) {
 	}
 }
 
+func TestProviderProxyRoundTrip(t *testing.T) {
+	s, _ := openTemp(t)
+	want := Provider{
+		ID: "p1", Name: "Relay", Kind: KindOpenAI, BaseURL: "https://relay.example.com/v1",
+		ProxyURL: "socks5://alice@127.0.0.1:1080", HasProxyPassword: true, Enabled: true,
+	}
+	if err := s.SaveProvider(want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Providers()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("%v %v", got, err)
+	}
+	if got[0].ProxyURL != want.ProxyURL || !got[0].HasProxyPassword {
+		t.Fatalf("proxy = %q has password %t", got[0].ProxyURL, got[0].HasProxyPassword)
+	}
+	if got[0].ProxyPassword != "" {
+		t.Fatal("the store must not hand out a proxy password")
+	}
+	if err := s.SaveProvider(Provider{ID: "orphan", Kind: KindOpenAI, HasProxyPassword: true}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("orphan proxy password: %v", err)
+	}
+	if err := s.SaveProvider(Provider{ID: "cli", Kind: KindCodexCLI, ProxyURL: "http://127.0.0.1:7890"}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("CLI proxy: %v", err)
+	}
+}
+
 func TestProviderAuthStyleRoundTrip(t *testing.T) {
 	s, _ := openTemp(t)
 	want := Provider{ID: "p1", Name: "Relay", Kind: KindAnthropic, BaseURL: "https://relay.example.com", AuthStyle: AuthStyleBearer, HasKey: true, Enabled: true}
@@ -216,20 +243,20 @@ func TestVersion2DatabaseMigratesWithTheDefaultAuthStyle(t *testing.T) {
 	if err != nil || len(got) != 1 {
 		t.Fatalf("providers = %v, err %v", got, err)
 	}
-	if got[0].ID != "old" || got[0].AuthStyle != "" || got[0].APIFormat != "" {
+	if got[0].ID != "old" || got[0].AuthStyle != "" || got[0].APIFormat != "" || got[0].ProxyURL != "" || got[0].HasProxyPassword {
 		t.Fatalf("migrated provider = %#v", got[0])
 	}
 }
 
 func TestKeyRedaction(t *testing.T) {
 	const key = "sk-very-secret"
-	p := Provider{ID: "p", Kind: KindOpenAI, APIKey: key}
+	p := Provider{ID: "p", Kind: KindOpenAI, APIKey: key, ProxyPassword: "proxy-secret"}
 	for _, out := range []string{
 		fmt.Sprint(p), fmt.Sprintf("%v", p), fmt.Sprintf("%+v", p), fmt.Sprintf("%#v", p), fmt.Sprintf("%s", p),
 		fmt.Sprintf("%v", &p), fmt.Sprintf("%v", []Provider{p}),
 	} {
-		if strings.Contains(out, key) {
-			t.Fatalf("key leaked: %s", out)
+		if strings.Contains(out, key) || strings.Contains(out, "proxy-secret") {
+			t.Fatalf("secret leaked: %s", out)
 		}
 	}
 	s, _ := openTemp(t)

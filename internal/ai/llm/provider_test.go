@@ -823,7 +823,7 @@ func TestModelsBoundedAndMalformed(t *testing.T) {
 }
 
 func TestDefaultClientHasNoOverallTimeout(t *testing.T) {
-	c := defaultClient()
+	c := defaultClient(Config{})
 	if c.Timeout != 0 {
 		t.Fatal("default client must not set an overall timeout")
 	}
