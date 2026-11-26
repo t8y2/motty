@@ -2,11 +2,14 @@ package workbench
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"motty/internal/desktop"
 )
 
@@ -376,5 +379,236 @@ func TestThePaintedInvertingPointerSamplesThePictureUnderIt(t *testing.T) {
 	view.paintPointer(&canvas, gfx.Point{}, 2, false)
 	if len(canvas.Images()) != 0 {
 		t.Fatal("the pointer was painted while a press belonged to another control")
+	}
+}
+
+type splitPictureDesktop struct {
+	*pointingDesktop
+	picMu   sync.Mutex
+	dirty   bool
+	rightOn bool // false: left half white, right half black; true: whole picture white
+}
+
+func (s *splitPictureDesktop) Present(dst desktop.Presenter) bool {
+	changed := s.followingDesktop.Present(dst)
+	s.picMu.Lock()
+	dirty, rightOn := s.dirty || changed, s.rightOn
+	s.dirty = false
+	s.picMu.Unlock()
+	if !dirty {
+		return changed
+	}
+	w, h := s.Size()
+	pix := make([]byte, w*h*4)
+	for y := range h {
+		for x := range w {
+			at := (y*w + x) * 4
+			if x < w/2 || rightOn {
+				pix[at], pix[at+1], pix[at+2], pix[at+3] = 255, 255, 255, 255
+			} else {
+				pix[at+3] = 255
+			}
+		}
+	}
+	dst.Update(0, 0, w, h, pix, w*4)
+	return true
+}
+
+func TestInvertingPointerUpdatesRenderedPixelsAcrossMovesAndSurfaceChanges(t *testing.T) {
+	for _, scale := range []float64{1, 2} {
+		t.Run(fmt.Sprintf("scale-%g", scale), func(t *testing.T) {
+			_, options := newWorld(t)
+			state := newTestState(t, options)
+			var invalidator app.Invalidator
+			state.options.Invalidate = invalidator.Invalidate
+			state.connectionReconnect = reconnectOff
+			var remote *splitPictureDesktop
+			state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
+				width, height := request.Width, request.Height
+				if width == 0 {
+					width, height = 1000, 700
+				}
+				remote = &splitPictureDesktop{
+					pointingDesktop: &pointingDesktop{followingDesktop: newFollowingDesktop(width, height, false)},
+					dirty:           true,
+				}
+				return remote, nil
+			}
+
+			view, err := headless.Open(state.WindowConfig(app.Config{
+				Title: "Inverting pointer", Width: 1000, Height: 700,
+				Invalidator: &invalidator,
+				WindowMode:  app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight,
+				Tree: Tree(), Paint: state.Paint, OnWake: state.Wake, OnResize: state.Resize,
+				OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll,
+			}), nil, headless.Options{Scale: scale})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if err := view.Rest(); err != nil {
+				t.Fatal(err)
+			}
+
+			addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP})
+			openHost(state)
+			session, _ := state.sessionByIDPointer(state.activeSessionID)
+			waitUntil(t, state, "the picture", func() bool { return session.desk != nil && session.desk.width > 0 })
+
+			shape := pointerShapeOf(8, 8, 0, 0)
+			shape.Invert = make([]bool, 8*8)
+			for i := range shape.Invert {
+				shape.Invert[i] = true
+			}
+			remote.say(desktop.PointerBitmap, shape)
+			state.Wake()
+			if err := view.Frame(); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Rest(); err != nil {
+				t.Fatal(err)
+			}
+
+			area := session.desk.area
+			origin, picScale := session.desk.place(area)
+			leftX, leftY := origin.X+float32(session.desk.width)*picScale*0.25, origin.Y+float32(session.desk.height)*picScale*0.5
+			if err := view.Move(leftX, leftY); err != nil {
+				t.Fatal(err)
+			}
+			img, err := view.Image()
+			if err != nil {
+				// The offscreen renderer exists only in some builds; a machine
+				// without one skips the pixel check rather than failing the suite.
+				t.Skipf("no offscreen renderer on this machine: %v", err)
+			}
+			px := func(lx, ly float32) (int, int) {
+				return int(lx*float32(scale)) + 4*int(scale), int(ly*float32(scale)) + 4*int(scale)
+			}
+			gx, gy := px(leftX, leftY)
+			gotLeft := img.RGBAAt(gx, gy)
+			if gotLeft.R > 20 || gotLeft.G > 20 || gotLeft.B > 20 {
+				t.Fatalf("over white half: pointer pixel = %v, want near black", gotLeft)
+			}
+			firstBitmap := session.desk.pointerBitmapVersion
+			firstID := session.desk.pointerBitmapID
+			if firstID == 0 || firstID >= 1<<61 || firstBitmap == 0 {
+				t.Fatalf("pointer bitmap identity = (%d, v%d), want non-zero < 1<<61", firstID, firstBitmap)
+			}
+
+			rightX, rightY := origin.X+float32(session.desk.width)*picScale*0.75, origin.Y+float32(session.desk.height)*picScale*0.5
+			if err := view.Move(rightX, rightY); err != nil {
+				t.Fatal(err)
+			}
+			img, err = view.Image()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gx, gy = px(rightX, rightY)
+			gotRight := img.RGBAAt(gx, gy)
+			if gotRight.R < 235 || gotRight.G < 235 || gotRight.B < 235 {
+				t.Fatalf("over black half after move: pointer pixel = %v, want near white", gotRight)
+			}
+			if session.desk.pointerBitmapVersion <= firstBitmap {
+				t.Fatalf("pointer bitmap version did not advance after pixels changed: %d -> %d", firstBitmap, session.desk.pointerBitmapVersion)
+			}
+			secondBitmap := session.desk.pointerBitmapVersion
+
+			// Keep the pointer stationary while the surface underneath turns white.
+			remote.picMu.Lock()
+			remote.rightOn = true
+			remote.dirty = true
+			remote.picMu.Unlock()
+			state.Wake()
+			if err := view.Frame(); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Rest(); err != nil {
+				t.Fatal(err)
+			}
+			img, err = view.Image()
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotUpdatedBg := img.RGBAAt(int(rightX*float32(scale))-10, int(rightY*float32(scale))-10)
+			gotUpdated := img.RGBAAt(gx, gy)
+			if gotUpdatedBg.R < 235 || gotUpdatedBg.G < 235 || gotUpdatedBg.B < 235 {
+				t.Fatalf("surface background under stationary pointer did not turn white: %v", gotUpdatedBg)
+			}
+			if gotUpdated.R > 20 || gotUpdated.G > 20 || gotUpdated.B > 20 {
+				t.Fatalf("after surface under stationary pointer turned white: pointer pixel = %v (bg=%v), want near black", gotUpdated, gotUpdatedBg)
+			}
+			if session.desk.pointerBitmapVersion <= secondBitmap {
+				t.Fatalf("pointer bitmap version did not advance after surface changed: %d -> %d", secondBitmap, session.desk.pointerBitmapVersion)
+			}
+		})
+	}
+}
+
+func TestPaintedPointerKeepsPreviousBitmapImmutableAndAdvancesVersionOnChange(t *testing.T) {
+	var view desktopView
+	view.surface.Resize(10, 10)
+	picture := make([]byte, 10*10*4)
+	for y := range 10 {
+		for x := range 10 {
+			at := (y*10 + x) * 4
+			if x < 5 {
+				picture[at], picture[at+1], picture[at+2] = 255, 255, 255
+			}
+			picture[at+3] = 255
+		}
+	}
+	view.surface.Update(0, 0, 10, 10, picture, 10*4)
+	view.inverting, view.pointerInside = true, true
+	view.pointerShape = desktop.PointerShape{
+		Width: 2, Height: 1,
+		// Pixel 0: semi-transparent non-inverting blue (straight alpha=128) to verify premultiplication.
+		// Pixel 1: inverting pixel.
+		BGRA:   []byte{255, 0, 0, 128, 0, 0, 0, 0},
+		Invert: []bool{false, true},
+	}
+
+	var canvas gfx.Canvas
+	canvas.SetPixelScale(1)
+
+	// Frame 1: over white half -> inverting pixel is black.
+	view.pointer = gfx.Point{X: 1, Y: 2}
+	view.paintPointer(&canvas, gfx.Point{}, 1, true)
+	first := canvas.Images()[0].Bitmap
+	if first.ID == 0 || first.Version != 1 {
+		t.Fatalf("first bitmap identity = (%d, v%d), want non-zero v1", first.ID, first.Version)
+	}
+	if first.Pix[0] != 128 || first.Pix[1] != 0 || first.Pix[2] != 0 || first.Pix[3] != 128 {
+		t.Fatalf("non-inverting premultiplied pixel = %v, want [128 0 0 128]", first.Pix[:4])
+	}
+	if first.Pix[4] != 0 || first.Pix[5] != 0 || first.Pix[6] != 0 || first.Pix[7] != 255 {
+		t.Fatalf("first inverting pixel = %v, want black", first.Pix[4:8])
+	}
+	snapshot := append([]byte(nil), first.Pix...)
+
+	// Frame 2: moved within white half -> identical pixels keep the same version and buffer.
+	canvas.Reset()
+	view.pointer = gfx.Point{X: 2, Y: 2}
+	view.paintPointer(&canvas, gfx.Point{}, 1, true)
+	same := canvas.Images()[0].Bitmap
+	if same.ID != first.ID || same.Version != first.Version || &same.Pix[0] != &first.Pix[0] {
+		t.Fatalf("unchanged pixels changed bitmap identity/version: (%d, v%d) -> (%d, v%d)", first.ID, first.Version, same.ID, same.Version)
+	}
+
+	// Frame 3: moved onto black half -> new buffer & bumped version; first.Pix remains untouched.
+	canvas.Reset()
+	view.pointer = gfx.Point{X: 7, Y: 2}
+	view.paintPointer(&canvas, gfx.Point{}, 1, true)
+	second := canvas.Images()[0].Bitmap
+	if second.ID != first.ID || second.Version != 2 {
+		t.Fatalf("second bitmap identity = (%d, v%d), want (%d, v2)", second.ID, second.Version, first.ID)
+	}
+	if &second.Pix[0] == &first.Pix[0] {
+		t.Fatal("changed pointer reused the previous frame's backing slice in place")
+	}
+	if string(first.Pix) != string(snapshot) {
+		t.Fatalf("previous frame's Pix was mutated: %v -> %v", snapshot, first.Pix)
+	}
+	if second.Pix[4] != 255 || second.Pix[5] != 255 || second.Pix[6] != 255 || second.Pix[7] != 255 {
+		t.Fatalf("second inverting pixel = %v, want white", second.Pix[4:8])
 	}
 }
