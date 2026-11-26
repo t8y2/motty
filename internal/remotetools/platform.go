@@ -9,7 +9,8 @@ import (
 )
 
 // ForSystem applies the remote host's command syntax, independently of the
-// client's OS. Unknown systems retain the existing portable Unix fallback.
+// client's OS. Windows gets PowerShell; every other system is a POSIX shell,
+// whatever distribution the host names, so Docker and Podman are both reached.
 // Only the package's fixed-text commands may pass through it: a container command
 // is spliced into a PowerShell script and a POSIX shell chain, so a caller that
 // put user text in it would turn that text into remote shell syntax.
@@ -43,7 +44,7 @@ func (r *systemRunner) RunCommand(ctx context.Context, command string, limit int
 				invoke = "[Console]::WriteLine($engine); exit 0"
 			}
 			command = encodePowerShell(windowsContainerPrelude + "\n" + invoke)
-		case "darwin", "linux":
+		default:
 			command = unixContainerCommand(r.system, args, probe)
 		}
 	}

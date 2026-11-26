@@ -191,6 +191,24 @@ func TestContainerCommandFallsBackToPodmanOnAUnixServer(t *testing.T) {
 	}
 }
 
+// A host reports its distribution ("fedora", "ubuntu"), not only "linux", and
+// Podman is the engine on many of them. Every Unix system must reach it.
+func TestContainerCommandFallsBackToPodmanOnEveryUnixDistribution(t *testing.T) {
+	skipWithoutUnixEngines(t)
+	for _, system := range []string{"linux", "ubuntu", "debian", "fedora", "rhel", "alpine", "freebsd", ""} {
+		t.Run(system, func(t *testing.T) {
+			runner := ForSystem(localShellRunner{path: fakeEngineDir(t, "podman")}, system)
+			output, err := runner.RunCommand(context.Background(), "docker ps -a", 1024)
+			if err != nil || strings.TrimSpace(string(output)) != "podman ps -a" {
+				t.Fatalf("output=%q err=%v", output, err)
+			}
+			if got, err := DetectRuntime(context.Background(), runner); err != nil || got != RuntimePodman {
+				t.Fatalf("runtime=%v err=%v", got, err)
+			}
+		})
+	}
+}
+
 func TestContainerCommandPrefersDockerWhenBothExist(t *testing.T) {
 	skipWithoutUnixEngines(t)
 	runner := ForSystem(localShellRunner{path: fakeEngineDir(t, "docker", "podman")}, "linux")
