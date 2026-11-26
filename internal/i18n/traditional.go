@@ -1223,7 +1223,8 @@ var TraditionalMessages = Messages{
 	SFTPDeletedFmt:              "已刪除 %s",
 	SFTPDeletedCountFmt:         "已刪除 %d 個項目",
 	SFTPPermissionsTitle:        "修改權限",
-	SFTPPermissionsDescription:  "輸入三位八進位制權限，例如 644 或 755。",
+	SFTPPermissionsDescription:  "輸入三位八進位制權限，例如 644 或 755；所有選取項目都將套用此權限。",
+	SFTPPermissionsRecursive:    "套用於子目錄",
 	SFTPPermissionsMode:         "八進位制權限",
 	SFTPPermissionsSubmit:       "應用",
 	SFTPPermissionsOwner:        "所有者",
@@ -1263,6 +1264,9 @@ var TraditionalMessages = Messages{
 	SFTPEditConflictTitle:       "遠端檔案已變化",
 	SFTPEditConflictDescription: "伺服器上已有更新版本。可保留本機修改，或重新載入遠端檔案並放棄本機修改。",
 	SFTPEditReloadConfirm:       "重新載入遠端檔案",
+
+	SFTPChangingPermissionsCountFmt: "正在修改 %d 個項目的權限…",
+	SFTPPermissionsChangedCountFmt:  "已將 %d 個項目的權限修改為 %03o",
 
 	StatsMeasuring:   "正在測量主機資源…",
 	StatsUnsupported: "主機不支援資源讀數",

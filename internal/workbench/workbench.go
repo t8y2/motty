@@ -314,6 +314,7 @@ var (
 	hitSFTPChownUserItem   = tree.Sub(sftpHits, tree.Name("sftp-chown-user"))  // + the match index
 	hitSFTPChownGroupItem  = tree.Sub(sftpHits, tree.Name("sftp-chown-group")) // + the match index
 	hitSFTPChmodBits       = tree.Sub(sftpHits, tree.Name("sftp-chmod-bit"))   // + the bit index
+	hitSFTPChmodRecursive  = tree.ID(sftpHits, "sftp-chmod-recursive")
 	hitSFTPDialogClose     = tree.ID(sftpHits, "sftp-dialog-close")
 	hitSFTPDialogCancel    = tree.ID(sftpHits, "sftp-dialog-cancel")
 	hitSFTPDialogSubmit    = tree.ID(sftpHits, "sftp-dialog-submit")

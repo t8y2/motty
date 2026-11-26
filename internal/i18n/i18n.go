@@ -1241,6 +1241,7 @@ type Messages struct {
 	SFTPDeletedCountFmt         string
 	SFTPPermissionsTitle        string
 	SFTPPermissionsDescription  string
+	SFTPPermissionsRecursive    string
 	SFTPPermissionsMode         string
 	SFTPPermissionsSubmit       string
 	SFTPPermissionsOwner        string
@@ -1280,6 +1281,9 @@ type Messages struct {
 	SFTPEditConflictTitle       string
 	SFTPEditConflictDescription string
 	SFTPEditReloadConfirm       string
+
+	SFTPChangingPermissionsCountFmt string
+	SFTPPermissionsChangedCountFmt  string
 
 	// SFTPDownloadConflictTitle and its descriptions ask what a download whose
 	// local name is taken should do. The count variant names a whole selection.

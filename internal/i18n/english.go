@@ -1223,7 +1223,8 @@ var EnglishMessages = Messages{
 	SFTPDeletedFmt:              "Deleted %s",
 	SFTPDeletedCountFmt:         "Deleted %d items",
 	SFTPPermissionsTitle:        "Change Permissions",
-	SFTPPermissionsDescription:  "Enter a three-digit octal mode such as 644 or 755.",
+	SFTPPermissionsDescription:  "Enter a three-digit octal mode such as 644 or 755. Every selected item gets it.",
+	SFTPPermissionsRecursive:    "Apply to subdirectories",
 	SFTPPermissionsMode:         "Octal mode",
 	SFTPPermissionsSubmit:       "Apply",
 	SFTPPermissionsOwner:        "Owner",
@@ -1263,6 +1264,9 @@ var EnglishMessages = Messages{
 	SFTPEditConflictTitle:       "Remote File Changed",
 	SFTPEditConflictDescription: "The server has a newer version. Keep your local edits, or reload the remote file and discard them.",
 	SFTPEditReloadConfirm:       "Reload Remote",
+
+	SFTPChangingPermissionsCountFmt: "Changing permissions of %d items…",
+	SFTPPermissionsChangedCountFmt:  "Changed permissions of %d items to %03o",
 
 	StatsMeasuring:   "Measuring host resources…",
 	StatsUnsupported: "Resource stats unsupported",
