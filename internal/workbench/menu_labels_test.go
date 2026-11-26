@@ -154,6 +154,18 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.Tools.SnippetEdit
 	case hitSnippetMenuDelete:
 		return m.Tools.SnippetDelete
+	case hitSnippetBlankNewGroup:
+		return m.NewGroup
+	case hitSnippetBlankNewSnippet:
+		return m.Tools.SnippetAdd
+	case hitSnippetFolderMenuAdd:
+		return m.Tools.SnippetFolderAdd
+	case hitSnippetFolderMenuNewChild:
+		return m.HostGroupActions.NewChild
+	case hitSnippetFolderMenuRename:
+		return m.Tools.SnippetGroupRename
+	case hitSnippetFolderMenuDelete:
+		return m.Tools.SnippetGroupDelete
 	case hitWorkspaceTemplateMenuEdit:
 		return m.WorkspaceTemplateEdit
 	case hitWorkspaceTemplateMenuDelete:

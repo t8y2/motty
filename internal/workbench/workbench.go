@@ -1221,6 +1221,7 @@ func (state *State) Close() {
 	// The window's save above already carried any applied font size, so a wheel
 	// save still waiting is dropped rather than fired after the store closes.
 	state.stopTerminalZoomSave()
+	state.stopInlineSnippetSave()
 	state.closeAI()
 	state.closeHistory()
 	state.stopSyncTimer()
@@ -1579,6 +1580,18 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitSessionLogsSearch && state.activeSection == sectionSessionLogs {
 			return &state.sessionLogs.view.search
 		}
+		if state.activeSection == sectionSnippets {
+			switch hit {
+			case hitSnippetTreeSearch:
+				return &state.snippets.treeSearch
+			case hitSnippetInlineName:
+				return &state.snippets.inline.name
+			case hitSnippetInlineCommand:
+				return &state.snippets.inline.command
+			case hitSnippetInlineGroup:
+				return &state.snippets.inline.groupPicker.Query
+			}
+		}
 	case modalNewHost:
 		if hit == hitDialogTags {
 			return &state.hostTagPicker().control.Query
@@ -1708,15 +1721,6 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	case modalHighlightRule:
 		if hit == hitHighlightPattern {
 			return &state.highlighting.pattern
-		}
-	case modalSnippet:
-		switch hit {
-		case hitSnippetName:
-			return &state.snippets.name
-		case hitSnippetCommand:
-			return &state.snippets.command
-		case hitSnippetGroup:
-			return &state.snippets.groupPicker.Query
 		}
 	case modalSnippetGroupRename:
 		if hit == hitSnippetGroupRenameField {
@@ -1971,9 +1975,6 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalDeleteRule:
 		state.clickDeleteRuleDialog(id)
 		return
-	case modalSnippet:
-		state.clickSnippetDialog(id)
-		return
 	case modalSnippetDelete:
 		state.clickSnippetDeleteDialog(id)
 		return
@@ -2143,14 +2144,14 @@ func (state *State) click(id gfx.ID, feedback bool) {
 			state.releaseIdleSFTP(session)
 		}
 		state.clearBroadcast()
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		state.save()
 	case id == hitWorkspaces:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 			state.releaseIdleSFTP(session)
 		}
 		state.clearBroadcast()
-		state.activeSection = sectionWorkspaces
+		state.setActiveSection(sectionWorkspaces)
 		state.save()
 	case id == hitNewTab || id == hitVerticalTabsNew:
 		state.openConnectPicker()
@@ -2167,20 +2168,20 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		// Pressing the box only focuses it; the runtime already did.
 	case id == hitKeychain:
 		state.clearBroadcast()
-		state.activeSection = sectionKeys
+		state.setActiveSection(sectionKeys)
 		state.save()
 	case id == hitProxies:
 		state.clearBroadcast()
-		state.activeSection = sectionProxies
+		state.setActiveSection(sectionProxies)
 		state.save()
 	case id == hitPortForwarding:
 		state.clearBroadcast()
-		state.activeSection = sectionForwards
+		state.setActiveSection(sectionForwards)
 		state.save()
 	case state.clickNotes(id):
 	case id == hitSnippets:
 		state.clearBroadcast()
-		state.activeSection = sectionSnippets
+		state.setActiveSection(sectionSnippets)
 		state.save()
 	case id == hitKnownHosts:
 		state.openKnownHosts()
@@ -2407,7 +2408,7 @@ func (state *State) closeSession(id uint32) {
 	state.sessions = slices.Delete(state.sessions, index, index+1)
 	state.syncActiveSession()
 	if state.deck.ActiveWorkspace() == 0 {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 	}
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
@@ -2417,7 +2418,7 @@ func (state *State) closeSession(id uint32) {
 	}
 	if len(state.sessions) == 0 {
 		state.activeSessionID = 0
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		return
 	}
 	state.activeSessionID = state.sessions[min(index, len(state.sessions)-1)].ID
@@ -2499,9 +2500,9 @@ func (state *State) closeWorkspaceNow(id layoutcore.WorkspaceID) {
 	state.syncActiveSession()
 	state.rebuildTabOptions()
 	if state.deck.ActiveWorkspace() == 0 {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 	} else {
-		state.activeSection = sectionTerminal
+		state.setActiveSection(sectionTerminal)
 	}
 	state.save()
 }
@@ -2974,18 +2975,14 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 }
 
 func (state *State) pointer(event gfx.PointerEvent) gfx.EventResult {
-	if state.modal == modalSnippet && event.Kind == gfx.PointerDown {
-		state.snippets.abandonOther(event.Target)
+	if state.modal == modalNone && state.activeSection == sectionSnippets && event.Kind == gfx.PointerDown {
+		state.snippets.inline.abandonOther(event.Target)
 	}
 	if result, handled := state.snippetGroupPointer(event); handled {
 		return result
 	}
-	if state.modal == modalSnippet && event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) && event.Target == hitSnippetSubmit {
-		if target := state.snippets.composingTarget(); !target.IsZero() {
-			// Keep the composition and its field focused; swallowing this press
-			// prevents the focus change from committing the preedit before Save.
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: target}
-		}
+	if result, handled := state.snippetBlankPointer(event); handled {
+		return result
 	}
 	if result, handled := state.updateDialogPointer(event); handled {
 		return result
@@ -3328,9 +3325,13 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	if result, handled := state.restoredPageKey(event); handled {
 		return result
 	}
-	if state.modal == modalSnippet && state.snippets.capturing && event.Key == gfx.KeyEscape && !event.Repeat {
-		state.snippets.capturing = false
+	if state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing && event.Key == gfx.KeyEscape && !event.Repeat {
+		state.snippets.inline.capturing = false
+		state.refreshInlineShortcutLabel()
 		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if result, handled := state.snippetTreeKeyEvent(event); handled {
+		return result
 	}
 	if result, handled := state.aiKey(event); handled {
 		return result
@@ -3468,12 +3469,6 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if state.modal == modalHighlightRule && event.Key == gfx.KeyEnter && event.Target == hitHighlightPattern && !event.Repeat {
 		state.submitHighlightRule()
-		return gfx.EventResult{Handled: true, Repaint: true}
-	}
-	if state.modal == modalSnippet && event.Key == gfx.KeyEnter && (event.Target == hitSnippetName || event.Target == hitSnippetGroup) && !event.Repeat {
-		// submitSnippet refuses while either field is composing: that Enter
-		// belongs to the input method, and the preedit is not the text to save.
-		state.submitSnippet()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalSnippetGroupRename && event.Key == gfx.KeyEnter && event.Target == hitSnippetGroupRenameField && !event.Repeat {
@@ -3625,7 +3620,7 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	}
 	session.setStartDirectory(directory)
 	state.activeSessionID = session.ID
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.status = state.messages.StatusOpened + session.Title
 	if conn == nil {
 		state.startConnection(session, host)
@@ -3654,7 +3649,7 @@ func (state *State) bindWorkspaceSession(workspaceID layoutcore.WorkspaceID, pan
 		return nil
 	}
 	state.activeSessionID = session.ID
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.status = state.messages.StatusOpened + session.Title
 	return session
 }

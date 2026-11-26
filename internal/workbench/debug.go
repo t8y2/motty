@@ -92,7 +92,7 @@ func devPlaysIconMotion(id gfx.ID) bool { return id == hitDebug }
 // devClick opens the gallery from the sidebar and handles its controls.
 func (state *State) devClick(id gfx.ID) bool {
 	if id == hitDebug {
-		state.activeSection = sectionDebug
+		state.setActiveSection(sectionDebug)
 		state.save()
 		return true
 	}
@@ -161,7 +161,7 @@ func (state *State) devRestoreWorkspace(workspace string) bool {
 	if workspace != "debug" {
 		return false
 	}
-	state.activeSection = sectionDebug
+	state.setActiveSection(sectionDebug)
 	return true
 }
 

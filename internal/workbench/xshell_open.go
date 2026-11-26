@@ -41,7 +41,7 @@ func xshellLaunchPath(args []string) (string, bool) {
 func (state *State) openXshellFile(path string) {
 	result, err := sessionimport.ParseXshell(path)
 	if err != nil {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		state.status = fmt.Sprintf(state.messages.Tools.LaunchXshellFailedFmt, filepath.Base(path), err)
 		return
 	}
@@ -54,7 +54,7 @@ func (state *State) openXshellFile(path string) {
 		}
 	}
 	if !found {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		state.status = fmt.Sprintf(state.messages.Tools.LaunchXshellEmptyFmt, filepath.Base(path))
 		return
 	}

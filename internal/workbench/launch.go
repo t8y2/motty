@@ -167,7 +167,7 @@ func (state *State) openLaunch(args []string) {
 	}
 	parsed, err := parseConnection(text)
 	if err != nil {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		if errors.Is(err, errUnsupportedLink) {
 			state.status = state.messages.Tools.LaunchFTPUnsupported
 		} else {

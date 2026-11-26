@@ -119,7 +119,7 @@ func (state *State) initKnownHosts() {
 }
 
 func (state *State) openKnownHosts() {
-	state.activeSection = sectionKnownHosts
+	state.setActiveSection(sectionKnownHosts)
 	state.refreshKnownHosts(true)
 }
 

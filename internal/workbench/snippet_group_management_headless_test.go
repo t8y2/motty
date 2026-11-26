@@ -114,7 +114,7 @@ func TestSnippetGroupsManagerNativeRenameAndDelete(t *testing.T) {
 	if state.modal != modalNone {
 		t.Fatalf("closing the manager left modal %d", state.modal)
 	}
-	if got := strings.Join(view.Texts(), "\n"); !strings.Contains(got, "code .") || !strings.Contains(got, "Prod") {
+	if got := strings.Join(view.Texts(), "\n"); !strings.Contains(got, "editor") || !strings.Contains(got, "Prod") {
 		t.Fatalf("the page does not show the renamed and ungrouped commands: %v", view.Texts())
 	}
 }

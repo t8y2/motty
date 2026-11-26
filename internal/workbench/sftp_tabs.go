@@ -21,7 +21,7 @@ func (state *State) openSFTPTab(w *sftpWindow) {
 		state.sftpTabs = append(state.sftpTabs, w)
 	}
 	state.activeSFTPTab = w.session.ID
-	state.activeSection = sectionSFTP
+	state.setActiveSection(sectionSFTP)
 	state.rebuildFileTabOptions()
 	state.options.Invalidate()
 	w.startBrowser()
@@ -73,7 +73,7 @@ func (state *State) selectSFTPTab(id uint32, refresh bool) bool {
 	}
 	changed := state.activeSection != sectionSFTP || state.activeSFTPTab != id
 	state.activeSFTPTab = id
-	state.activeSection = sectionSFTP
+	state.setActiveSection(sectionSFTP)
 	if refresh && changed && state.modal == modalNone {
 		state.sftpTabs[index].activate()
 	}
@@ -213,9 +213,9 @@ func (state *State) removeSFTPTab(w *sftpWindow) {
 		case len(state.sftpTabs) == 0:
 			state.activeSFTPTab = 0
 			if state.deck.ActiveWorkspace() != 0 {
-				state.activeSection = sectionTerminal
+				state.setActiveSection(sectionTerminal)
 			} else {
-				state.activeSection = sectionHosts
+				state.setActiveSection(sectionHosts)
 			}
 		case index < len(state.sftpTabs):
 			state.activeSFTPTab = state.sftpTabs[index].session.ID
@@ -249,9 +249,9 @@ func (state *State) syncSFTPTabs() {
 		state.activeSFTPTab = 0
 		if state.activeSection == sectionSFTP {
 			if state.deck.ActiveWorkspace() != 0 {
-				state.activeSection = sectionTerminal
+				state.setActiveSection(sectionTerminal)
 			} else {
-				state.activeSection = sectionHosts
+				state.setActiveSection(sectionHosts)
 			}
 		}
 	} else if state.sftpTabIndex(state.activeSFTPTab) < 0 {

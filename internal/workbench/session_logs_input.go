@@ -18,7 +18,7 @@ import (
 // openSessionLogs shows the journal and loads its first page.
 func (state *State) openSessionLogs() {
 	if state.activeSection != sectionSessionLogs {
-		state.activeSection = sectionSessionLogs
+		state.setActiveSection(sectionSessionLogs)
 		state.save()
 		state.refreshSessionLogFilters()
 		return

@@ -543,7 +543,7 @@ func (state *State) hostsPanelLive() bool {
 // manageHostsFromPanel leaves the terminals for the hosts page, where the
 // catalog is edited as a whole.
 func (state *State) manageHostsFromPanel() {
-	state.activeSection = sectionHosts
+	state.setActiveSection(sectionHosts)
 	state.save()
 }
 

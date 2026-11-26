@@ -254,7 +254,7 @@ func (state *State) openStartupSessions() {
 	}
 	state.startupHosts = kept
 	if shown != nil {
-		state.activeSection = sectionTerminal
+		state.setActiveSection(sectionTerminal)
 		state.ActivatePane(shown.ID)
 	}
 }

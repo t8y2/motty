@@ -56,7 +56,7 @@ func recordSyncCategory(kind string) (syncCategory, bool) {
 		return syncCategorySettings, true
 	case "note", "note-folder":
 		return syncCategoryNotes, true
-	case "snippet":
+	case "snippet", "snippet-group":
 		return syncCategorySnippets, true
 	case "forward":
 		return syncCategoryForwards, true

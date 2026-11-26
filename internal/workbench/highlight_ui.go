@@ -453,6 +453,12 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	clear(state.snippets.list)
 	state.snippets.list = state.snippets.list[:0]
+	state.snippets.customGroups = state.snippets.customGroups[:0]
+	for _, group := range saved.SnippetGroups {
+		if clean := restoreSnippetGroup(group.Name); clean != "" {
+			state.snippets.customGroups = append(state.snippets.customGroups, clean)
+		}
+	}
 	// The list is rebuilt from scratch, so a menu opened on one of its rows or
 	// chips no longer names the snippet it showed.
 	state.snippetMenu.open = false

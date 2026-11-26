@@ -196,7 +196,7 @@ func (state *State) chooseNewTabRow(id gfx.ID) {
 func (state *State) chooseHostSection() {
 	state.pendingWorkspace = state.deck.ActiveWorkspace()
 	state.pendingPane = state.deck.ActivePane(state.pendingWorkspace)
-	state.activeSection = sectionHosts
+	state.setActiveSection(sectionHosts)
 	state.save()
 }
 

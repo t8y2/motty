@@ -390,7 +390,7 @@ func (state *State) detachWorkspace(id layoutcore.WorkspaceID) (*tabPayload, boo
 	state.sessions = kept
 	state.syncActiveSession()
 	if state.deck.ActiveWorkspace() == 0 {
-		state.activeSection = sectionHosts
+		state.setActiveSection(sectionHosts)
 		state.activeSessionID = 0
 	}
 	state.rebuildTabOptions()
@@ -515,7 +515,7 @@ func (state *State) attachPayload(payload *tabPayload, drop tabDrop) bool {
 	}
 	state.adoptTransfers(payload.transfers)
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.rebuildTabOptions()
 	state.refreshWorkspaceViews()
 	state.fitWorkspaceTerminals(id)

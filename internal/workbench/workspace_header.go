@@ -294,7 +294,7 @@ func (state *State) leaveWorkspaceForLibrary() {
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
 		state.releaseIdleSFTP(session)
 	}
-	state.activeSection = sectionWorkspaces
+	state.setActiveSection(sectionWorkspaces)
 	state.workspaceHeaderMenu = workspaceHeaderMenuNone
 	state.save()
 }

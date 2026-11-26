@@ -20,17 +20,17 @@ click "Hosts"
 click "Snippets"
 waitfor "No snippets" 3000
 click "Add snippet"
-waitfor "Add a snippet" 3000
+click "Name"
 type Say hello
-key tab
+click "Command"
 type echo snippet-$((6*7))
-click "Save"
+settle 600
 click "Add snippet"
-waitfor "Add a snippet" 3000
+click "Name"
 type List files
-key tab
+click "Command"
 type ls -la /tmp
-click "Save"
+settle 600
 
 # Back in the terminal, the toolbar button opens the list.
 click "127.0.0.1:2222"

@@ -90,7 +90,7 @@ func (state *State) submitWorkspaceSave() {
 	state.clearBroadcast()
 	state.status = state.messages.Tools.StatusBroadcastOff
 	previousSection := state.activeSection
-	state.activeSection = sectionWorkspaces
+	state.setActiveSection(sectionWorkspaces)
 	if !state.saveResult() {
 		state.templates = previousTemplates
 		state.selectedWorkspaceTemplateID = previousSelected
@@ -98,7 +98,7 @@ func (state *State) submitWorkspaceSave() {
 		state.temporaryWorkspaceLayouts[save.workspace] = save.layout
 		state.restoreBroadcast(previousBroadcast)
 		state.status = previousStatus
-		state.activeSection = previousSection
+		state.setActiveSection(previousSection)
 		save.error = state.messages.WorkspaceSaveFailed
 		return
 	}

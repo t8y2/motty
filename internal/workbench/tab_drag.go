@@ -678,7 +678,7 @@ func (state *State) dockWorkspace(src layoutcore.WorkspaceID, target layoutcore.
 	state.restoreWorkspaceIdentity(src, workspaceIdentity{})
 	state.restoreWorkspaceIdentity(dst, mergeWorkspaceIdentities(state.workspaceIdentity(dst), sourceIdentity))
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.rebuildTabOptions()
 	state.refreshWorkspaceViews()
 	state.fitWorkspaceTerminals(dst)
@@ -1044,7 +1044,7 @@ func (state *State) undockPane(workspace layoutcore.WorkspaceID, paneID layoutco
 		return false
 	}
 	state.syncActiveSession()
-	state.activeSection = sectionTerminal
+	state.setActiveSection(sectionTerminal)
 	state.rebuildTabOptions()
 	state.refreshWorkspaceViews()
 	state.fitWorkspaceTerminals(workspace)

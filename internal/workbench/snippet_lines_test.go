@@ -58,15 +58,16 @@ func TestSnippetWithoutLinesStaysOnePaste(t *testing.T) {
 	}
 }
 
-// The choice is saved with the snippet, through the dialog that sets it.
+// The choice is saved with the snippet, through the inline editor that sets it.
 func TestSnippetLinesChoiceSurvivesRestart(t *testing.T) {
 	options := testOptions(t)
 	state := newTestState(t, options)
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("script")
-	state.snippets.command.Insert("one\ntwo")
-	state.Click(hitSnippetLines)
-	state.Click(hitSnippetSubmit)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("script")
+	state.snippets.inline.command.Insert("one\ntwo")
+	state.Click(hitSnippetInlineLines)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
 	if len(state.snippets.list) != 1 || !state.snippets.list[0].Lines {
 		t.Fatalf("saved snippets = %+v", state.snippets.list)
 	}

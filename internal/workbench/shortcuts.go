@@ -460,8 +460,8 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	chord, ok := keymap.FromEvent(event)
-	if state.modal == modalSnippet && state.snippets.capturing {
-		return state.captureSnippetShortcut(event, chord, ok)
+	if state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing {
+		return state.captureInlineSnippetShortcut(event, chord, ok)
 	}
 	if !ok {
 		if state.modal == modalShortcutCapture && !event.Release {
@@ -497,7 +497,8 @@ func (state *State) appLockShortcut(event gfx.KeyEvent, child *app.Config) gfx.E
 		return gfx.EventResult{}
 	}
 	if child == nil {
-		if state.modal == modalShortcutCapture || state.modal == modalSnippet && state.snippets.capturing {
+		if state.modal == modalShortcutCapture ||
+			state.modal == modalNone && state.activeSection == sectionSnippets && state.snippets.inline.capturing {
 			return gfx.EventResult{}
 		}
 		if _, view := state.focusedDesktop(event.Target); view != nil && (!view.released || isEscapeChord(event)) {

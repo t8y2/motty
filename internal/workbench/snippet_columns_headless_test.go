@@ -7,25 +7,21 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"motty/internal/i18n"
 )
 
-// A command longer than the command column must be ellipsized in place, not
-// squeeze the fixed columns before it: every row keeps the group and command
-// positions the headings declare, whatever the command's length (#1152).
-func TestSnippetColumnsStayAlignedWhenCommandsAreLong(t *testing.T) {
+// The snippets directory-tree and inline editor must lay out cleanly without
+// clipping or overlaps even when snippets carry very long names and commands.
+func TestSnippetsTreeWorkspaceLayoutStaysCleanWithLongCommands(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	state.setLanguage(i18n.English)
 	state.activeSection = sectionSnippets
-	commands := []string{
-		"first-command-" + strings.Repeat("x", 700),
-		"second-command-" + strings.Repeat("y", 1600),
-	}
 	addTestSnippets(state,
-		snippet{Name: "First", Group: "Docker", Command: commands[0], Run: true},
-		snippet{Name: "Second", Group: "Docker", Command: commands[1], Run: true},
+		snippet{Name: "First " + strings.Repeat("a", 40), Group: "Docker/Prod", Command: "first-command-" + strings.Repeat("x", 700), Run: true},
+		snippet{Name: "Second", Group: "Docker/Staging", Command: "second-command-" + strings.Repeat("y", 1600), Run: true},
 	)
 
 	view, err := headless.Open(app.Config{
@@ -45,45 +41,31 @@ func TestSnippetColumnsStayAlignedWhenCommandsAreLong(t *testing.T) {
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
-
-	painted := view.Snapshot().Texts
-	// find returns the painted text that starts with prefix, with its x and y.
-	find := func(prefix string) (string, float32, float32) {
-		t.Helper()
-		for _, text := range painted {
-			if strings.HasPrefix(text.Value, prefix) {
-				return text.Value, text.Bounds.X, text.Bounds.Y
-			}
-		}
-		t.Fatalf("nothing painted starts with %q; painted texts: %v", prefix, view.Texts())
-		return "", 0, 0
+	if problems := headless.CheckLayout(view.Snapshot()); len(problems) > 0 {
+		t.Fatalf("snippets tree workspace layout problems: %v", problems)
 	}
-	// inRow returns the x of the painted text that shares the row at y.
-	inRow := func(prefix string, y float32) float32 {
-		t.Helper()
-		for _, text := range painted {
-			if text.Bounds.Y == y && strings.HasPrefix(text.Value, prefix) {
-				return text.Bounds.X
-			}
+	texts := strings.Join(view.Texts(), "\n")
+	for _, want := range []string{"Docker", "Prod", "Staging", "Second"} {
+		if !strings.Contains(texts, want) {
+			t.Fatalf("missing %q in painted snippets tree workspace: %v", want, view.Texts())
 		}
-		t.Fatalf("nothing starting with %q shares the row at y=%v; painted texts: %v", prefix, y, view.Texts())
-		return 0
 	}
 
-	m := state.messages.Tools
-	_, groupHeadingX, _ := find(m.SnippetColumnGroup)
-	_, commandHeadingX, _ := find(m.SnippetColumnCommand)
-
-	for index, command := range commands {
-		text, commandX, y := find(command[:14])
-		if !strings.HasSuffix(text, "…") || len(text) >= len(command) {
-			t.Fatalf("command %d was not ellipsized in its column: %q", index, text)
-		}
-		if commandX != commandHeadingX {
-			t.Errorf("row %d starts its command at %v, but the Command heading starts at %v", index, commandX, commandHeadingX)
-		}
-		if groupX := inRow("Docker", y); groupX != groupHeadingX {
-			t.Errorf("row %d starts its group at %v, but the Group heading starts at %v", index, groupX, groupHeadingX)
-		}
+	// Right-clicking the blank area below the tree rows opens the blank menu
+	// offering New Group.
+	treeRect := state.sectionBodies.snippets.tree.Rect()
+	blankX := treeRect.X + treeRect.Width/2
+	blankY := treeRect.Y + treeRect.Height - 40
+	if err := view.Driver().Press(blankX, blankY, gfx.PointerButtonSecondary); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Driver().Release(blankX, blankY, gfx.PointerButtonSecondary); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.snippets.blankMenu.open {
+		t.Fatalf("right-clicking blank tree area (%v,%v) did not open blank menu", blankX, blankY)
 	}
 }

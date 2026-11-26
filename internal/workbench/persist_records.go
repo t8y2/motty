@@ -206,6 +206,7 @@ var entityFields = []entityField{
 	}},
 	{field: "proxies", kind: "proxy", key: proxyRecordKey},
 	{field: "snippets", kind: "snippet", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "name") }},
+	{field: "snippet_groups", kind: "snippet-group", key: func(fields map[string]json.RawMessage) string { return fieldText(fields, "name") }},
 	{field: "highlights", kind: "highlight", key: func(fields map[string]json.RawMessage) string {
 		return joinKey(fieldText(fields, "pattern"), fieldText(fields, "regex"), fieldText(fields, "case_sensitive"))
 	}},

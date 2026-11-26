@@ -7,20 +7,21 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 // "cd " and "ssh " are sent to be finished by hand: the space the user typed
 // after them is part of the command, through saving, restoring and sending.
 func TestSnippetCommandKeepsItsSurroundingSpace(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("  go to  ")
-	state.snippets.command.Insert(" cd ")
-	state.snippets.run = false
-	state.Click(hitSnippetSubmit)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("  go to  ")
+	state.snippets.inline.command.Insert(" cd ")
+	state.Click(hitSnippetInlineRun)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
 	if len(state.snippets.list) != 1 {
 		t.Fatal("the snippet was not saved")
 	}
@@ -28,8 +29,8 @@ func TestSnippetCommandKeepsItsSurroundingSpace(t *testing.T) {
 		t.Fatalf("saved name %q, command %q", got.Name, got.Command)
 	}
 
-	state.openSnippetDialog(0)
-	if got := state.snippets.command.String(); got != " cd " {
+	state.focusInlineSnippet(0)
+	if got := state.snippets.inline.command.String(); got != " cd " {
 		t.Fatalf("editing shows command %q", got)
 	}
 
@@ -42,11 +43,11 @@ func TestSnippetCommandKeepsItsSurroundingSpace(t *testing.T) {
 
 func TestSnippetCommandOfOnlySpaceIsRefused(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("blank")
-	state.snippets.command.Insert("   ")
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalSnippet || len(state.snippets.list) != 0 || state.snippets.dialogError == "" {
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("blank")
+	state.snippets.inline.command.Insert("   ")
+	state.applyInlineSnippetEdits()
+	if !state.snippets.inline.draft || len(state.snippets.list) != 0 || state.snippets.inline.error == "" {
 		t.Fatal("a command of only space was saved")
 	}
 }
@@ -54,13 +55,14 @@ func TestSnippetCommandOfOnlySpaceIsRefused(t *testing.T) {
 func TestMultilineSnippetKeepsLinesAndSendsAsPaste(t *testing.T) {
 	world, options := newSharingWorld(t)
 	state := newTestState(t, options)
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("deploy")
-	state.snippets.command.Insert("echo one\r\necho two")
-	if result := state.Key(gfx.KeyEvent{Target: hitSnippetCommand, Key: gfx.KeyEnter}); result.Handled || state.modal != modalSnippet {
-		t.Fatalf("Enter in multiline command: result=%+v modal=%d", result, state.modal)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("deploy")
+	state.snippets.inline.command.Insert("echo one\r\necho two")
+	if result := state.Key(gfx.KeyEvent{Target: hitSnippetInlineCommand, Key: gfx.KeyEnter}); result.Handled {
+		t.Fatalf("Enter in multiline command: result=%+v", result)
 	}
-	state.Click(hitSnippetSubmit)
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
 	if len(state.snippets.list) != 1 || state.snippets.list[0].Command != "echo one\necho two" || state.snippets.list[0].cells[3] != "echo one ↵ echo two" {
 		t.Fatalf("saved multiline snippet = %+v", state.snippets.list)
 	}
@@ -68,6 +70,7 @@ func TestMultilineSnippetKeepsLinesAndSendsAsPaste(t *testing.T) {
 	if len(loaded.snippets.list) != 1 || loaded.snippets.list[0].Command != "echo one\necho two" {
 		t.Fatalf("restored multiline snippet = %+v", loaded.snippets.list)
 	}
+	loaded.activeSection = sectionHosts
 	world.connectFirst(t, loaded)
 	shell := world.conns[0].shell(t)
 	if !loaded.sendSnippetTo(0, &loaded.sessions[0]) || shell.typed() != "echo one\recho two\r" {
@@ -84,7 +87,7 @@ func addTestSnippets(state *State, entries ...snippet) {
 	state.refreshSnippets()
 }
 
-func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
+func TestSnippetManualOrderPersistsThroughTreeReorder(t *testing.T) {
 	options := freshOptions(t)
 	state := newTestState(t, options)
 	state.activeSection = sectionSnippets
@@ -93,11 +96,10 @@ func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
 		snippet{Name: "alpha", Command: "echo a", Group: "dev"},
 		snippet{Name: "beta", Command: "echo b", Group: "ops"},
 	)
-	state.Click(hitSnippetSort.At(0))
 	state.snippets.filter = snippetFilter{group: "ops"}
 	state.refreshSnippets()
-	if !state.moveSnippet(2, -1) || state.snippets.sort.Direction != 0 || state.snippets.selected != 0 {
-		t.Fatalf("move in filtered table: visible=%v selected=%d sort=%+v", state.snippets.visible, state.snippets.selected, state.snippets.sort)
+	if !state.moveSnippet(2, -1) || state.snippets.selected != 0 {
+		t.Fatalf("move in filtered list: visible=%v selected=%d", state.snippets.visible, state.snippets.selected)
 	}
 	if got := []string{state.snippets.list[0].Name, state.snippets.list[1].Name, state.snippets.list[2].Name}; !slices.Equal(got, []string{"beta", "alpha", "zulu"}) {
 		t.Fatalf("reordered list = %v", got)
@@ -106,26 +108,20 @@ func TestSnippetManualOrderPersistsThroughSortingAndFiltering(t *testing.T) {
 	state.refreshSnippets()
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if state.snippets.rows.RowID(0).IsZero() {
-		t.Fatal("manual ordering did not declare the list rows")
+	if state.snippets.tree.RowID(0).IsZero() {
+		t.Fatal("directory tree did not declare its rows")
 	}
-	first := state.snippets.rows.RowID(0)
-	config := state.WindowConfig(app.Config{
-		Title: "Motty", Width: 1400, Height: 900, Tree: Tree(),
-		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-	})
-	result := config.OnKey(gfx.KeyEvent{Target: first, Key: gfx.KeyDown, Modifiers: gfx.ModifierAlt})
-	if !result.Handled || result.Focus != state.snippets.rows.RowID(1) || state.snippets.list[1].Name != "beta" {
-		t.Fatalf("keyboard reorder: handled=%v focus=%s order=%v", result.Handled, tree.Text(result.Focus), state.snippets.list)
-	}
-	if err := state.saveWithResult(); err != nil {
-		t.Fatalf("persist keyboard reorder: %v", err)
+	// Tree rows: dev(0), alpha(1), ops(2), beta(3), zulu(4).
+	// Dragging zulu before beta reorders within ops and persists across reloads.
+	state.dropSnippetTreeRow(ui.TreeMove{From: 4, To: 3, Where: ui.TreeDropBefore})
+	if got := []string{state.snippets.list[0].Name, state.snippets.list[1].Name, state.snippets.list[2].Name}; !slices.Equal(got, []string{"zulu", "beta", "alpha"}) {
+		t.Fatalf("tree reorder: order=%v", got)
 	}
 	if !slices.Equal(state.snippets.visible, []int{0, 1, 2}) {
 		t.Fatalf("manual order visible = %v", state.snippets.visible)
 	}
 	loaded := newTestState(t, options)
-	if got := []string{loaded.snippets.list[0].Name, loaded.snippets.list[1].Name, loaded.snippets.list[2].Name}; !slices.Equal(got, []string{"alpha", "beta", "zulu"}) {
+	if got := []string{loaded.snippets.list[0].Name, loaded.snippets.list[1].Name, loaded.snippets.list[2].Name}; !slices.Equal(got, []string{"zulu", "beta", "alpha"}) {
 		t.Fatalf("restored order = %v", got)
 	}
 }
@@ -167,41 +163,6 @@ func BenchmarkPaintSnippetsPage(b *testing.B) {
 	for b.Loop() {
 		canvas.Reset()
 		state.Paint(&canvas, size)
-	}
-}
-
-func TestSnippetTableSortKeepsActionsOnTheirOriginalRows(t *testing.T) {
-	state := newTestState(t, freshOptions(t))
-	state.activeSection = sectionSnippets
-	addTestSnippets(state,
-		snippet{Name: "zeta", Command: "echo z", Group: "Ops"},
-		snippet{Name: "alpha", Command: "echo a", Group: "dev"},
-		snippet{Name: "beta", Command: "echo b", Group: "Ops"},
-	)
-	form := &state.snippets
-	form.selected = 0
-	state.Click(hitSnippetSort.At(0))
-	if got := form.visible; !slices.Equal(got, []int{1, 2, 0}) || form.selected != 0 {
-		t.Fatalf("ascending names: visible=%v selected=%d", got, form.selected)
-	}
-	state.Click(hitSnippetSort.At(0))
-	if got := form.visible; !slices.Equal(got, []int{0, 2, 1}) || form.selected != 0 {
-		t.Fatalf("descending names: visible=%v selected=%d", got, form.selected)
-	}
-	state.Click(hitSnippetSort.At(0))
-	if got := form.visible; !slices.Equal(got, []int{0, 1, 2}) || form.sort.Direction != components.TableSortNone {
-		t.Fatalf("restored manual order: visible=%v sort=%+v", got, form.sort)
-	}
-	state.Click(hitSnippetSort.At(0))
-	state.Click(hitSnippetSort.At(0))
-	form.filter = snippetFilter{group: "Ops"}
-	state.refreshSnippets()
-	if got := form.visible; !slices.Equal(got, []int{0, 2}) {
-		t.Fatalf("filtered descending names: %v", got)
-	}
-	state.Click(hitSnippetSort.At(3))
-	if got := form.visible; !slices.Equal(got, []int{2, 0}) || form.list[form.selected].Name != "zeta" {
-		t.Fatalf("ascending commands: visible=%v selected=%d", got, form.selected)
 	}
 }
 
@@ -268,13 +229,15 @@ func TestSnippetFilterIsChosenFromThePage(t *testing.T) {
 		snippet{Name: "a", Command: "a", Group: "Ops"},
 		snippet{Name: "b", Command: "b"},
 	)
-	chooseSelectOption(t, state, state.messages.FieldGroup, "Ops")
-	if state.snippets.filter.group != "Ops" || len(state.snippets.visible) != 1 {
-		t.Fatalf("filter = %+v visible=%v", state.snippets.filter, state.snippets.visible)
+	state.Click(hitSnippetTreeSearchToggle)
+	state.snippets.treeSearch.Insert("Ops")
+	state.rebuildSnippetTreeRows()
+	if len(state.snippets.visible) != 1 || state.snippets.list[state.snippets.visible[0]].Name != "a" {
+		t.Fatalf("search Ops: visible=%v", state.snippets.visible)
 	}
-	chooseSelectOption(t, state, state.messages.FieldGroup, state.messages.Tools.SnippetFilterAll)
-	if !state.snippets.filter.all() || len(state.snippets.visible) != 2 {
-		t.Fatalf("All groups left filter %+v", state.snippets.filter)
+	state.Click(hitSnippetTreeSearchToggle)
+	if len(state.snippets.visible) != 2 {
+		t.Fatalf("closing search left visible=%v", state.snippets.visible)
 	}
 }
 
@@ -285,12 +248,13 @@ func TestSavedSnippetStaysVisibleUnderTheFilter(t *testing.T) {
 	state.snippets.filter = snippetFilter{group: "Ops"}
 	state.refreshSnippets()
 
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("c")
-	state.snippets.command.Insert("c")
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone {
-		t.Fatalf("save failed: %q", state.snippets.dialogError)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("c")
+	state.snippets.inline.command.Insert("c")
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.error != "" {
+		t.Fatalf("save failed: %q", state.snippets.inline.error)
 	}
 	if !containsInt(state.snippets.visible, state.snippets.selected) {
 		t.Fatal("the snippet just saved is hidden by the filter")
@@ -302,36 +266,38 @@ func TestSnippetGroupIsChosenOrCreatedInTheDialog(t *testing.T) {
 	addTestSnippets(state, snippet{Name: "a", Command: "a", Group: "Ops"})
 
 	// An existing group, picked by a different spelling, keeps its one name.
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("b")
-	state.snippets.command.Insert("b")
-	state.snippets.groupPicker.Query.Insert("ops")
-	state.Click(hitSnippetSubmit)
-	if state.modal != modalNone || state.snippets.list[1].Group != "Ops" {
-		t.Fatalf("group = %q, modal %v", state.snippets.list[1].Group, state.modal)
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("b")
+	state.snippets.inline.command.Insert("b")
+	state.snippets.inline.groupPicker.Query.Insert("ops")
+	state.Key(gfx.KeyEvent{Target: hitSnippetInlineGroup, Key: gfx.KeyEnter})
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.draft || state.snippets.list[1].Group != "Ops" {
+		t.Fatalf("group = %q, draft %v", state.snippets.list[1].Group, state.snippets.inline.draft)
 	}
 
-	// A new group is created by typing it, with Enter or Save.
-	state.openSnippetDialog(-1)
-	state.snippets.name.Insert("c")
-	state.snippets.command.Insert("c")
-	state.snippets.groupPicker.Query.Insert("Dev")
-	state.Key(gfx.KeyEvent{Target: hitSnippetGroup, Key: gfx.KeyEnter})
-	if state.modal != modalSnippet || state.snippets.groupPicker.Value() != "Dev" {
-		t.Fatalf("Enter in the group field: modal %v, value %q", state.modal, state.snippets.groupPicker.Value())
+	// A new group is created by typing it and pressing Enter.
+	state.startInlineSnippetDraft("")
+	state.snippets.inline.name.Insert("c")
+	state.snippets.inline.command.Insert("c")
+	state.snippets.inline.groupPicker.Query.Insert("Dev")
+	state.Key(gfx.KeyEvent{Target: hitSnippetInlineGroup, Key: gfx.KeyEnter})
+	if state.snippets.inline.groupPicker.Value() != "Dev" {
+		t.Fatalf("Enter in the group field: value %q", state.snippets.inline.groupPicker.Value())
 	}
-	state.Key(gfx.KeyEvent{Target: hitSnippetGroup, Key: gfx.KeyEnter})
-	if state.modal != modalNone || state.snippets.list[2].Group != "Dev" {
-		t.Fatalf("second Enter did not save into Dev: %+v", state.snippets.list[2])
+	state.applyInlineSnippetEdits()
+	state.flushInlineSnippetSave()
+	if state.snippets.inline.draft || state.snippets.list[2].Group != "Dev" {
+		t.Fatalf("saving into Dev failed: %+v", state.snippets.list[2])
 	}
 
 	// Editing shows the group, and clearing it ungroups the snippet.
-	state.openSnippetDialog(2)
-	if state.snippets.groupPicker.Value() != "Dev" {
-		t.Fatalf("editing shows group %q", state.snippets.groupPicker.Value())
+	state.focusInlineSnippet(2)
+	if state.snippets.inline.groupPicker.Value() != "Dev" {
+		t.Fatalf("editing shows group %q", state.snippets.inline.groupPicker.Value())
 	}
-	state.Click(hitSnippetGroupClear)
-	state.Click(hitSnippetSubmit)
+	state.Click(hitSnippetInlineGroupClear)
 	if state.snippets.list[2].Group != "" {
 		t.Fatalf("group after clearing = %q", state.snippets.list[2].Group)
 	}
@@ -505,9 +471,10 @@ func TestNestedSnippetGroupPathsNormalizeMaterializeAndFilterDescendants(t *test
 		t.Fatalf("leaf filter visible = %v, want [0]", form.visible)
 	}
 
-	// The editor's group picker uses "/" hierarchy navigation like hosts.
-	if picker := state.snippetGroupPicker("Clients/Acme/Production"); picker.Separator != "/" {
-		t.Fatalf("snippet group picker separator = %q, want /", picker.Separator)
+	// The inline editor's group picker uses "/" hierarchy navigation like hosts.
+	state.initInlineGroupPicker("Clients/Acme/Production")
+	if state.snippets.inline.groupPicker.Separator != "/" {
+		t.Fatalf("snippet group picker separator = %q, want /", state.snippets.inline.groupPicker.Separator)
 	}
 }
 

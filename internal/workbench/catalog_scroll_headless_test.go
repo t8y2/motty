@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/ui"
@@ -262,72 +261,40 @@ func TestCatalogPagesScrollLongLists(t *testing.T) {
 			})
 		}
 		state.refreshSnippets()
-		state.snippets.expanded = 1 // the first row's command is open.
 		state.activeSection = sectionSnippets
 		view := openCatalogWindow(t, state)
-		scroll := state.sectionBodies.snippets.rows.ScrollState()
+		scroll := state.sectionBodies.snippets.tree.ScrollState()
 		if scroll == nil {
-			t.Fatal("the snippets page has no scroll area")
+			t.Fatal("the snippets tree has no scroll area")
 		}
-		rowHeight := components.TableRowHeight(state.Theme())
-		if state.snippets.rows.RowHeightAt(0) <= rowHeight {
-			t.Fatalf("the expanded row kept its height: %v <= %v",
-				state.snippets.rows.RowHeightAt(0), rowHeight)
-		}
-		first, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(0))
+		first, ok := findSnapshotHit(view.Snapshot(), state.snippets.tree.RowID(0))
 		if !ok {
 			t.Fatal("the first row is not painted")
 		}
-		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(count-1)); ok {
-			t.Fatal("the list fits every row without scrolling")
+		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.tree.RowID(count-1)); ok {
+			t.Fatal("the tree fits every row without scrolling")
 		}
 		at := gfx.Point{X: first.Bounds.X + first.Bounds.Width/2, Y: first.Bounds.Y + first.Bounds.Height/2}
 		if err := view.Move(at.X, at.Y); err != nil {
 			t.Fatal(err)
 		}
-		bar, ok := findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
-		if !ok {
-			t.Fatal("a list taller than its viewport has no scrollbar under the pointer")
-		}
-		if bar.Bounds.Width != catalogBarGutter {
-			t.Fatalf("scrollbar width = %v, want %v", bar.Bounds.Width, catalogBarGutter)
-		}
-		headerAboveRows(t, view.Snapshot(), state.messages.Tools.SnippetColumnCommand, bar.Bounds)
-
 		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: 10000, Precise: true}); err != nil {
 			t.Fatal(err)
 		}
-		if offset := state.sectionBodies.snippets.rows.ScrollState().Offset; offset <= 0 {
-			t.Fatalf("wheel left the list at offset %v", offset)
+		if offset := state.sectionBodies.snippets.tree.ScrollState().Offset; offset <= 0 {
+			t.Fatalf("wheel left the tree at offset %v", offset)
 		}
-		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(count-1)); !ok {
-			t.Fatal("the last row is still unreachable at the end of the list")
+		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.tree.RowID(count-1)); !ok {
+			t.Fatal("the last row is still unreachable at the end of the tree")
 		}
-		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.rows.RowID(0)); ok {
-			t.Fatal("the first row is still painted at the end of the list")
+		if _, ok := findSnapshotHit(view.Snapshot(), state.snippets.tree.RowID(0)); ok {
+			t.Fatal("the first row is still painted at the end of the tree")
 		}
 		if err := view.Scroll(gfx.ScrollEvent{X: at.X, Y: at.Y, DeltaY: -10000, Precise: true}); err != nil {
 			t.Fatal(err)
 		}
-		if offset := state.sectionBodies.snippets.rows.ScrollState().Offset; offset != 0 {
-			t.Fatalf("scrolling back left the list at %v", offset)
-		}
-
-		bar, ok = findSnapshotLabel(view.Snapshot(), "Vertical scrollbar")
-		if !ok {
-			t.Fatal("the scrollbar disappeared before the drag")
-		}
-		if err := view.Driver().Press(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2, gfx.PointerButtonPrimary); err != nil {
-			t.Fatal(err)
-		}
-		if err := view.Driver().Move(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2+40); err != nil {
-			t.Fatal(err)
-		}
-		if offset := state.sectionBodies.snippets.rows.ScrollState().Offset; offset == 0 {
-			t.Fatal("dragging the bar did not move the list")
-		}
-		if err := view.Driver().Release(bar.Bounds.X+bar.Bounds.Width/2, bar.Bounds.Y+bar.Bounds.Height/2+40, gfx.PointerButtonPrimary); err != nil {
-			t.Fatal(err)
+		if offset := state.sectionBodies.snippets.tree.ScrollState().Offset; offset != 0 {
+			t.Fatalf("scrolling back left the tree at %v", offset)
 		}
 	})
 }

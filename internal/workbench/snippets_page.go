@@ -3,16 +3,32 @@ package workbench
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench/icons"
 )
 
-// refreshSnippets makes what the page shows of each snippet and the count under
-// it, after the list or the language changed.
+const (
+	snippetTreeDefaultWidth = float32(260)
+	snippetTreeMinWidth     = float32(180)
+	snippetTreeMaxWidth     = float32(420)
+	snippetEditorMinWidth   = float32(360)
+	snippetTreeRowHeight    = float32(30)
+	snippetTreeIndent       = float32(16)
+	// snippetInlineSaveDelay coalesces rapid typing in the Snippets page's
+	// inline editor into one store write once typing settles.
+	snippetInlineSaveDelay = 400 * time.Millisecond
+)
+
+// refreshSnippets updates derived display cells, group counts, tree rows,
+// selection, and the inline editor after the snippet list or language changes.
 func (state *State) refreshSnippets() {
 	form := &state.snippets
 	for index := range form.list {
@@ -26,547 +42,1436 @@ func (state *State) refreshSnippets() {
 	}
 	form.selected = max(0, min(form.selected, len(form.list)-1))
 	form.refreshSnippetGroups()
+	state.rebuildSnippetTreeRows()
 	form.syncRowSelection()
+	state.syncInlineSnippet(false)
+}
+
+// snippetsSectionUI is what the snippets page's declaration leaves for its
+// paint and tests.
+type snippetsSectionUI struct {
+	tree  ui.Box
+	send  ui.Box
+	empty ui.Box
+	draw  func(*ui.DrawContext)
+}
+
+// prepareSnippetTree initializes the Tree and Splitter callbacks once so
+// steady-state paints allocate nothing.
+func (state *State) prepareSnippetTree() {
+	form := &state.snippets
+	if form.treeNode != nil {
+		return
+	}
+	if form.treeWidth <= 0 {
+		form.treeWidth = snippetTreeDefaultWidth
+	}
+	if form.treeSplitter.Pos == 0 {
+		form.treeSplitter.Pos = form.treeWidth
+	}
+	form.tree.RowHeight = snippetTreeRowHeight
+	form.tree.Indent = snippetTreeIndent
+	form.treeNode = state.snippetTreeNode
+	form.treeLabel = state.snippetTreeLabel
+	form.treeContent = state.declareSnippetTreeRow
+	form.treeKey = state.snippetTreeKey
+	form.treeCanDrop = state.snippetTreeCanDrop
+	form.tree.Node = form.treeNode
+	form.tree.Key = form.treeKey
+	form.tree.Label = form.treeLabel
+	form.tree.CanDrop = form.treeCanDrop
+	form.treeAfterLayout = func(*ui.DrawContext) { state.snippetTreeAfterLayout() }
+	form.drawInlineFields = func(d *ui.DrawContext) { state.paintSnippetInlineFields(d.Canvas) }
+}
+
+func (state *State) snippetTreeAfterLayout() {
+	form := &state.snippets
+	if form.treeSplitter.Pos == 0 {
+		return
+	}
+	usable := max(1, state.catalogSectionBounds().Width-1)
+	width := min(max(form.treeSplitter.Pos, snippetTreeMinWidth), min(snippetTreeMaxWidth, max(snippetTreeMinWidth, usable-snippetEditorMinWidth)))
+	if width != form.treeSplitter.Pos && !form.treeSplitter.Dragging() {
+		form.treeSplitter.Pos = width
+	}
+	if width != form.treeWidth {
+		form.treeWidth = width
+	}
+}
+
+func (state *State) snippetTreeFolderToken(groupKey string) int {
+	form := &state.snippets
+	if form.treeFolderTokens == nil {
+		form.treeFolderTokens = make(map[string]int)
+	}
+	if token, ok := form.treeFolderTokens[groupKey]; ok {
+		return token
+	}
+	token := len(form.treeFolderTokens)
+	form.treeFolderTokens[groupKey] = token
+	return token
+}
+
+func (state *State) snippetTreeKey(i int) int {
+	rows := state.snippets.treeRows
+	if i < 0 || i >= len(rows) {
+		return 0
+	}
+	e := rows[i]
+	if e.folder {
+		return 1<<20 + state.snippetTreeFolderToken(e.groupKey)
+	}
+	return e.snippet
+}
+
+func (state *State) snippetTreeNode(i int) ui.TreeNode {
+	rows := state.snippets.treeRows
+	if i < 0 || i >= len(rows) {
+		return ui.TreeNode{}
+	}
+	e := rows[i]
+	if e.folder {
+		expanded := state.snippets.treeSearching || !state.snippets.treeCollapsedGroups[e.groupKey]
+		return ui.TreeNode{
+			Depth:    e.depth,
+			Branch:   true,
+			Expanded: expanded,
+		}
+	}
+	return ui.TreeNode{
+		Depth:    e.depth,
+		Selected: e.snippet == state.snippets.selected,
+	}
+}
+
+func (state *State) snippetTreeLabel(i int) string {
+	rows := state.snippets.treeRows
+	if i < 0 || i >= len(rows) {
+		return ""
+	}
+	return rows[i].label
+}
+
+// rebuildSnippetTreeRows flattens the group hierarchy and snippets into
+// form.treeRows in pre-order (subfolders first, then snippets directly in that
+// folder; ungrouped snippets at root depth 0).
+func (state *State) rebuildSnippetTreeRows() {
+	form := &state.snippets
+	query := strings.ToLower(strings.TrimSpace(form.treeSearch.String()))
+	form.treeSearching = query != ""
+	matches := make([]bool, len(form.list))
+	matchCount := 0
+	matchingFolders := make(map[string]int)
+	for i := range form.list {
+		entry := &form.list[i]
+		if !form.filter.matches(entry) {
+			continue
+		}
+		if query != "" {
+			if !strings.Contains(strings.ToLower(entry.Name), query) &&
+				!strings.Contains(strings.ToLower(entry.Group), query) &&
+				!strings.Contains(strings.ToLower(entry.Command), query) &&
+				!strings.Contains(strings.ToLower(entry.cells[2]), query) {
+				continue
+			}
+		}
+		matches[i] = true
+		matchCount++
+		for path := entry.Group; path != ""; path = snippetGroupParent(path) {
+			matchingFolders[strings.ToLower(path)]++
+		}
+	}
+
+	form.treeRows = form.treeRows[:0]
+	var walk func(parent string, depth int)
+	walk = func(parent string, depth int) {
+		for _, group := range form.groups {
+			if !sameSnippetGroup(snippetGroupParent(group), parent) {
+				continue
+			}
+			key := strings.ToLower(group)
+			count := matchingFolders[key]
+			if query != "" && count == 0 && !strings.Contains(key, query) {
+				continue
+			}
+			// Pre-register stable folder token before paint.
+			state.snippetTreeFolderToken(key)
+			form.treeRows = append(form.treeRows, snippetTreeEntry{
+				folder:    true,
+				group:     group,
+				groupKey:  key,
+				label:     snippetGroupLeaf(group),
+				countText: strconv.Itoa(count),
+				depth:     depth,
+				snippet:   -1,
+			})
+			if query != "" || !form.treeCollapsedGroups[key] {
+				walk(group, depth+1)
+			}
+		}
+		for i := range form.list {
+			if !matches[i] {
+				continue
+			}
+			if !sameSnippetGroup(form.list[i].Group, parent) {
+				continue
+			}
+			form.treeRows = append(form.treeRows, snippetTreeEntry{
+				folder:  false,
+				group:   parent,
+				label:   form.list[i].Name,
+				depth:   depth,
+				snippet: i,
+			})
+		}
+	}
+	walk("", 0)
+
+	// Keep form.visible and countText synchronized with the active search/filter.
+	if query != "" {
+		form.visible = form.visible[:0]
+		for i := range form.list {
+			if matches[i] {
+				form.visible = append(form.visible, i)
+			}
+		}
+		if len(form.visible) > 0 && !slices.Contains(form.visible, form.selected) {
+			form.selected = form.visible[0]
+		}
+	}
 	form.countText = fmt.Sprintf(state.messages.Tools.SnippetCountFmt, len(form.list))
 	if len(form.visible) != len(form.list) {
 		form.countText = fmt.Sprintf(state.messages.Tools.SnippetCountFilteredFmt, len(form.visible), len(form.list))
 	}
 }
 
-// enterKeyLabel is the keycap of a snippet that presses Enter after it is sent.
-const enterKeyLabel = "↵"
+func (state *State) snippetTreeCanExpandAll() bool {
+	form := &state.snippets
+	for _, g := range form.groups {
+		if form.treeCollapsedGroups[strings.ToLower(g)] {
+			return true
+		}
+	}
+	return false
+}
 
-const (
-	// snippetExpandSize is the square of the chevron that opens a row's command.
-	snippetExpandSize = float32(24)
-	// snippetDetailLines caps the expanded command; the last line is ellipsized.
-	// The editor dialog remains the place to see the whole command.
-	snippetDetailLines = 10
-	// snippetDetailPadding is the room around the expanded command.
-	snippetDetailPadding = float32(12)
-	// snippetCardLines and snippetCardWidth size the pointer's command preview.
-	snippetCardLines = 12
-	snippetCardWidth = float32(420)
-	// snippetHoverDelay is how long the pointer rests on a row before its
-	// preview opens. The canvas asks for one frame at the deadline; no timer or
-	// goroutine stays behind.
-	snippetHoverDelay = 400 * time.Millisecond
-)
+func (state *State) snippetTreeExpandAncestors(group string) {
+	if group == "" || len(state.snippets.treeCollapsedGroups) == 0 {
+		return
+	}
+	for path := group; path != ""; path = snippetGroupParent(path) {
+		delete(state.snippets.treeCollapsedGroups, strings.ToLower(path))
+	}
+}
+
+func (state *State) snippetTreeCanDrop(from, to int, where ui.TreeDrop) bool {
+	form := &state.snippets
+	if state.activeSection != sectionSnippets || state.modal != modalNone || strings.TrimSpace(form.treeSearch.String()) != "" {
+		return false
+	}
+	rows := form.treeRows
+	if from < 0 || from >= len(rows) || to < 0 || to >= len(rows) || from == to {
+		return false
+	}
+	src, dst := rows[from], rows[to]
+	if !src.folder {
+		switch where {
+		case ui.TreeDropInside:
+			return dst.folder
+		case ui.TreeDropBefore, ui.TreeDropAfter:
+			return true
+		}
+		return false
+	}
+	// Dragging a folder.
+	if !dst.folder {
+		return false
+	}
+	var targetParent string
+	switch where {
+	case ui.TreeDropInside:
+		targetParent = dst.group
+	case ui.TreeDropBefore, ui.TreeDropAfter:
+		targetParent = snippetGroupParent(dst.group)
+	default:
+		return false
+	}
+	return state.snippetFolderMoveTarget(src.group, targetParent) != ""
+}
+
+// snippetFolderMoveTarget computes the destination path for moving folder src
+// under targetParent ("" for root), returning "" when the move is invalid, a
+// no-op, or conflicts with an existing sibling group.
+func (state *State) snippetFolderMoveTarget(src, targetParent string) string {
+	if src == "" {
+		return ""
+	}
+	if targetParent != "" && snippetGroupWithin(targetParent, src) {
+		return ""
+	}
+	leaf := snippetGroupLeaf(src)
+	dest := leaf
+	if targetParent != "" {
+		dest = targetParent + "/" + leaf
+	}
+	dest = normalizeSnippetGroupPath(dest)
+	if !validSnippetGroup(dest) || sameSnippetGroup(dest, src) {
+		return ""
+	}
+	for _, group := range state.snippets.groups {
+		if !snippetGroupWithin(group, src) {
+			continue
+		}
+		remapped := remapSnippetGroupPath(group, src, dest)
+		if !validSnippetGroup(remapped) {
+			return ""
+		}
+		for _, existing := range state.snippets.groups {
+			if snippetGroupWithin(existing, src) {
+				continue
+			}
+			if sameSnippetGroup(existing, remapped) {
+				return ""
+			}
+		}
+	}
+	return dest
+}
+
+func (state *State) dropSnippetTreeRow(move ui.TreeMove) {
+	form := &state.snippets
+	rows := form.treeRows
+	if move.From < 0 || move.From >= len(rows) || move.To < 0 || move.To >= len(rows) || move.From == move.To {
+		return
+	}
+	src, dst := rows[move.From], rows[move.To]
+	if src.folder {
+		if !dst.folder {
+			return
+		}
+		targetParent := dst.group
+		if move.Where != ui.TreeDropInside {
+			targetParent = snippetGroupParent(dst.group)
+		}
+		dest := state.snippetFolderMoveTarget(src.group, targetParent)
+		if dest == "" {
+			return
+		}
+		if state.renameSnippetGroup(src.group, dest) {
+			state.snippetTreeExpandAncestors(dest)
+			state.rebuildSnippetTreeRows()
+		}
+		return
+	}
+	// Moving a snippet.
+	srcIdx := src.snippet
+	if srcIdx < 0 || srcIdx >= len(form.list) {
+		return
+	}
+	if dst.folder {
+		destGroup := dst.group
+		if move.Where != ui.TreeDropInside {
+			destGroup = snippetGroupParent(dst.group)
+		}
+		if sameSnippetGroup(form.list[srcIdx].Group, destGroup) {
+			return
+		}
+		form.list[srcIdx].Group = destGroup
+		form.selected = srcIdx
+		state.snippetTreeExpandAncestors(destGroup)
+		form.resetSnippetPreview()
+		state.refreshSnippets()
+		state.save()
+		return
+	}
+	// Dropping a snippet before/after another snippet: adopt its group and reorder.
+	dstIdx := dst.snippet
+	if dstIdx < 0 || dstIdx >= len(form.list) || srcIdx == dstIdx {
+		return
+	}
+	entry := form.list[srcIdx]
+	entry.Group = form.list[dstIdx].Group
+	to := dstIdx
+	if move.Where == ui.TreeDropAfter {
+		to = dstIdx + 1
+	}
+	if srcIdx < to {
+		to--
+		copy(form.list[srcIdx:to], form.list[srcIdx+1:to+1])
+	} else {
+		copy(form.list[to+1:srcIdx+1], form.list[to:srcIdx])
+	}
+	form.list[to] = entry
+	form.selected = to
+	state.snippetTreeExpandAncestors(entry.Group)
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	state.save()
+}
 
 func (state *State) clickSnippetsPage(id gfx.ID) bool {
 	if state.activeSection != sectionSnippets || state.modal != modalNone {
 		return false
 	}
-	if id.Scope() == hitSnippetExpandList {
-		index := item(id)
-		if index >= 0 && index < len(state.snippets.list) {
-			// The chevron shadows the row only inside its own square, so a
-			// double-click on it toggles twice rather than sending the snippet.
-			if state.snippets.expanded == index+1 {
-				state.snippets.expanded = 0
-			} else {
-				state.snippets.expanded = index + 1
+	form := &state.snippets
+	if state.clickSnippetInlineGroup(id) {
+		return true
+	}
+	if id.Scope() == hitSnippetFolderMore {
+		token := item(id)
+		for _, row := range form.treeRows {
+			if row.folder && state.snippetTreeFolderToken(row.groupKey) == token {
+				at := form.folderMenu.at
+				if at == (gfx.Point{}) {
+					at = gfx.Point{X: 120, Y: 120}
+				}
+				form.folderMenu = snippetFolderMenu{
+					open:  true,
+					group: row.group,
+					at:    at,
+				}
+				return true
 			}
-			state.snippets.selected = index
-			state.snippets.hoverTarget, state.snippets.hoverOpen, state.snippets.hoverRow = gfx.ID{}, false, 0
 		}
 		return true
 	}
-	if id.Scope() == hitSnippetSort {
-		column := item(id)
-		if column >= 0 && column < len(snippet{}.cells) && len(state.snippets.list) > 0 {
-			if state.snippets.sort.Column == column && state.snippets.sort.Direction == components.TableSortDescending {
-				state.snippets.sort = components.TableSortState{}
-			} else {
-				state.snippets.sort = state.snippets.sort.Toggle(column)
-			}
+	switch id {
+	case hitSnippetAdd:
+		state.startInlineSnippetDraft(form.selectedFolder)
+	case hitSnippetGroups:
+		state.openSnippetGroupsManager()
+	case hitSnippetSend:
+		if form.inline.draft {
+			return true
+		}
+		state.commitInlineSnippetPendingGroup()
+		state.sendSnippetFromPage(form.selected, form.sendAt)
+	case hitSnippetRemove:
+		if form.inline.draft {
+			form.inline.draft = false
+			form.inline.savedDraft = nil
+			state.syncInlineSnippet(true)
+			return true
+		}
+		state.openSnippetDelete(form.selected)
+	case hitSnippetTreeToggle:
+		bounds := state.catalogSectionBounds()
+		width := form.treeWidth
+		if width <= 0 {
+			width = snippetTreeDefaultWidth
+		}
+		if bounds.Width < width+snippetEditorMinWidth {
+			form.treeDrawer = !form.treeDrawer
+		} else {
+			form.treeCollapsed = !form.treeCollapsed
+		}
+	case hitSnippetTreeSearchToggle:
+		state.flushInlineSnippetSave()
+		form.treeSearchOpen = !form.treeSearchOpen
+		if form.treeSearchOpen {
+			form.treeFocus = hitSnippetTreeSearch
+		} else if form.treeSearch.String() != "" {
+			form.treeSearch = text.Editor{}
 			state.refreshSnippets()
 		}
-		return true
-	}
-	switch {
-	case id == hitSnippetAdd:
-		state.openSnippetDialog(-1)
-	case id == hitSnippetGroups:
-		state.openSnippetGroupsManager()
-	case id == hitSnippetSend:
-		state.sendSnippetFromPage(state.snippets.selected, state.snippets.sendAt)
-	case id == hitSnippetEdit:
-		state.openSnippetDialog(state.snippets.selected)
-	case id == hitSnippetRemove:
-		state.openSnippetDelete(state.snippets.selected)
+	case hitSnippetTreeExpandAll:
+		if len(form.groups) == 0 || strings.TrimSpace(form.treeSearch.String()) != "" {
+			return true
+		}
+		if state.snippetTreeCanExpandAll() {
+			clear(form.treeCollapsedGroups)
+		} else {
+			if form.treeCollapsedGroups == nil {
+				form.treeCollapsedGroups = make(map[string]bool)
+			}
+			for _, g := range form.groups {
+				form.treeCollapsedGroups[strings.ToLower(g)] = true
+			}
+		}
+		state.rebuildSnippetTreeRows()
+		form.syncRowSelection()
+	case hitSnippetInlineRun:
+		if form.inline.draft {
+			form.inline.groupPicker.Open = false
+			form.inline.loadedSnap.Run = !form.inline.loadedSnap.Run
+		} else if form.selected >= 0 && form.selected < len(form.list) {
+			form.inline.groupPicker.Open = false
+			form.list[form.selected].Run = !form.list[form.selected].Run
+			form.inline.loadedSnap.Run = form.list[form.selected].Run
+			state.save()
+		}
+	case hitSnippetInlineLines:
+		if form.inline.draft {
+			form.inline.groupPicker.Open = false
+			form.inline.loadedSnap.Lines = !form.inline.loadedSnap.Lines
+		} else if form.selected >= 0 && form.selected < len(form.list) {
+			form.inline.groupPicker.Open = false
+			form.list[form.selected].Lines = !form.list[form.selected].Lines
+			form.inline.loadedSnap.Lines = form.list[form.selected].Lines
+			state.save()
+		}
+	case hitSnippetInlineShortcut:
+		state.flushInlineSnippetSave()
+		form.inline.capturing = !form.inline.capturing
+		form.inline.error = ""
+		state.refreshInlineShortcutLabel()
+	case hitSnippetInlineShortcutOff:
+		if form.inline.draft {
+			form.inline.loadedSnap.Shortcut = keymap.Chord{}
+			form.inline.capturing = false
+			form.inline.error = ""
+			state.refreshInlineShortcutLabel()
+		} else if form.selected >= 0 && form.selected < len(form.list) {
+			form.list[form.selected].Shortcut = keymap.Chord{}
+			form.inline.capturing = false
+			form.inline.error = ""
+			form.inline.loadedSnap.Shortcut = keymap.Chord{}
+			state.refreshSnippets()
+			state.save()
+		}
 	default:
 		return false
 	}
 	return true
 }
 
-// snippetsSectionUI is what the snippets page's declaration leaves for its
-// paint.
-type snippetsSectionUI struct {
-	rows, filter, groups, remove, edit, send, add, empty ui.Box
-	removeWidth, sendWidth, editWidth, addWidth          float32
-	removeIcon, sendIcon, editIcon, addIcon              uint8
-	condensed                                            bool
-	// widths are the three fixed columns' widths; the command column takes the
-	// rest. The header and the rows are declared with the same numbers.
-	widths      [3]float32
-	manualOrder bool
-	// keyWidth and commandWidth are the run keycap's inset and the room the
-	// command column has, so its text and expander land where the table put them.
-	keyWidth, commandWidth float32
-	// draw is the page hook that paints the fixed footer position and empty state.
-	draw func(*ui.DrawContext)
-}
-
-// declareSnippetsWorkspace declares the snippets page in the workbench page: its
-// header, its open/empty body and its footer. The rows are a page List, the
-// group filter a page Select and the empty state's icon painted by hand.
+// declareSnippetsWorkspace declares the Snippets page: an empty state when no
+// commands exist, or a split directory-tree browser + inline editor workspace.
 func (state *State) declareSnippetsWorkspace(c ui.C) {
-	canvas := c.Canvas()
 	pal, m := state.pal, state.messages.Tools
 	form := &state.snippets
 	bounds := state.catalogSectionBounds()
-	// The title keeps a readable column beside the buttons; a card too narrow for
-	// them shows the buttons as their icons, whose tooltips name them.
-	const (
-		titleLeast = float32(220)
-		gap        = float32(10)
-	)
-	labeled := toolbarButtonWidth(canvas, m.SnippetDelete, false) + toolbarButtonWidth(canvas, m.SnippetEdit, false) +
-		toolbarButtonWidth(canvas, m.SnippetSend, true) + toolbarButtonWidth(canvas, m.SnippetAdd, true) + 3*gap + gap + titleLeast
-	condensed := labeled > bounds.Width-36
-	removeWidth, removeIcon := toolbarButtonLayout(canvas, m.SnippetDelete, 0, iconTrash, condensed)
-	sendWidth, sendIcon := toolbarButtonLayout(canvas, m.SnippetSend, iconPlay, iconPlay, condensed)
-	editWidth, editIcon := toolbarButtonLayout(canvas, m.SnippetEdit, 0, iconPencil, condensed)
-	addWidth, addIcon := toolbarButtonLayout(canvas, m.SnippetAdd, iconPlus, iconPlus, condensed)
-
-	canAdd := len(form.list) < maxSnippets
-	hasSelection := len(form.list) > 0
 	view := &state.sectionBodies.snippets
 	draw := view.draw
-	*view = snippetsSectionUI{
-		removeWidth: removeWidth, sendWidth: sendWidth, editWidth: editWidth, addWidth: addWidth,
-		removeIcon: removeIcon, sendIcon: sendIcon, editIcon: editIcon, addIcon: addIcon,
-		condensed: condensed,
-	}
+	*view = snippetsSectionUI{}
 	if draw == nil {
 		draw = func(d *ui.DrawContext) { state.paintSnippetsWorkspace(d.Canvas) }
 	}
 	view.draw = draw
-	body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
-	body.Children(func() {
-		ui.Row(c).MinHeight(58).Gap(gap).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
-			ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
-				ui.Text(c, m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
-				ui.Paragraph(c, m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
-			})
-			view.remove = state.declareButtonSized(c, hitSnippetRemove, m.SnippetDelete, removeIcon, false, false, hasSelection, toolbarFont, condensed).Size(removeWidth, toolbarHeight)
-			view.edit = state.declareButtonSized(c, hitSnippetEdit, m.SnippetEdit, editIcon, false, false, hasSelection, toolbarFont, condensed).Size(editWidth, toolbarHeight)
-			view.send = state.declareButtonSized(c, hitSnippetSend, m.SnippetSend, sendIcon, false, false, hasSelection, toolbarFont, condensed).Size(sendWidth, toolbarHeight)
-			view.add = state.declareButtonSized(c, hitSnippetAdd, m.SnippetAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
-		})
-		if len(form.list) == 0 {
-			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconSnippets, canAdd)
-		} else {
-			if len(form.groups) > 0 {
-				ui.Row(c).Height(toolbarHeight).MarginSides(0, 0, 9, 0).Gap(9).Children(func() {
-					view.filter = state.declareSnippetFilter(c).Size(220, toolbarHeight).Shrink(0)
-					groupsWidth := toolbarButtonWidth(canvas, m.SnippetGroupsManage, false)
-					view.groups = state.declareButtonSized(c, hitSnippetGroups, m.SnippetGroupsManage, 0, false, false, true, toolbarFont, false).
-						Size(groupsWidth, toolbarHeight)
+
+	if len(form.list) == 0 && !form.inline.draft {
+		body := ui.Column(c).Fill().PadSides(12, 18, 0, 18)
+		body.Children(func() {
+			ui.Row(c).MinHeight(58).Gap(10).MarginSides(0, 0, 12, 0).Items(ui.Start).Children(func() {
+				ui.Column(c).Grow(1).Gap(3).MarginSides(4, 0, 0, 0).Children(func() {
+					ui.Text(c, m.SnippetsTitle).FontSize(18).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis()
+					ui.Paragraph(c, m.SnippetsPageDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted)
 				})
-			}
-			theme := state.Theme()
-			view.manualOrder = form.sort.Direction == components.TableSortNone && form.filter.all() && len(form.list) > 1
-			state.fitSnippetColumns(canvas, theme)
-			view.keyWidth = max(canvas.TextWidthWeight(enterKeyLabel, theme.Metrics.FontSizeS, gfx.WeightMedium)+8, theme.Metrics.FontSizeS+9)
-			rowWidth := max(bounds.Width-36-catalogBarGutter, 0)
-			view.commandWidth = max(rowWidth-view.widths[0]-view.widths[1]-view.widths[2], 0)
-			_, lineHeight, detailHeight := state.snippetDetailHeight(canvas, rowWidth-2*snippetDetailPadding)
-			form.detailLineHeight, form.detailHeight = lineHeight, detailHeight
-			state.declareSnippetHeader(c, theme)
-			form.prepareSnippetRows(state)
-			if view.manualOrder {
-				form.rows.Reorder = form.reorder
-			} else {
-				form.rows.Reorder = nil
-			}
-			form.selectedRow = slices.Index(form.visible, form.selected)
-			form.hoverCandidate, form.hoverCandidateAnchor = 0, ui.Box{}
-			view.rows = ui.List(c, &form.rows, len(form.visible), form.rowDecl).
-				Grow(1).PadRight(catalogBarGutter).Scrollbars().Label(m.SnippetsTitle)
-			state.afterSnippetRows(canvas)
+				addWidth := toolbarButtonWidth(c.Canvas(), m.SnippetAdd, true)
+				state.declareButtonSized(c, hitSnippetAdd, m.SnippetAdd, iconPlus, true, false, true, toolbarFont, false).Size(addWidth, toolbarHeight)
+			})
+			view.empty = state.reserveEmptyPage(c, bounds, m.SnippetEmpty, m.SnippetEmptySub, m.SnippetAdd, hitSnippetAdd, iconSnippets, true)
+		})
+		body.Clip().DrawOver(view.draw)
+		return
+	}
+
+	state.prepareSnippetTree()
+	if !form.inline.draft && (!form.inline.loadedValid || form.inline.loadedIndex != form.selected) {
+		state.syncInlineSnippet(false)
+	}
+	width := form.treeWidth
+	if width <= 0 {
+		width = snippetTreeDefaultWidth
+	}
+	narrow := bounds.Width < width+snippetEditorMinWidth
+	collapsed := form.treeCollapsed || narrow
+	if collapsed {
+		root := ui.Column(c).Fill().DrawOver(view.draw)
+		root.Children(func() {
+			state.declareSnippetInlineEditor(c, bounds.Width, true)
+		})
+		if form.treeDrawer {
+			state.declareSnippetsDrawer(c, width, bounds.Width)
 		}
-		ui.Divider(c).Background(pal.line)
-		ui.Row(c).Height(50).PadSides(8, 0, 20, 0).Items(ui.Center).Children(func() {
-			ui.Text(c, form.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.faint).Width(162)
-			if len(form.list) > 0 {
-				ui.Text(c, form.list[form.selected].Name).FontSize(metrics.FontSizeS).Color(pal.muted).Grow(1).Ellipsis()
+		return
+	}
+	root := ui.Row(c).Fill().DrawOver(form.treeAfterLayout)
+	root.Children(func() {
+		ui.Column(c).Width(width).FillHeight().Children(func() {
+			state.declareSnippetsTree(c, width)
+		})
+		form.treeSplitter.StepFraction = .05
+		ui.Splitter(c, &form.treeSplitter).SplitterThickness(1).Mins(snippetTreeMinWidth, snippetEditorMinWidth).Label(m.SnippetTreeResize)
+		ui.Column(c).Grow(1).FillHeight().DrawOver(view.draw).Children(func() {
+			state.declareSnippetInlineEditor(c, bounds.Width-width-1, false)
+		})
+	})
+}
+
+func (state *State) declareSnippetsDrawer(c ui.C, width, boundsWidth float32) {
+	form, m := &state.snippets, state.messages.Tools
+	extent := min(width, max(snippetTreeMinWidth, boundsWidth-32))
+	open := form.treeDrawer
+	ui.Drawer(c, &open, m.SnippetsTitle, ui.DrawerSpec{
+		Side: ui.DrawerLeft, Size: extent,
+	}, func() {
+		state.declareSnippetsTree(c, extent)
+	}, nil)
+	if !open {
+		form.treeDrawer = false
+	}
+}
+
+func (state *State) declareSnippetsTree(c ui.C, width float32) {
+	form, m := &state.snippets, state.messages.Tools
+	view := &state.sectionBodies.snippets
+	form.treeC = c
+	canExpandAll := state.snippetTreeCanExpandAll()
+	expandLabel, expandIcon := m.SnippetTreeCollapseAll, icons.ListX
+	if canExpandAll {
+		expandLabel, expandIcon = m.SnippetTreeExpandAll, icons.ListTree
+	}
+	searching := form.treeSearching
+	ui.Row(c).Height(28).MarginSides(8, 8, 0, 8).Gap(2).Items(ui.Center).Children(func() {
+		ui.Text(c, m.SnippetsTitle).FontSize(13).Weight(gfx.WeightSemibold).Color(state.pal.text).Grow(1).Ellipsis().MarginSides(0, 4, 0, 4)
+		state.declareNoteToolbarButton(c, hitSnippetTreeSearchToggle, m.SnippetTreeSearch, icons.Search, false)
+		state.declareNoteToolbarButton(c, hitSnippetTreeExpandAll, expandLabel, expandIcon, len(form.groups) == 0 || searching)
+		state.declareNoteToolbarButton(c, hitSnippetGroups, m.SnippetGroupsManage, icons.FolderOpen, len(form.groups) == 0)
+	})
+	addBtn := ui.Button(c, m.SnippetAdd).Icon(lucideIcons[iconPlus]).
+		FillWidth().Height(34).MarginSides(8, 8, 0, 8).Hit(hitSnippetAdd, m.SnippetAdd)
+	if len(form.list) >= maxSnippets {
+		addBtn.Disabled(true)
+	}
+	if form.treeSearchOpen {
+		if !form.treeSearchBound {
+			form.treeSearchField.Bind(&form.treeSearch)
+			form.treeSearchBound = true
+		}
+		field := ui.TextField(c, &form.treeSearchField, m.SnippetPickerPlaceholder, m.SnippetPickerPlaceholder, ui.WithID(hitSnippetTreeSearch)).
+			Height(30).FillWidth().MarginSides(8, 8, 0, 8)
+		if form.treeFocus == hitSnippetTreeSearch {
+			c.Canvas().RequestFocus(hitSnippetTreeSearch)
+			form.treeFocus = gfx.ID{}
+		}
+		if field.Changed() {
+			state.rebuildSnippetTreeRows()
+			form.tree.ScrollTo(0, ui.ListStart)
+			form.syncRowSelection()
+		}
+	}
+	ui.Divider(c).Height(1).MarginSides(8, 8, 0, 8).Background(state.pal.line)
+	area := ui.Column(c).Grow(1).FillWidth().MarginSides(6, 6, 4, 6).
+		HitWith(hitSnippetTreeScroll, m.SnippetListScroll, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
+	area.Children(func() {
+		if len(form.treeRows) == 0 {
+			ui.Text(c, m.SnippetPickerEmpty).FontSize(12).Color(state.pal.muted).FillWidth().Ellipsis().MarginSides(8, 4, 0, 6)
+		}
+		view.tree = ui.Tree(c, &form.tree, len(form.treeRows), form.treeLabel, form.treeContent).
+			Grow(1).FillWidth().Scrollbars().Label(m.SnippetListScroll)
+		state.snippetTreeChanges()
+		state.openSnippetBlankMenuOn(c.Canvas(), hitSnippetTreeScroll)
+	})
+	ui.Divider(c).Height(1).Background(state.pal.line)
+	ui.Row(c).Height(32).PadSides(0, 10, 0, 12).Items(ui.Center).Children(func() {
+		ui.Text(c, form.countText).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.faint).Grow(1).Ellipsis()
+	})
+}
+
+func (state *State) snippetTreeChanges() {
+	form := &state.snippets
+	rows := form.treeRows
+	if i, ok := form.tree.Toggled(); ok && i >= 0 && i < len(rows) {
+		e := rows[i]
+		if e.folder {
+			state.toggleSnippetTreeFolder(e.groupKey)
+		}
+	}
+	if i, ok := form.tree.Chosen(); ok && i >= 0 && i < len(rows) {
+		e := rows[i]
+		if e.folder {
+			state.flushInlineSnippetSave()
+			form.selectedFolder = e.group
+			state.toggleSnippetTreeFolder(e.groupKey)
+		} else if e.snippet >= 0 && e.snippet < len(form.list) {
+			if form.inline.draft {
+				state.stashInlineSnippetDraft()
+			} else if e.snippet != form.selected {
+				state.flushInlineSnippetSave()
+			}
+			form.inline.draft = false
+			form.selected = e.snippet
+			form.selectedFolder = form.list[e.snippet].Group
+			form.treeDrawer = false
+			state.syncInlineSnippet(true)
+		}
+	}
+	if move, ok := form.tree.Dropped(); ok {
+		state.dropSnippetTreeRow(move)
+	}
+}
+
+func (state *State) toggleSnippetTreeFolder(groupKey string) {
+	form := &state.snippets
+	if form.treeCollapsedGroups == nil {
+		form.treeCollapsedGroups = make(map[string]bool)
+	}
+	if form.treeCollapsedGroups[groupKey] {
+		delete(form.treeCollapsedGroups, groupKey)
+	} else {
+		form.treeCollapsedGroups[groupKey] = true
+	}
+	state.rebuildSnippetTreeRows()
+}
+
+func (state *State) declareSnippetTreeRow(i int) {
+	form := &state.snippets
+	rows := form.treeRows
+	c := form.treeC
+	if c == nil || i < 0 || i >= len(rows) {
+		return
+	}
+	e := rows[i]
+	rowID := form.tree.RowID(i)
+	canvas := c.Canvas()
+	hovered := canvas.Hovered() == rowID
+	focused := canvas.FocusVisible() == rowID
+
+	if e.folder {
+		icon := icons.FolderSolid
+		if form.treeSearching || !form.treeCollapsedGroups[e.groupKey] {
+			icon = icons.FolderSolidOpen
+		}
+		token := state.snippetTreeFolderToken(e.groupKey)
+		moreID := hitSnippetFolderMore.At(token)
+		menuOpen := form.folderMenu.open && sameSnippetGroup(form.folderMenu.group, e.group)
+		ui.Row(c).Gap(4).FillWidth().Items(ui.Center).PadSides(0, 4, 0, 2).Children(func() {
+			ui.Icon(c, icon).Size(15, 15).Color(state.pal.muted).Shrink(0)
+			ui.Text(c, e.label).FontSize(13).Weight(gfx.WeightMedium).Color(state.pal.text).Grow(1).Ellipsis()
+			if hovered || focused || menuOpen || canvas.Hovered() == moreID {
+				btn := state.noteIconButton(c, moreID, icons.Ellipsis, state.messages.Tools.SnippetFolderMore, 24, true)
+				if event, ok := canvas.PointerOn(moreID); ok && event.Kind == gfx.PointerDown {
+					form.folderMenu.at = gfx.Point{X: event.X, Y: event.Y}
+				} else if rect := btn.Rect(); rect.Width > 0 && canvas.Hovered() == moreID {
+					form.folderMenu.at = gfx.Point{X: rect.X, Y: rect.Y + rect.Height}
+				}
+			} else {
+				ui.Text(c, e.countText).FontSize(11).Color(state.pal.faint).Shrink(0).PadSides(0, 4, 0, 4)
 			}
 		})
-		state.declareSnippetHoverCard(c)
+		state.openSnippetFolderMenuOn(canvas, rowID, e.group)
+		return
+	}
+
+	entry := &form.list[e.snippet]
+	ui.Row(c).Gap(6).FillWidth().Items(ui.Center).PadSides(0, 6, 0, 2).Children(func() {
+		ui.Icon(c, lucideIcons[iconSnippets]).Size(14, 14).Color(state.pal.muted).Shrink(0)
+		ui.Text(c, e.label).FontSize(13).Color(state.pal.text).Grow(1).Ellipsis()
+		if entry.Shortcut.Valid() {
+			ui.Text(c, entry.cells[2]).FontSize(11).Color(state.pal.faint).Shrink(0)
+		}
 	})
-	body.Clip().DrawOver(view.draw)
+	state.sendSnippetOn(canvas, rowID, e.snippet)
+	state.openSnippetMenuOn(canvas, rowID, e.snippet)
 }
 
-// fitSnippetColumns fits the table's column widths once for the header and the
-// rows: the name, the group and the shortcut are fixed, the command takes what
-// is left.
-func (state *State) fitSnippetColumns(canvas *gfx.Canvas, theme gfx.Theme) {
-	m, view := state.messages.Tools, &state.sectionBodies.snippets
-	columns := [...]components.TableColumn{{Width: 200}, {Width: 140}, {Width: 150}, {Width: 0}}
-	headers := [...]components.TableHeader{
-		{ID: hitSnippetSort.At(0), Label: m.SnippetColumnName},
-		{ID: hitSnippetSort.At(1), Label: m.SnippetColumnGroup},
-		{ID: hitSnippetSort.At(2), Label: m.SnippetColumnShortcut},
-		{ID: hitSnippetSort.At(3), Label: m.SnippetColumnCommand},
+func (state *State) openSnippetFolderMenuOn(canvas *gfx.Canvas, id gfx.ID, group string) {
+	event, ok := canvas.PointerOn(id)
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || state.modal != modalNone || state.activeSection != sectionSnippets {
+		return
 	}
-	components.FitSortableTableHeadings(canvas, theme, columns[:], headers[:])
-	for index := range view.widths {
-		view.widths[index] = columns[index].Width
+	state.snippets.folderMenu = snippetFolderMenu{
+		open:  true,
+		group: group,
+		at:    gfx.Point{X: event.X, Y: event.Y},
+	}
+	canvas.Consume()
+}
+
+func (state *State) declareSnippetFolderMenu(c ui.C) {
+	menu := &state.snippets.folderMenu
+	if !menu.open {
+		return
+	}
+	if state.modal != modalNone || state.activeSection != sectionSnippets || menu.group == "" {
+		menu.open = false
+		return
+	}
+	m := state.messages.Tools
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
+	var rows menuRows
+	rows.add(components.ContextMenuItem{ID: hitSnippetFolderMenuAdd, Label: m.SnippetFolderAdd, Icon: icon(iconPlus)})
+	rows.add(components.ContextMenuItem{ID: hitSnippetFolderMenuNewChild, Label: state.messages.HostGroupActions.NewChild, Icon: icon(iconFolderOpen)})
+	rows.separate()
+	rows.add(components.ContextMenuItem{ID: hitSnippetFolderMenuRename, Label: m.SnippetGroupRename, Icon: icon(iconPencil)})
+	rows.add(components.ContextMenuItem{ID: hitSnippetFolderMenuDelete, Label: m.SnippetGroupDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
+	state.declareRowsMenu(c, &menu.open, menu.at, hitSnippetFolderMenuDismiss, &rows, state.chooseSnippetFolderMenu)
+}
+
+func (state *State) chooseSnippetFolderMenu(id gfx.ID) {
+	group := state.snippets.folderMenu.group
+	if group == "" {
+		return
+	}
+	switch id {
+	case hitSnippetFolderMenuAdd:
+		state.startInlineSnippetDraft(group)
+	case hitSnippetFolderMenuNewChild:
+		state.openSnippetGroupCreate(group + "/")
+	case hitSnippetFolderMenuRename:
+		state.openSnippetGroupRenameDirect(group)
+	case hitSnippetFolderMenuDelete:
+		state.openSnippetGroupDeleteDirect(group)
 	}
 }
 
-// declareSnippetHeader declares the sortable headings as page buttons of the
-// list's three fixed columns and its command column. A click reaches the page's
-// central sort handler, named by hitSnippetSort.
-func (state *State) declareSnippetHeader(c ui.C, theme gfx.Theme) {
+func (state *State) openSnippetBlankMenu(at gfx.Point) {
+	state.snippetMenu.open = false
+	state.snippets.folderMenu.open = false
+	state.snippets.blankMenu = snippetBlankMenu{open: true, at: at}
+}
+
+func (state *State) snippetBlankPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
+	if state.modal != modalNone || state.activeSection != sectionSnippets ||
+		event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary {
+		return gfx.EventResult{}, false
+	}
+	if !event.Target.IsZero() && event.Target != hitSnippetTreeScroll {
+		return gfx.EventResult{}, false
+	}
+	area := state.sectionBodies.snippets.tree.Rect()
+	if !pointInRect(event.X, event.Y, area) {
+		return gfx.EventResult{}, false
+	}
+	state.openSnippetBlankMenu(gfx.Point{X: event.X, Y: event.Y})
+	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+func (state *State) openSnippetBlankMenuOn(canvas *gfx.Canvas, id gfx.ID) {
+	if id.IsZero() {
+		return
+	}
+	event, ok := canvas.PointerOn(id)
+	if !ok || event.Kind != gfx.PointerDown || event.Button != gfx.PointerButtonSecondary || state.modal != modalNone || state.activeSection != sectionSnippets {
+		return
+	}
+	state.openSnippetBlankMenu(gfx.Point{X: event.X, Y: event.Y})
+	canvas.Consume()
+}
+
+func (state *State) declareSnippetBlankMenu(c ui.C) {
+	menu := &state.snippets.blankMenu
+	if !menu.open {
+		return
+	}
+	if state.modal != modalNone || state.activeSection != sectionSnippets {
+		menu.open = false
+		return
+	}
+	m := state.messages.Tools
+	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
+	var rows menuRows
+	rows.add(components.ContextMenuItem{ID: hitSnippetBlankNewGroup, Label: state.messages.NewGroup, Icon: icon(iconFolderOpen)})
+	rows.add(components.ContextMenuItem{ID: hitSnippetBlankNewSnippet, Label: m.SnippetAdd, Icon: icon(iconPlus)})
+	state.declareRowsMenu(c, &menu.open, menu.at, hitSnippetBlankMenuDismiss, &rows, state.chooseSnippetBlankMenu)
+}
+
+func (state *State) chooseSnippetBlankMenu(id gfx.ID) {
+	switch id {
+	case hitSnippetBlankNewGroup:
+		state.openSnippetGroupCreate("")
+	case hitSnippetBlankNewSnippet:
+		state.startInlineSnippetDraft("")
+	}
+}
+
+// declareSnippetInlineEditor declares the right-pane editor for the selected
+// snippet so users can view and edit every field directly alongside the tree.
+func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow bool) {
+	form, m, pal := &state.snippets, state.messages.Tools, state.pal
 	view := &state.sectionBodies.snippets
-	ui.Row(c).Height(components.TableHeaderHeight(theme)).FillWidth().MarginRight(catalogBarGutter).Children(func() {
-		for index := range view.widths {
-			state.declareSnippetHeading(c, theme, index, view.widths[index])
-		}
-		state.declareSnippetHeading(c, theme, 3, 0)
-	})
-}
-
-// declareSnippetHeading declares one heading button. width 0 is the command
-// column, which takes the rest of the row.
-func (state *State) declareSnippetHeading(c ui.C, theme gfx.Theme, column int, width float32) {
-	m, form, view := state.messages.Tools, &state.snippets, &state.sectionBodies.snippets
-	heading := [...]string{m.SnippetColumnName, m.SnippetColumnGroup, m.SnippetColumnShortcut, m.SnippetColumnCommand}[column]
-	direction := components.TableSortNone
-	description := m.RemoteSortAction
-	if form.sort.Direction != components.TableSortNone && form.sort.Column == column {
-		direction = form.sort.Direction
-		if direction == components.TableSortAscending {
-			description = m.RemoteSortAscending
-		} else {
-			description = m.RemoteSortDescending
-		}
-	}
-	// The manual order's drag handle indents the name column by its 24px square;
-	// the command column keeps the run keycap's inset and the expander's room.
-	left, right := theme.Metrics.GapItem, theme.Metrics.GapItem
-	if column == 0 && view.manualOrder {
-		left += 24
-	}
-	if column == 3 {
-		left += view.keyWidth + 6
-		right += 24 + theme.Metrics.GapItem
-	}
-	button := ui.ButtonBase(c, heading).
-		HitWith(hitSnippetSort.At(column), heading, gfx.HitOptions{Role: gfx.RoleButton, Description: description}).
-		Height(components.TableHeaderHeight(theme)).PadLeft(left).PadRight(right).
-		Justify(ui.Start).Items(ui.Center).
-		Hover(ui.Look{}.Background(theme.Hover)).
-		Focus(ui.Look{}.Ring(1, theme.Ring))
-	if width > 0 {
-		button.Width(width)
+	inline := &form.inline
+	var entry *snippet
+	if inline.draft {
+		entry = &inline.loadedSnap
 	} else {
-		button.Grow(1)
-	}
-	button.Children(func() {
-		ui.Text(c, heading).Grow(1).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).
-			Color(theme.Foreground).Ellipsis()
-		icon := remoteTableUnsortedIcon
-		switch direction {
-		case components.TableSortAscending:
-			icon = remoteTableAscendingIcon
-		case components.TableSortDescending:
-			icon = remoteTableDescendingIcon
+		if form.selected < 0 || form.selected >= len(form.list) {
+			return
 		}
-		ui.Icon(c, icon).Size(14, 14).Color(theme.Foreground).Shrink(0)
+		entry = &form.list[form.selected]
+	}
+	focused := c.Canvas().Focused()
+	prevFocus := inline.lastFocus
+	inline.lastFocus = focused
+	if inline.dirty && (prevFocus == hitSnippetInlineName || prevFocus == hitSnippetInlineCommand) && focused != prevFocus {
+		state.aiPost(func(state *State) {
+			if !state.closed && state.snippets.inline.dirty {
+				state.flushInlineSnippetSave()
+			}
+		})
+	}
+	condensed := width < 520
+	sendWidth, sendIcon := toolbarButtonLayout(c.Canvas(), m.SnippetSend, iconPlay, iconPlay, condensed)
+	removeLabel := m.SnippetDelete
+	if inline.draft {
+		removeLabel = state.messages.Cancel
+	}
+	removeWidth, removeIcon := toolbarButtonLayout(c.Canvas(), removeLabel, 0, iconTrash, condensed)
+
+	// Editor header bar.
+	ui.Row(c).Height(44).FillWidth().PadSides(6, 16, 6, 12).Gap(8).Items(ui.Center).Children(func() {
+		state.declareNoteToolbarButton(c, hitSnippetTreeToggle, m.SnippetTreeToggle, icons.PanelLeft, false)
+		ui.Text(c, inline.breadcrumb).FontSize(13).Weight(gfx.WeightMedium).Color(pal.muted).Grow(1).Ellipsis()
+		view.send = state.declareButtonSized(c, hitSnippetSend, m.SnippetSend, sendIcon, true, false, !inline.draft, toolbarFont, condensed).Size(sendWidth, toolbarHeight)
+		view.send.Shrink(0)
+		state.declareButtonSized(c, hitSnippetRemove, removeLabel, removeIcon, false, false, true, toolbarFont, condensed).Size(removeWidth, toolbarHeight).Shrink(0)
+	})
+	ui.Divider(c).Height(1).Background(pal.line)
+
+	// Scrollable editor form.
+	scroll := ui.Scroll(c).Grow(1).FillWidth().Scrollbars().Label(m.SnippetsTitle)
+	scroll.DrawOver(form.drawInlineFields)
+	scroll.Children(func() {
+		ui.Column(c).FillWidth().PadSides(16, 20, 20, 20).Gap(10).Children(func() {
+			if !inline.nameBound {
+				inline.nameField.Bind(&inline.name)
+				inline.nameBound = true
+			}
+			inline.nameField.Invalid = inline.error == m.SnippetErrorName
+			ui.FormField(c, &inline.nameForm, m.SnippetName).FillWidth().Height(dialogRowHeight(c.Theme())).Children(func() {
+				field := ui.TextField(c, &inline.nameField, m.SnippetName, m.SnippetNamePlaceholder, ui.WithID(hitSnippetInlineName))
+				if field.Changed() {
+					state.applyInlineSnippetEdits()
+				}
+			})
+
+			inline.groupSlot = ui.Slot(c).FillWidth().Height(62).Shrink(0)
+
+			cmdHeight := max(float32(180), min(float32(340), state.catalogSectionBounds().Height-420))
+			if !inline.commandArea.bound {
+				inline.commandArea.input.Bind(&inline.command)
+				inline.commandArea.bound = true
+			}
+			theme := c.Theme()
+			ui.Column(c).FillWidth().Height(cmdHeight).Shrink(0).Gap(theme.Metrics.GapItem / 2).Children(func() {
+				ui.Text(c, m.SnippetCommand).FontSize(theme.Metrics.FontSizeM).Weight(gfx.WeightMedium).Color(theme.Foreground).LineHeight(theme.Metrics.FontSizeM + 4).Ellipsis().LabelFor(hitSnippetInlineCommand)
+				area := ui.TextArea(c, &inline.commandArea.input, m.SnippetCommand, m.SnippetCommandPlaceholder, ui.WithID(hitSnippetInlineCommand)).FillWidth().Grow(1)
+				if area.Changed() {
+					state.applyInlineSnippetEdits()
+				}
+			})
+
+			state.declareDialogCheck(c, hitSnippetInlineRun, m.SnippetRun, entry.Run, 4, 0).Shrink(0)
+			state.declareDialogCheck(c, hitSnippetInlineLines, m.SnippetLines, entry.Lines, dialogCheckGapAbove, 0).Shrink(0)
+
+			ui.Row(c).Height(32).Shrink(0).FillWidth().Items(ui.Center).MarginSides(4, 0, 0, 2).Children(func() {
+				ui.Text(c, m.SnippetShortcut).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text).LineHeight(20).Grow(1)
+				ui.Row(c).Size(240, 32).Shrink(0).Justify(ui.End).Gap(8).Children(func() {
+					ui.Button(c, inline.shortcutLbl).Outline().Height(28).Hit(hitSnippetInlineShortcut, inline.shortcutLbl)
+					ui.Button(c, m.SnippetShortcutClear).Ghost().Height(28).
+						Disabled(!entry.Shortcut.Valid() && !inline.capturing).
+						Hit(hitSnippetInlineShortcutOff, m.SnippetShortcutClear)
+				})
+			})
+
+			if inline.error != "" {
+				ui.Text(c, inline.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(4, 0, 0, 0)
+			}
+		})
 	})
 }
 
-// afterSnippetRows reads back the list's choice and times the pointer's rest on
-// a multi-line row, once the rows are declared.
-func (state *State) afterSnippetRows(canvas *gfx.Canvas) {
-	form := &state.snippets
-	if form.rows.Changed() {
-		if selected := form.rows.Selected(); selected >= 0 && selected < len(form.visible) {
-			form.selected = form.visible[selected]
-		}
-	} else if want := slices.Index(form.visible, form.selected); want >= 0 && form.rows.Selected() != want {
-		form.rows.Select(want)
-		// The rows were declared before the list could be told the choice: ask for
-		// the paint that shows it, as the first one after the page opens does.
-		canvas.RequestFrame()
-	}
-	state.updateSnippetHover(canvas, form.hoverCandidate, form.hoverCandidateAnchor)
+func (state *State) paintSnippetInlineFields(canvas *gfx.Canvas) {
+	state.paintSnippetInlineGroupField(canvas, state.snippets.inline.groupSlot.Rect())
 }
 
-// paintSnippetsWorkspace paints the snippets page's fixed footer position and
-// empty state. The rows are page elements now.
+// paintSnippetsWorkspace records the Send button anchor and paints the empty
+// state icon when the list has no snippets.
 func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 	form := &state.snippets
 	view := &state.sectionBodies.snippets
-	form.sendAt = gfx.Point{X: view.send.Rect().X, Y: view.send.Rect().Y + toolbarHeight + 4}
-	if len(form.list) == 0 {
+	if view.send.Valid() {
+		form.sendAt = gfx.Point{X: view.send.Rect().X, Y: view.send.Rect().Y + toolbarHeight + 4}
+	}
+	if len(form.list) == 0 && !form.inline.draft {
 		state.drawReservedEmptyPage(canvas, view.empty, iconSnippets)
 	}
 }
 
-// declareSnippetRow declares one snippet row in the page's list: the name, the
-// group, the shortcut keycap and the command with its run keycap and expander,
-// plus the expanded command under them. The row is the drag target of the
-// manual order and takes the pointer's click through the List.
-func (state *State) declareSnippetRow(row ui.ListRow) {
-	form, view := &state.snippets, &state.sectionBodies.snippets
-	m, theme := state.messages.Tools, state.Theme()
-	c := row.C
-	canvas := c.Canvas()
-	index := form.visible[row.Index]
-	entry := &form.list[index]
-	pad := theme.Metrics.GapItem
-	rowHeight := components.TableRowHeight(theme)
-	expanded := form.expanded == index+1 && form.detailHeight > 0
-	height := rowHeight
-	if expanded {
-		height += form.detailHeight
+// setActiveSection switches the active workbench section and flushes any
+// pending inline snippet edits when leaving the Snippets page.
+func (state *State) setActiveSection(section uint8) {
+	if state.activeSection == sectionSnippets && section != sectionSnippets {
+		state.leaveSnippetsSection()
 	}
-	hovered := canvas.Hovered() == row.ID
-	selected := row.Selected()
-	if !form.rows.Changed() && form.selectedRow == row.Index {
-		selected = true
+	state.activeSection = section
+}
+
+// leaveSnippetsSection flushes coalesced inline snippet saves and clears
+// transient focus/capture state when leaving the Snippets page, while keeping
+// any in-progress draft or unvalidated edits intact.
+func (state *State) leaveSnippetsSection() {
+	inline := &state.snippets.inline
+	inline.lastFocus = gfx.ID{}
+	inline.capturing = false
+	inline.groupPicker.Open = false
+	state.snippets.folderMenu.open = false
+	state.snippets.blankMenu.open = false
+	if inline.dirty {
+		state.flushInlineSnippetSave()
 	}
-	paintBackground := false
-	background := theme.Background
+}
+
+// stashInlineSnippetDraft preserves an unfinished new-snippet draft when the
+// user switches away to view another snippet in the tree.
+func (state *State) stashInlineSnippetDraft() {
+	inline := &state.snippets.inline
+	if !inline.draft {
+		return
+	}
+	if inline.name.String() != "" || inline.command.String() != "" {
+		inline.savedDraft = &snippetNewDraft{
+			name:    inline.name.String(),
+			command: inline.command.String(),
+			snap:    inline.loadedSnap,
+			error:   inline.error,
+		}
+	}
+}
+
+// startInlineSnippetDraft opens a blank snippet in the inline editor so adding
+// a command uses the same single editing surface as editing an existing one.
+func (state *State) startInlineSnippetDraft(defaultGroup string) {
+	state.flushInlineSnippetSave()
+	form, m := &state.snippets, state.messages.Tools
+	if len(form.list) >= maxSnippets {
+		form.inline.error = m.SnippetErrorTooMany
+		return
+	}
+	state.setActiveSection(sectionSnippets)
+	inline := &form.inline
+	inline.draft = true
+	inline.loadedValid = true
+	inline.loadedIndex = -1
+	inline.name = text.Editor{}
+	inline.command = text.Editor{}
+	inline.commandArea = dialogArea{}
+	inline.capturing = false
+	if saved := inline.savedDraft; saved != nil {
+		inline.loadedSnap = saved.snap
+		inline.name.Insert(saved.name)
+		inline.command.Insert(saved.command)
+		inline.error = saved.error
+		inline.savedDraft = nil
+	} else {
+		group := cleanSnippetGroup(defaultGroup)
+		inline.loadedSnap = snippet{Group: group, Run: true}
+		inline.error = ""
+	}
+	form.treeDrawer = false
+	state.initInlineGroupPicker(inline.loadedSnap.Group)
+	state.refreshInlineMeta(inline.loadedSnap)
+	state.pendingFocus = hitSnippetInlineName
+}
+
+// focusInlineSnippet switches to the Snippets page and focuses the inline
+// editor on the snippet at index (used when editing a chip from the command bar).
+func (state *State) focusInlineSnippet(index int) {
+	if state.snippets.inline.draft {
+		state.stashInlineSnippetDraft()
+	} else {
+		state.flushInlineSnippetSave()
+	}
+	form := &state.snippets
+	if index < 0 || index >= len(form.list) {
+		return
+	}
+	state.setActiveSection(sectionSnippets)
+	form.inline.draft = false
+	form.selected = index
+	form.selectedFolder = form.list[index].Group
+	form.treeDrawer = false
+	state.snippetTreeExpandAncestors(form.list[index].Group)
+	state.rebuildSnippetTreeRows()
+	form.syncRowSelection()
+	state.syncInlineSnippet(true)
+	state.pendingFocus = hitSnippetInlineName
+}
+
+func (state *State) snippetTreeRowForTarget(id gfx.ID) int {
+	if id.IsZero() {
+		return -1
+	}
+	for i := range state.snippets.treeRows {
+		if state.snippets.tree.RowID(i) == id {
+			return i
+		}
+	}
+	return -1
+}
+
+func (state *State) snippetTreeRowIDForSnippet(index int) gfx.ID {
+	for i, row := range state.snippets.treeRows {
+		if !row.folder && row.snippet == index {
+			return state.snippets.tree.RowID(i)
+		}
+	}
+	return gfx.ID{}
+}
+
+// snippetTreeKeyEvent handles Alt+Up/Alt+Down on a focused snippet row in the
+// directory tree, preserving keyboard reordering alongside drag-and-drop.
+func (state *State) snippetTreeKeyEvent(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	form := &state.snippets
+	if state.modal != modalNone || state.activeSection != sectionSnippets || form.inline.capturing || event.Release {
+		return gfx.EventResult{}, false
+	}
+	if event.Modifiers != gfx.ModifierAlt || (event.Key != gfx.KeyUp && event.Key != gfx.KeyDown) {
+		return gfx.EventResult{}, false
+	}
+	rowIdx := state.snippetTreeRowForTarget(event.Target)
+	if rowIdx < 0 || rowIdx >= len(form.treeRows) {
+		return gfx.EventResult{}, false
+	}
+	row := form.treeRows[rowIdx]
+	if row.folder || strings.TrimSpace(form.treeSearch.String()) != "" {
+		return gfx.EventResult{Handled: true}, true
+	}
+	dir := -1
+	if event.Key == gfx.KeyDown {
+		dir = 1
+	}
+	if !state.moveSnippet(row.snippet, dir) {
+		return gfx.EventResult{Handled: true}, true
+	}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: state.snippetTreeRowIDForSnippet(form.selected)}, true
+}
+
+func snippetsSameContent(a, b snippet) bool {
+	return a.Name == b.Name && a.Command == b.Command && a.Group == b.Group &&
+		a.Run == b.Run && a.Lines == b.Lines && a.Shortcut == b.Shortcut
+}
+
+// syncInlineSnippet loads the selected snippet into the inline editor when the
+// selection or underlying snippet changed externally.
+func (state *State) syncInlineSnippet(force bool) {
+	form := &state.snippets
+	inline := &form.inline
+	if inline.draft {
+		state.refreshInlineGroupOptions(inline.loadedSnap.Group)
+		state.refreshInlineMeta(inline.loadedSnap)
+		return
+	}
+	if len(form.list) == 0 || form.selected < 0 || form.selected >= len(form.list) {
+		inline.loadedValid = false
+		inline.capturing = false
+		inline.error = ""
+		inline.breadcrumb = ""
+		inline.shortcutLbl = ""
+		return
+	}
+	entry := form.list[form.selected]
+	if !force && inline.loadedValid && inline.loadedIndex == form.selected && snippetsSameContent(inline.loadedSnap, entry) {
+		state.refreshInlineGroupOptions(entry.Group)
+		state.refreshInlineMeta(entry)
+		return
+	}
+	inline.loadedValid = true
+	inline.loadedIndex = form.selected
+	inline.loadedSnap = entry
+	inline.name = text.Editor{}
+	inline.command = text.Editor{}
+	inline.commandArea = dialogArea{}
+	inline.capturing = false
+	if draft := entry.inlineDraft; draft != nil {
+		inline.name.Insert(draft.name)
+		inline.command.Insert(draft.command)
+		inline.error = draft.error
+	} else {
+		inline.name.Insert(entry.Name)
+		inline.command.Insert(entry.Command)
+		inline.error = ""
+	}
+	state.initInlineGroupPicker(entry.Group)
+	state.refreshInlineMeta(entry)
+}
+
+func (state *State) refreshInlineMeta(entry snippet) {
+	inline := &state.snippets.inline
+	if entry.Group != "" {
+		inline.breadcrumb = entry.Group
+	} else {
+		inline.breadcrumb = state.messages.Tools.SnippetFilterNone
+	}
+	state.refreshInlineShortcutLabel()
+}
+
+func (state *State) refreshInlineShortcutLabel() {
+	form := &state.snippets
+	inline := &form.inline
+	m := state.messages.Tools
+	if inline.capturing {
+		inline.shortcutLbl = m.SnippetShortcutRecording
+		return
+	}
+	if inline.draft {
+		if inline.loadedSnap.Shortcut.Valid() {
+			inline.shortcutLbl = chordLabel(inline.loadedSnap.Shortcut)
+			return
+		}
+		inline.shortcutLbl = m.SnippetShortcutNone
+		return
+	}
+	if form.selected >= 0 && form.selected < len(form.list) && form.list[form.selected].Shortcut.Valid() {
+		inline.shortcutLbl = chordLabel(form.list[form.selected].Shortcut)
+		return
+	}
+	inline.shortcutLbl = m.SnippetShortcutNone
+}
+
+func (state *State) initInlineGroupPicker(value string) {
+	control := &state.snippets.inline.groupPicker
+	control.AllowCreate = true
+	control.MatchCaseInsensitive = true
+	control.Separator = "/"
+	control.SetValidateCreate(validSnippetGroup)
+	state.refreshInlineGroupOptions(value)
+	control.SetValue(value)
+	control.Open = false
+}
+
+func (state *State) refreshInlineGroupOptions(value string) {
+	control := &state.snippets.inline.groupPicker
+	options := make([]components.SingleSelectOption, len(state.snippets.groups))
+	for i, group := range state.snippets.groups {
+		options[i] = components.SingleSelectOption{Value: group}
+	}
+	control.SetOptions(options)
+	if !control.Open && strings.TrimSpace(control.Query.String()) == "" && control.Value() != value {
+		control.SetValue(value)
+	}
+}
+
+func (inline *snippetInlineEditor) composing() bool {
+	fields := [...]*text.Editor{&inline.name, &inline.command, &inline.groupPicker.Query}
+	for _, editor := range fields {
+		if marked, composing := editor.Composition(); composing && marked.Start != marked.End {
+			return true
+		}
+	}
+	return false
+}
+
+func (inline *snippetInlineEditor) abandonOther(target gfx.ID) {
+	switch target {
+	case hitSnippetInlineName, hitSnippetInlineCommand, hitSnippetInlineGroup:
+	default:
+		return
+	}
+	if target != hitSnippetInlineName {
+		inline.name.Unmark()
+	}
+	if target != hitSnippetInlineCommand {
+		inline.command.Unmark()
+	}
+	if target != hitSnippetInlineGroup {
+		inline.groupPicker.Query.Unmark()
+	}
+}
+
+// applyInlineSnippetEdits validates and applies text edits made in the Snippets
+// page's right-pane editor in memory, coalescing the store write until typing
+// settles, the field blurs, or the selection changes.
+func (state *State) applyInlineSnippetEdits() {
+	form, m := &state.snippets, state.messages.Tools
+	inline := &form.inline
+	if inline.composing() {
+		return
+	}
+	if !inline.draft && (form.selected < 0 || form.selected >= len(form.list)) {
+		return
+	}
+	var current snippet
+	order := form.selected
+	if inline.draft {
+		current = inline.loadedSnap
+		order = len(form.list)
+	} else {
+		current = form.list[form.selected]
+	}
+	candidate := current
+	candidate.Name = cleanSnippetText(inline.name.String(), maxSnippetName)
+	candidate.Command = sanitizeSnippetCommand(inline.command.String())
+	var validationErr string
 	switch {
-	case selected:
-		background, paintBackground = theme.Muted, true
-	case expanded:
-		background, paintBackground = theme.Hover, true
-	case hovered:
-		background, paintBackground = theme.Hover, true
+	case candidate.Name == "":
+		validationErr = m.SnippetErrorName
+	case strings.TrimSpace(candidate.Command) == "":
+		validationErr = m.SnippetErrorCommand
+	case len(candidate.Command) > maxSnippetCommand || !snippetRecordFits(candidate, order):
+		validationErr = m.SnippetErrorTooLong
 	}
-	row.Element.Height(height).FillWidth()
-	row.Element.Children(func() {
-		ui.Column(c).FillWidth().Children(func() {
-			header := ui.Row(c).Height(rowHeight).FillWidth().Items(ui.Center)
-			if paintBackground {
-				// The old table's row surface covered the 36px row only; the
-				// expanded band below it stays on the page background.
-				header.Background(background)
+	if validationErr != "" {
+		inline.error = validationErr
+		if !inline.draft {
+			form.list[form.selected].inlineDraft = &snippetInlineDraft{
+				name:    inline.name.String(),
+				command: inline.command.String(),
+				error:   validationErr,
 			}
-			header.Children(func() {
-				nameLeft := pad
-				if view.manualOrder {
-					nameLeft += 24
-				}
-				// The headings fix these three columns' widths. A command wider
-				// than its column is ellipsized there; without Shrink(0) its
-				// unwrapped width would shrink these cells instead and shift
-				// every later column in that row by the command's length (#1152).
-				ui.Text(c, entry.cells[0]).Width(view.widths[0]).PadLeft(nameLeft).PadRight(pad).
-					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().Shrink(0)
-				ui.Text(c, entry.cells[1]).Width(view.widths[1]).PadX(pad).
-					FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis().Shrink(0)
-				ui.Row(c).Width(view.widths[2]).PadX(pad).Items(ui.Center).Shrink(0).Children(func() {
-					if entry.Shortcut.Valid() {
-						ui.Kbd(c, entry.cells[2])
-					}
-				})
-				ui.Row(c).Grow(1).PadLeft(pad + view.keyWidth + 6).PadRight(pad).
-					Items(ui.Center).Gap(pad).Children(func() {
-					if entry.Run {
-						// The run keycap stays at the cell's leading edge; the
-						// text starts past the column's key inset, as the table's
-						// command cell did.
-						ui.Kbd(c, enterKeyLabel).Absolute().Left(pad).
-							Top((snippetExpandSize - theme.Metrics.FontSizeS - 9) / 2).
-							Height(theme.Metrics.FontSizeS + 9)
-					}
-					ui.Text(c, entry.cells[3]).Grow(1).
-						FontSize(theme.Metrics.FontSizeM).Color(theme.Foreground).Ellipsis()
-					// A command cell too narrow for the chevron drops it, as the
-					// old painter did instead of squeezing the text.
-					if view.commandWidth >= snippetExpandSize {
-						open := form.expanded == index+1
-						hint, glyph := m.SnippetExpand, iconChevronRight
-						if open {
-							hint, glyph = m.SnippetCollapse, iconChevronDown
-						}
-						state.declareIconButtonWithOptions(c, hitSnippetExpandList.At(index), glyph, hint,
-							false, iconButtonQuiet, 0, gfx.HitOptions{
-								Expanded: open, Expandable: true, Description: entry.Name,
-							}).Size(snippetExpandSize, snippetExpandSize)
-					}
-				})
-				if !expanded && hovered && strings.Contains(entry.Command, "\n") {
-					// The preview aligns 4px in from the command cell, as the old
-					// hover card's default align offset did, and hangs from the
-					// row's bottom edge whatever the cell's own height.
-					commandX := view.widths[0] + view.widths[1] + view.widths[2]
-					marker := ui.Slot(c).Absolute().Left(commandX + 4).Top(0).Width(1).Height(rowHeight)
-					form.hoverCandidate, form.hoverCandidateAnchor = index+1, marker
-				}
-			})
-			if expanded {
-				form.detailName, form.detailCommand = entry.Name, entry.Command
-				detail := ui.Column(c).FillWidth().Height(form.detailHeight).
-					Background(theme.Background).
-					PadX(snippetDetailPadding).PadY(snippetDetailPadding)
-				detail.Children(func() {
-					for _, line := range form.detailLines {
-						ui.Text(c, line).Mono().MonoFace(state.terminalFontFace).
-							FontSize(theme.Metrics.FontSizeS).Color(theme.Foreground).
-							Height(form.detailLineHeight).FillWidth()
-					}
-				})
-				detail.DrawOver(form.detailAccent)
+		}
+		return
+	}
+	inline.error = ""
+	if inline.draft {
+		if len(form.list) >= maxSnippets {
+			inline.error = m.SnippetErrorTooMany
+			return
+		}
+		candidate.inlineDraft = nil
+		form.list = append(form.list, candidate)
+		form.selected = len(form.list) - 1
+		form.selectedFolder = candidate.Group
+		inline.draft = false
+		inline.savedDraft = nil
+		inline.loadedIndex = form.selected
+		inline.loadedSnap = candidate
+		form.showSnippet(form.selected)
+		state.snippetTreeExpandAncestors(candidate.Group)
+		state.refreshSnippets()
+		inline.dirty = true
+		state.scheduleInlineSnippetSave()
+		return
+	}
+	form.list[form.selected].inlineDraft = nil
+	if snippetsSameContent(current, candidate) {
+		return
+	}
+	candidate.inlineDraft = nil
+	form.list[form.selected] = candidate
+	inline.loadedSnap = candidate
+	state.refreshSnippets()
+	inline.dirty = true
+	state.scheduleInlineSnippetSave()
+}
+
+func (state *State) inlineSnippetSaveDelay() time.Duration {
+	if delay := state.snippets.inline.saveDelay; delay > 0 {
+		return delay
+	}
+	return snippetInlineSaveDelay
+}
+
+// scheduleInlineSnippetSave writes inline editor text edits once rapid typing
+// settles. Each edit re-arms the timer so a typing burst produces one store
+// write. Edits are already in memory, so flush/Close saves carry them at once.
+func (state *State) scheduleInlineSnippetSave() {
+	inline := &state.snippets.inline
+	if inline.saveTimer != nil {
+		inline.saveTimer.Stop()
+	}
+	inline.saveSeq++
+	seq := inline.saveSeq
+	inline.saveTimer = time.AfterFunc(state.inlineSnippetSaveDelay(), func() {
+		state.aiPost(func(state *State) {
+			if state.snippets.inline.saveSeq != seq {
+				return
+			}
+			state.snippets.inline.saveTimer = nil
+			if !state.closed && state.snippets.inline.dirty {
+				state.flushInlineSnippetSave()
 			}
 		})
-		if view.manualOrder {
-			row.Element.DrawOver(form.handleDraw)
-		}
 	})
-	state.sendSnippetOn(canvas, row.ID, index)
-	state.openSnippetMenuOn(canvas, row.ID, index)
 }
 
-// paintSnippetHandle draws the manual order's six-dot drag handle in the name
-// column, at the 24px square the old reorder grid gave it. The page List owns
-// the drag; the glyph keeps the place and size it had.
-func (state *State) paintSnippetHandle(d *ui.DrawContext) {
-	theme := state.Theme()
-	handle := gfx.Rect{
-		X: d.Rect.X + 7, Y: d.Rect.Y + (components.TableRowHeight(theme)-24)/2,
-		Width: 24, Height: 24,
+// stopInlineSnippetSave cancels any pending coalesced inline save and clears
+// the dirty flag.
+func (state *State) stopInlineSnippetSave() {
+	inline := &state.snippets.inline
+	if inline.saveTimer != nil {
+		inline.saveTimer.Stop()
+		inline.saveTimer = nil
 	}
-	color := theme.MutedForeground
-	const dot = float32(2.5)
-	for y := float32(-5); y <= 5; y += 5 {
-		for _, x := range [...]float32{-2.5, 2.5} {
-			d.Canvas.Rounded(gfx.Rect{
-				X:     handle.X + handle.Width/2 + x - dot/2,
-				Y:     handle.Y + handle.Height/2 + y - dot/2,
-				Width: dot, Height: dot,
-			}, dot/2, color)
-		}
-	}
+	inline.saveSeq++
+	inline.dirty = false
 }
 
-// paintSnippetDetailAccent rules the expanded band off from its row, marks its
-// leading edge, and names the band as one region for assistive technology.
-func (state *State) paintSnippetDetailAccent(d *ui.DrawContext) {
-	theme := state.Theme()
-	d.Canvas.Fill(gfx.Rect{X: d.Rect.X, Y: d.Rect.Y, Width: d.Rect.Width, Height: 1}, theme.Border)
-	accent := theme.Primary
-	accent.Alpha *= 0.7
-	d.Canvas.Fill(gfx.Rect{X: d.Rect.X, Y: d.Rect.Y, Width: 3, Height: d.Rect.Height}, accent)
-	state.paintSnippetDetailRegion(d)
-}
-
-// paintSnippetDetailRegion marks the expanded command as one region named by
-// its snippet, with the whole command as its description.
-func (state *State) paintSnippetDetailRegion(d *ui.DrawContext) {
-	form := &state.snippets
-	d.Canvas.ContainerWithOptions(d.Rect, gfx.RoleGroup, form.detailName, gfx.HitOptions{Description: form.detailCommand})
-}
-
-// snippetDetailHeight wraps the expanded command at width and returns the lines,
-// their line height and the band height the page reserves for them. Nothing is
-// measured unless a row the filter shows is expanded.
-func (state *State) snippetDetailHeight(canvas *gfx.Canvas, width float32) (lines []string, lineHeight, height float32) {
-	form := &state.snippets
-	if form.expanded < 1 || form.expanded > len(form.list) || !slices.Contains(form.visible, form.expanded-1) {
-		return nil, 0, 0
-	}
-	theme := state.Theme()
-	style := gfx.TextStyle{Size: theme.Metrics.FontSizeS, Mono: true, MonoFace: state.terminalFontFace, Color: theme.Foreground}
-	_, lineHeight = canvas.MonoCellSize(style.Size, style.MonoFace)
-	lineHeight = max(lineHeight, style.Size+4)
-	lines = canvas.WrapLinesStyle(form.detailLines[:0], form.list[form.expanded-1].Command, style,
-		max(width, 0), snippetDetailLines, &form.detailCache)
-	form.detailLines = lines
-	return lines, lineHeight, 2*snippetDetailPadding + float32(len(lines))*lineHeight
-}
-
-// updateSnippetHover opens the command preview after the pointer has rested on a
-// multi-line row and keeps it open while the pointer is on the card. It mirrors
-// components.HoverTooltip: the canvas asks for one frame at the deadline, so no
-// timer outlives the hover.
-func (state *State) updateSnippetHover(canvas *gfx.Canvas, row int, anchor ui.Box) {
-	form := &state.snippets
-	if state.activeSection != sectionSnippets || state.dialogOrMenuOpen() || !canvas.Pressed().IsZero() {
-		form.hoverTarget, form.hoverOpen, form.hoverRow = gfx.ID{}, false, 0
-		form.hoverAnchor = ui.Box{}
+// flushInlineSnippetSave persists pending inline editor edits immediately when
+// the user leaves the field, switches selection, or triggers an action.
+func (state *State) flushInlineSnippetSave() {
+	inline := &state.snippets.inline
+	if !inline.dirty {
+		state.stopInlineSnippetSave()
 		return
 	}
-	if canvas.Hovered() == hitSnippetHoverCard && form.hoverOpen && form.hoverRow > 0 {
-		return
-	}
-	if row <= 0 || !anchor.Valid() {
-		form.hoverTarget, form.hoverOpen, form.hoverRow = gfx.ID{}, false, 0
-		form.hoverAnchor = ui.Box{}
-		return
-	}
-	target := form.rows.RowID(slices.Index(form.visible, row-1))
-	now := canvas.Now()
-	if target != form.hoverTarget {
-		form.hoverTarget, form.hoverSince = target, now
-		form.hoverOpen, form.hoverRow = false, 0
-	}
-	if elapsed := now - form.hoverSince; elapsed < snippetHoverDelay {
-		canvas.RequestFrameIn(snippetHoverDelay - elapsed)
-		return
-	}
-	form.hoverOpen, form.hoverRow, form.hoverAnchor = true, row, anchor
+	state.stopInlineSnippetSave()
+	state.save()
 }
 
-// declareSnippetHoverCard declares the preview the pointer opened over the page,
-// anchored on the command cell it describes. The app keeps hoverOpen true while
-// the pointer is on either the row or the card.
-func (state *State) declareSnippetHoverCard(c ui.C) {
-	form := &state.snippets
-	if !form.hoverOpen || form.hoverRow <= 0 || form.hoverRow > len(form.list) ||
-		state.activeSection != sectionSnippets || state.dialogOrMenuOpen() ||
-		!c.Canvas().Pressed().IsZero() || !form.hoverAnchor.Valid() {
+func (state *State) commitInlineSnippetPendingGroup() {
+	inline := &state.snippets.inline
+	if _, composing := inline.groupPicker.Query.Composition(); composing {
 		return
 	}
-	entry := &form.list[form.hoverRow-1]
-	theme := state.Theme()
-	style := gfx.TextStyle{Size: theme.Metrics.FontSizeS, Mono: true, MonoFace: state.terminalFontFace, Color: theme.PopoverForeground}
-	_, lineHeight := c.Canvas().MonoCellSize(style.Size, style.MonoFace)
-	lineHeight = max(lineHeight, style.Size+4)
-	width := max(0, snippetCardWidth-2*theme.Metrics.PadSurface)
-	lines := c.Canvas().WrapLinesStyle(form.cardLines[:0], entry.Command, style, width, snippetCardLines, &form.cardCache)
-	form.cardLines = lines
-	form.hoverC, form.hoverName, form.hoverLineHeight = c, entry.Name, lineHeight
-	if form.hoverBody == nil {
-		form.hoverBody = state.declareSnippetHoverBody
+	if strings.TrimSpace(inline.groupPicker.Query.String()) == "" {
+		return
 	}
-	ui.Popover(c, form.hoverAnchor, &form.hoverOpen, ui.PopoverSpec{
-		Side: components.PopoverBottom, Align: ui.Start, Offset: 4, KeepOpenOnAnchor: true,
-		Title: entry.Name, Width: snippetCardWidth,
-	}, form.hoverBody)
+	if inline.groupPicker.CommitQuery() {
+		state.applyInlineSnippetGroup()
+	}
 }
 
-// declareSnippetHoverBody declares the card's wrapped command. It runs inside the
-// popover, and its own hit keeps the preview open while the pointer is on it.
-func (state *State) declareSnippetHoverBody() {
+func (state *State) applyInlineSnippetGroup() {
 	form := &state.snippets
-	c := form.hoverC
-	theme := state.Theme()
-	card := ui.Column(c).FillWidth().Hit(hitSnippetHoverCard, form.hoverName)
-	card.Children(func() {
-		for _, line := range form.cardLines {
-			ui.Text(c, line).Mono().MonoFace(state.terminalFontFace).
-				FontSize(theme.Metrics.FontSizeS).Color(theme.PopoverForeground).
-				Height(form.hoverLineHeight).FillWidth()
-		}
-	})
+	inline := &form.inline
+	nextGroup := cleanSnippetGroup(inline.groupPicker.Value())
+	if inline.draft {
+		inline.loadedSnap.Group = nextGroup
+		form.selectedFolder = nextGroup
+		state.refreshInlineMeta(inline.loadedSnap)
+		return
+	}
+	if form.selected < 0 || form.selected >= len(form.list) {
+		return
+	}
+	if sameSnippetGroup(form.list[form.selected].Group, nextGroup) && form.list[form.selected].Group == nextGroup {
+		return
+	}
+	form.list[form.selected].Group = nextGroup
+	inline.loadedSnap.Group = nextGroup
+	form.selectedFolder = nextGroup
+	state.snippetTreeExpandAncestors(nextGroup)
+	state.refreshSnippets()
+	state.save()
+}
+
+func (state *State) captureInlineSnippetShortcut(event gfx.KeyEvent, chord keymap.Chord, ok bool) gfx.EventResult {
+	form, m := &state.snippets, state.messages
+	inline := &form.inline
+	result := gfx.EventResult{Handled: true, Repaint: true}
+	if event.Repeat {
+		return gfx.EventResult{Handled: true}
+	}
+	if !inline.draft && (form.selected < 0 || form.selected >= len(form.list)) {
+		inline.capturing = false
+		return result
+	}
+	if !ok || !validForSnippet(chord) {
+		inline.error = m.Tools.SnippetShortcutInvalid
+		return result
+	}
+	skip := form.selected
+	if inline.draft {
+		skip = -1
+	}
+	if owner := state.chordOwner(chord, skip); owner != "" {
+		inline.error = fmt.Sprintf(m.ShortcutsConflictFmt, owner)
+		return result
+	}
+	if inline.draft {
+		inline.loadedSnap.Shortcut = chord
+		inline.capturing = false
+		inline.error = ""
+		state.refreshInlineShortcutLabel()
+		return result
+	}
+	form.list[form.selected].Shortcut = chord
+	inline.loadedSnap.Shortcut = chord
+	inline.capturing = false
+	inline.error = ""
+	state.refreshSnippets()
+	state.save()
+	return result
 }

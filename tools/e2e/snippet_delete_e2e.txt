@@ -1,10 +1,9 @@
 click "Snippets"
 click "Add snippet"
-waitfor "Add a snippet" 3000
+click "Name"
 type Delete me
-key tab
+click "Command"
 type echo delete-me-701
-click "Save"
 settle 600
 click "Delete"
 expect text "Delete snippet?" within 1000

@@ -425,7 +425,7 @@ func (state *State) openSettings() {
 	// anew starts back at the top.
 	reopen := !state.settingsTab
 	state.settingsTab = true
-	state.activeSection = sectionSettings
+	state.setActiveSection(sectionSettings)
 	state.settings.pageMotion, state.settings.navMotion = gfx.Motion{}, gfx.Motion{}
 	if reopen {
 		state.settingsScroll = 0

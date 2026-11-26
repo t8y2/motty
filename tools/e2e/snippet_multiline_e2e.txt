@@ -10,13 +10,13 @@ waitfor "tester@e2e" 8000
 click "Hosts"
 click "Snippets"
 click "Add snippet"
-waitfor "Add a snippet" 3000
+click "Name"
 type Two lines
-key tab
+click "Command"
 type echo first-line-574
 key enter
 type echo second-line-574
-click "Save"
+settle 600
 click "Send to terminal"
 expect text "first-line-574" within 4000
 expect text "second-line-574" within 4000

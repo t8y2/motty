@@ -3069,8 +3069,6 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareProxyBatchDeleteConfirmDialog(c)
 	case modalXYTransfer:
 		state.declareXYDialog(c)
-	case modalSnippet:
-		state.declareSnippetDialog(c)
 	case modalSnippetDelete:
 		state.declareSnippetDeleteDialog(c)
 	case modalSnippetGroups:

@@ -234,7 +234,6 @@ func TestFormDialogsKeepTypedContentWhenPressedOutside(t *testing.T) {
 		{"form", func(_ *testing.T, s *State) {
 			s.openForm(formDialog{title: "Test form", submit: "Save"}, formField{label: "Name"})
 		}, openModal(modalForm), hitFormFieldList.At(0)},
-		{"snippet", func(_ *testing.T, s *State) { s.openSnippetDialog(-1) }, openModal(modalSnippet), hitSnippetName},
 		{"move-group", func(_ *testing.T, s *State) {
 			s.Click(hitHostList.At(int(s.hosts[0].ID)))
 			s.Click(hitMoveHostGroup)
@@ -332,8 +331,6 @@ func TestConvertedDialogBodiesTakeRealPointerEvents(t *testing.T) {
 			func(s *State) bool { return s.autofillRules.send == autofill.SendText }},
 		{"forward", func(s *State) { s.openForwardDialog() }, hitForwardDialogResume,
 			func(s *State) bool { return s.forwardEditor.resume }},
-		{"snippet", func(s *State) { s.openSnippetDialog(-1) }, hitSnippetRun,
-			func(s *State) bool { return !s.snippets.run }},
 		{"jump route", func(s *State) { s.openProxyDialog() }, hitProxyDialogViaShell,
 			func(s *State) bool { return s.proxyEditor.viaShell }},
 		{"form", func(s *State) {

@@ -292,7 +292,7 @@ func (state *State) submitSnippetVariables() {
 	if state.sendResolvedSnippet(entry, resolved, session) {
 		if fromPage {
 			state.ActivatePane(session.ID)
-			state.activeSection = sectionTerminal
+			state.setActiveSection(sectionTerminal)
 		}
 		// Ask for the target terminal's focus after any pane switch, so the
 		// keyboard lands on the session the command went to, not the one that
