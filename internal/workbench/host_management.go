@@ -223,6 +223,9 @@ func (state *State) openEditHostID(id uint32) {
 	state.selectedHostID = host.ID
 	state.cancelHostTest()
 	state.editor.load(host)
+	if host.isWSL() {
+		state.listWSLDistros()
+	}
 	state.editor.agentAccess = host.isSSH() && state.agentHosts[host.CatalogID]
 	state.prepareOTPState(host)
 	state.editor.advancedOpen = state.editor.advancedOpen || state.editor.otpSaved || state.editor.agentAccess
@@ -249,6 +252,9 @@ func (state *State) openCopyHostID(id uint32) {
 	state.selectedHostID = host.ID
 	state.cancelHostTest()
 	state.editor.load(host)
+	if host.isWSL() {
+		state.listWSLDistros()
+	}
 	state.editor.agentAccess = state.effectiveAgentHostMode() == agentHostModeAll
 	state.editor.label = text.Editor{}
 	state.editor.label.Insert(fmt.Sprintf(state.messages.HostCopyLabelFmt, host.Label))
@@ -315,7 +321,10 @@ func (state *State) submitHostDialog() {
 	}
 	candidate := state.editor.host(candidateID)
 	if previous != nil {
-		candidate.CatalogID, candidate.System = previous.CatalogID, previous.System
+		candidate.CatalogID = previous.CatalogID
+		if !candidate.isWSL() && !previous.isWSL() {
+			candidate.System = previous.System
+		}
 	} else {
 		used := make(map[string]struct{}, len(state.hosts))
 		for _, host := range state.hosts {

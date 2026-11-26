@@ -243,6 +243,9 @@ type mergeKey struct {
 
 func mergeKeyOf(host Host) mergeKey {
 	key := mergeKey{protocol: uint8(host.Protocol), terminal: uint8(host.Terminal), address: host.Address, label: strings.ToLower(strings.TrimSpace(host.Label)), group: normalizeHostGroupPath(host.Group)}
+	if host.isWSL() {
+		key.address = strings.ToLower(key.address)
+	}
 	if host.Protocol != protocolSerial {
 		key.user, key.port, key.viaSSH = host.User, host.Port, host.ViaSSH
 	}

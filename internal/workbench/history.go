@@ -88,7 +88,7 @@ type historyUI struct {
 
 // historyKey is the key under which a session's commands are kept.
 func historyKey(session *Session) string {
-	if session.isLocal() {
+	if session.HostID == localHostID {
 		return "local"
 	}
 	if session.host.CatalogID != "" {

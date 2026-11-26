@@ -33,7 +33,7 @@ func (state *State) reopenSessionLogRecord(id string) {
 	if state.jumpToLogSession(id) {
 		return
 	}
-	if record.Protocol == sessionlog.ProtocolLocal && record.TargetKind != sessionlog.TargetShared {
+	if record.Protocol == sessionlog.ProtocolLocal && record.TargetKind == sessionlog.TargetLocal {
 		state.openLocalTerminal()
 		return
 	}

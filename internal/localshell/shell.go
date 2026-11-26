@@ -65,6 +65,9 @@ type Config struct {
 	// login shell with directory reports (Shell "wsl:<distribution>"). Empty
 	// starts the distribution's own login shell untouched.
 	WSLScript string
+	// WSLUser and WSLDirectory override the distribution's default user and
+	// starting folder. WSLDirectory is a Linux path; Dir is a Windows path.
+	WSLUser, WSLDirectory string
 	// Env is added to the environment the shell inherits.
 	Env []string
 	// Notify is called after output arrives and when the shell ends, from any

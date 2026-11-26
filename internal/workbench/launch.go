@@ -608,6 +608,8 @@ func protocolName(protocol hostProtocol) string {
 		return "VNC"
 	case protocolRDP:
 		return "RDP"
+	case protocolWSL:
+		return "WSL"
 	}
 	return "SSH"
 }

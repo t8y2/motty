@@ -7,10 +7,15 @@ import (
 )
 
 func TestWSLCommandsRunInsideTheDistribution(t *testing.T) {
-	got := wslArgs("Ubuntu-22.04", "cat /proc/stat")
+	got := (WSL{Distro: "Ubuntu-22.04"}).args("cat /proc/stat")
 	want := []string{"-d", "Ubuntu-22.04", "--exec", "/bin/sh", "-c", "cat /proc/stat"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("wsl.exe arguments = %q, want %q", got, want)
+	}
+	got = (WSL{Distro: "Ubuntu-22.04", User: "alice"}).args("cat /proc/stat")
+	want = []string{"-d", "Ubuntu-22.04", "--user", "alice", "--exec", "/bin/sh", "-c", "cat /proc/stat"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("wsl.exe arguments with user = %q, want %q", got, want)
 	}
 }
 

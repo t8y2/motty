@@ -70,7 +70,7 @@ func (state *State) rememberRecentConnection(session *Session) {
 	}
 	session.recordRecent = false
 	key := session.host.CatalogID
-	if session.isLocal() {
+	if session.HostID == localHostID {
 		key = "local-terminal"
 	}
 	if key == "" {

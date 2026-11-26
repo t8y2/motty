@@ -24,8 +24,8 @@ func TestWSLShellReportsItsFolderAsAWindowsPath(t *testing.T) {
 	distro, _ := WSLDistro(choices[0].Path)
 	shell, wakes := startWindows(t, Config{
 		Shell: choices[0].Path, Cols: 120, Rows: 30,
-		WSLScript: sshconn.WSLIntegrationScript("test-token", WSLDirectoryVariable),
-		Env:       []string{WSLDirectoryVariable + "=/tmp"},
+		WSLScript:    sshconn.WSLIntegrationScript("test-token", WSLDirectoryVariable),
+		WSLDirectory: "/tmp",
 	})
 	screen := term.New(120, 30, 0)
 	screen.SetPromptToken("test-token")

@@ -22,12 +22,13 @@ type localShellSelect struct {
 	choices []localshell.Choice // the shells, then the WSL distributions
 	// startup is the shell whose startup command the settings page edits. It is
 	// the page's own selection, not the default shell choice above it.
-	startup  localshell.Choice
-	shells   []localshell.Choice
-	distros  []localshell.Choice
-	loaded   bool
-	open     bool
-	discover func() []localshell.Choice // nil uses the Windows discovery
+	startup          localshell.Choice
+	shells           []localshell.Choice
+	distros          []localshell.Choice
+	defaultWSLDistro string
+	loaded           bool
+	open             bool
+	discover         func() []localshell.Choice // nil uses the Windows discovery
 	// discoverWSL lists the WSL distributions; nil asks wsl.exe. It starts a
 	// process, so it runs on its own goroutine and answers through listing.
 	discoverWSL func(context.Context) []localshell.Choice
@@ -100,6 +101,7 @@ func (state *State) resolveLocalShell(host Host) string {
 // answer is adopted by the next paint.
 func (state *State) listWSLDistros() {
 	menu := &state.localShellMenu
+	menu.defaultWSLDistro = localshell.DefaultWSLDistro()
 	if menu.listing != nil {
 		return
 	}

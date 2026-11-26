@@ -9,3 +9,6 @@ func InstalledWSL(context.Context) []Choice { return nil }
 
 // WSLExecutable is empty on a system without WSL.
 func WSLExecutable() string { return "" }
+
+// DefaultWSLDistro is empty on a system without WSL.
+func DefaultWSLDistro() string { return "" }

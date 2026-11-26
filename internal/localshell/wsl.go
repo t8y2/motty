@@ -240,7 +240,13 @@ func wslCommandLine(script string) string {
 // exe: its arguments, and the environment to add to the process's own.
 func wslLaunch(exe string, config Config, distro, inheritedWSLENV string) (program string, args, env []string) {
 	args = []string{"-d", distro}
+	if config.WSLUser != "" {
+		args = append(args, "--user", config.WSLUser)
+	}
 	cd := wslStartDirectory(config.Dir, distro)
+	if cd == "" {
+		cd = config.WSLDirectory
+	}
 	switch {
 	case len(config.Args) > 0:
 		// An explicit command runs as given, without the integration.

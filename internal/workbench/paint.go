@@ -2740,6 +2740,10 @@ func (state *State) paintHostCatalogIcon(canvas *gfx.Canvas, host Host, bounds g
 		return
 	}
 	if host.Icon == hostIconAuto {
+		if host.isWSL() {
+			state.paintLocalShellIcon(canvas, host, bounds, background)
+			return
+		}
 		system := autoIconSystem(host.System, host.Protocol)
 		if host.isDesktop() && system == sshconn.SystemUnknown {
 			canvas.Rounded(bounds, bounds.Width*0.24, state.hostBadgeFill(background))
@@ -3089,6 +3093,9 @@ func (state *State) declareDialogs(c ui.C) {
 // declareHostDialog declares the New/Edit Host form as a dialog of the workbench
 // page.
 func (state *State) declareHostDialog(c ui.C) {
+	if state.editor.protocol == protocolWSL {
+		state.adoptWSLDistros()
+	}
 	m := state.messages
 	title, submit := m.DialogTitle, m.AddHost
 	switch state.hostDialogMode {
@@ -3188,8 +3195,9 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	form := &editor.form
 	b := &editor.form.body
 	ssh := editor.protocol == protocolSSH
-	terminalHost := idleKeepAliveProtocol(editor.protocol)
-	networkHost := editor.protocol != protocolSerial
+	wsl := editor.protocol == protocolWSL
+	terminalHost := idleKeepAliveProtocol(editor.protocol) || wsl
+	networkHost := editor.protocol != protocolSerial && !wsl
 	vncHost := editor.protocol == protocolVNC || editor.protocol == protocolRDP
 	rowHeight := float32(hostFormRowHeight)
 	// The rows this frame lays out are the ones before a choice writes its new
@@ -3201,7 +3209,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	// The page controls this form declared last paint are stale now; a box is
 	// valid only until the end of the paint that made it.
 	form.passwordControl = ui.Box{}
-	form.authBox, form.portsBox = ui.Box{}, ui.Box{}
+	form.authBox, form.portsBox, form.wslDistroBox = ui.Box{}, ui.Box{}, ui.Box{}
 	form.encodingBox, form.iconBox = ui.Box{}, ui.Box{}
 	form.idleIntervalBox, form.idleUnitBox, form.idleInputBox = ui.Box{}, ui.Box{}, ui.Box{}
 	for index := range form.colorSwatchBoxes {
@@ -3289,6 +3297,10 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 								})
 							} else {
 								ui.Column(c).Absolute().Left(0).Right(0).Top(advancedHeaderHeight).Children(func() {
+									if wsl {
+										state.declareWSLAdvanced(c, rowHeight)
+										return
+									}
 									state.declareHostIdleKeepAliveRows(c)
 								})
 							}
@@ -3418,6 +3430,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if form.portsBox.Valid() {
 		state.rememberHostPageSelect(canvas, form.portsBox, hitDialogPortsTrigger)
 	}
+	if form.wslDistroBox.Valid() {
+		state.rememberHostPageSelect(canvas, form.wslDistroBox, hitDialogWSLDistro)
+	}
 	if form.encodingBox.Valid() {
 		state.rememberHostPageSelect(canvas, form.encodingBox, hitDialogEncoding)
 	}
@@ -3431,7 +3446,7 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	// as the hand-painted endpoint rows paint the protocol now in effect.
 	protocol := form.layoutProtocol
 	ssh := protocol == protocolSSH
-	networkHost := protocol != protocolSerial
+	networkHost := protocol != protocolSerial && protocol != protocolWSL
 	vncHost := protocol == protocolVNC || protocol == protocolRDP
 	b := &editor.form.body
 	state.paintHostEndpointRows(canvas)
@@ -3446,7 +3461,7 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if vncHost {
 		state.paintVNCRows(canvas)
 	}
-	if idleKeepAliveProtocol(protocol) {
+	if idleKeepAliveProtocol(protocol) || protocol == protocolWSL {
 		state.paintAdvancedSection(canvas)
 	}
 	// The checkboxes and the choices are the page's controls: keep them in the form's

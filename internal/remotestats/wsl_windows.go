@@ -18,7 +18,7 @@ func (w WSL) startCommand(ctx context.Context, command string) (*exec.Cmd, error
 	if w.Exe == "" || w.Distro == "" {
 		return nil, errors.New("remote stats: WSL executable and distribution are required")
 	}
-	process := exec.CommandContext(ctx, w.Exe, wslArgs(w.Distro, command)...)
+	process := exec.CommandContext(ctx, w.Exe, w.args(command)...)
 	process.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 	return process, nil
 }

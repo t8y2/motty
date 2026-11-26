@@ -22,6 +22,7 @@ import (
 	"motty/internal/configstore"
 	"motty/internal/highlight"
 	"motty/internal/i18n"
+	"motty/internal/localshell"
 	"motty/internal/sessionlog"
 	"motty/internal/sshbrowser"
 	"motty/internal/sshconn"
@@ -1311,6 +1312,7 @@ func New(options Options) *State {
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
+	state.localShellMenu.defaultWSLDistro = localshell.DefaultWSLDistro()
 	state.refreshEditMenu()
 	// The command drawer shows by default; a saved state may close it.
 	// The reference cell stands in until the first paint measures the font on the
@@ -1610,6 +1612,16 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		}
 		if hit == hitDialogOTP && state.editor.protocol == protocolSSH {
 			return &state.editor.otp
+		}
+		if state.editor.protocol == protocolWSL {
+			switch hit {
+			case hitDialogWSLUser:
+				return &state.editor.wslUser
+			case hitDialogWSLDirectory:
+				return &state.editor.wslDirectory
+			case hitDialogWSLCommand:
+				return &state.editor.wslCommand
+			}
 		}
 	case modalMoveHostGroup:
 		if hit == hitMoveGroupField && state.groupActions.op != hostGroupRelocate && state.groupActions.op != hostGroupDelete {
@@ -2545,7 +2557,7 @@ func (state *State) clickHostDialog(id gfx.ID) {
 	case hitDialogTest:
 		state.startHostTest()
 	case hitHostProxyConfigure:
-		if state.editor.protocol != protocolSerial {
+		if state.editor.protocol != protocolSerial && state.editor.protocol != protocolWSL {
 			state.openHostProxyDialog()
 		}
 	case hitHostJumpConfigure:
@@ -3522,6 +3534,11 @@ func (state *State) openHostSession(host Host) *Session {
 		return state.createHostSession(host, address)
 	}
 	route, routeValid := state.reuseRouteFor(host)
+	if host.isWSL() && host.Address == "" {
+		if distro := localshell.DefaultWSLDistro(); distro != "" {
+			address = host.wslTarget(distro)
+		}
+	}
 	var existing *Session
 	for index := range state.sessions {
 		session := &state.sessions[index]

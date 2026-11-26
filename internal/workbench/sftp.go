@@ -329,6 +329,9 @@ const (
 )
 
 func (state *State) openSFTP(session *Session) {
+	if session != nil && session.host.isWSL() && session.wslDistro() == "" {
+		return // no distribution to browse until it resolves on launch
+	}
 	saved := savedHistoryFor(session)
 	if session != nil && session.isLocal() && session.files == nil {
 		view := &sftpView{local: true, localOnly: true}

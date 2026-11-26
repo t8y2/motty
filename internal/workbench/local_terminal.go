@@ -32,6 +32,10 @@ type localConn struct {
 	status            sshconn.Status
 	dir               string
 	shell             string
+	startErr          error
+	wslUser           string
+	wslDirectory      string
+	wslNoGUI          bool
 	networkProxy      networkProxyMode
 	lookupSystemProxy func() systemproxy.Settings
 }
@@ -58,6 +62,9 @@ func (conn *localConn) SkipIdentity()              {}
 func (conn *localConn) Cancel()                    {}
 
 func (conn *localConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
+	if conn.startErr != nil {
+		return nil, conn.startErr
+	}
 	shell, err := localshell.Start(conn.shellConfig(config, runtime.GOOS))
 	if err != nil {
 		// A nil *localshell.Shell inside the interface would not be nil to the
@@ -95,6 +102,7 @@ func (conn *localConn) shellConfig(config sshconn.ShellConfig, goos string) loca
 	shell := localshell.Config{
 		Shell: conn.shell, Args: localshell.ArgsFor(conn.shell), Cols: config.Cols, Rows: config.Rows,
 		PixelWidth: config.PixelWidth, PixelHeight: config.PixelHeight, Dir: conn.dir, Notify: config.Notify,
+		WSLUser: conn.wslUser, WSLDirectory: conn.wslDirectory,
 	}
 	shell.Env = conn.proxyEnvironment()
 	if config.IntegrateShell && goos == "windows" {
@@ -103,6 +111,12 @@ func (conn *localConn) shellConfig(config sshconn.ShellConfig, goos string) loca
 			// A distribution's shell reports through a script it runs itself.
 			shell.WSLScript = sshconn.WSLIntegrationScript(config.IntegrationToken, localshell.WSLDirectoryVariable)
 		}
+	}
+	if conn.wslNoGUI && goos == "windows" {
+		if shell.WSLScript == "" {
+			shell.WSLScript = `exec "${SHELL:-/bin/sh}" -l`
+		}
+		shell.WSLScript = "unset DISPLAY WAYLAND_DISPLAY PULSE_SERVER\n" + shell.WSLScript
 	}
 	if config.IntegrateShell && goos != "windows" {
 		program := conn.shell
@@ -252,6 +266,8 @@ func localSystem() sshconn.RemoteSystem {
 // an SSH host, the computer's name for a shell on this one.
 func (state *State) sessionAddress(host Host) string {
 	switch {
+	case host.isWSL():
+		return host.wslTarget(state.messages.WSL.DefaultDistribution)
 	case host.ID == localHostID:
 		return host.Address
 	case host.Protocol == protocolSerial:
@@ -263,7 +279,15 @@ func (state *State) sessionAddress(host Host) string {
 }
 
 // isLocal reports whether a session runs on this machine.
-func (session *Session) isLocal() bool { return session.HostID == localHostID }
+func (session *Session) isLocal() bool {
+	if session.HostID == localHostID {
+		return true
+	}
+	if session.conn != nil {
+		return session.dialedProtocol == protocolWSL
+	}
+	return session.host.isWSL()
+}
 
 // localMachineName is how the local terminal names this computer. The tests
 // replace it so what a page paints does not depend on the machine that runs

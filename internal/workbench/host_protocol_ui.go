@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"runtime"
+
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -67,6 +69,7 @@ const (
 	connectionSerial
 	connectionVNC
 	connectionRDP
+	connectionWSL
 )
 
 func (kind hostConnectionType) protocol() hostProtocol {
@@ -81,6 +84,8 @@ func (kind hostConnectionType) protocol() hostProtocol {
 		return protocolVNC
 	case connectionRDP:
 		return protocolRDP
+	case connectionWSL:
+		return protocolWSL
 	}
 	return protocolSSH
 }
@@ -109,6 +114,8 @@ func (editor *hostEditor) connectionType() hostConnectionType {
 		return connectionVNC
 	case protocolRDP:
 		return connectionRDP
+	case protocolWSL:
+		return connectionWSL
 	}
 	return connectionSSH
 }
@@ -116,7 +123,7 @@ func (editor *hostEditor) connectionType() hostConnectionType {
 // The segmented choices of the host form. Each is a Choice of the form's own
 // page, declared at the row its layout reserved.
 var (
-	hostConnectionChoices  = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh}
+	hostConnectionChoices  = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh, connectionWSL}
 	hostFlowChoices        = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
 	hostBackspaceChoices   = [...]backspaceKey{backspaceDEL, backspaceCtrlH}
 	hostAlgoChoices        = [...]algoMode{algoDefault, algoCompatible, algoCustom}
@@ -143,6 +150,8 @@ func (state *State) hostProtocolChoiceLabel(protocol hostProtocol) string {
 		return state.messages.Desktop.ProtocolVNC
 	case protocolRDP:
 		return state.messages.Desktop.ProtocolRDP
+	case protocolWSL:
+		return "WSL"
 	default:
 		return state.messages.Tools.ProtocolSSH
 	}
@@ -199,9 +208,16 @@ func (state *State) declareHostProtocolChoice(c ui.C) ui.Box {
 	editor := &state.editor
 	editor.connectionBefore = editor.connectionType()
 	editor.connection = editor.connectionBefore
-	choice := ui.Choice(c, &editor.connection, hostConnectionChoices[:], state.hostConnectionChoiceLabel).Fill()
+	choices := hostConnectionChoices[:]
+	if runtime.GOOS != "windows" && editor.protocol != protocolWSL {
+		choices = choices[:len(choices)-1]
+	}
+	choice := ui.Choice(c, &editor.connection, choices, state.hostConnectionChoiceLabel).Fill()
 	if choice.Changed() {
 		editor.applyConnection(editor.connectionBefore)
+		if editor.protocol == protocolWSL {
+			c.After(state.listWSLDistros)
+		}
 		state.dialogError = ""
 	}
 	return choice
@@ -250,6 +266,8 @@ func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight fl
 	m, tools := state.messages, state.messages.Tools
 	parent.Children(func() {
 		switch editor.protocol {
+		case protocolWSL:
+			state.declareWSLEndpoint(c, slots, rowHeight)
 		case protocolSerial:
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
 				slots.address = ui.Slot(c).Grow(1)
@@ -509,6 +527,10 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.legacyTLS = !editor.legacyTLS
 	case state.clickDesktopQuality(id):
 		// An RDP effect switch flipped its own setting.
+	case id == hitDialogWSLUseUser:
+		editor.wslUseUser = !editor.wslUseUser
+	case id == hitDialogWSLGraphics:
+		editor.wslNoGUI = !editor.wslNoGUI
 	case id == hitDialogAdvanced:
 		editor.advancedOpen = !editor.advancedOpen
 	case id == hitDialogForwardX11:
@@ -599,7 +621,7 @@ func (state *State) hostPassphraseHint() string {
 // file transfer mode and, on a protocol with a shell, the encoding.
 func (state *State) hostFormHeight() float32 {
 	height := float32(2+44+(3+state.hostEndpointRows())*hostFormRowHeight) + state.hostDialogExtra()
-	if state.editor.protocol != protocolSerial {
+	if state.editor.protocol != protocolSerial && state.editor.protocol != protocolWSL {
 		height += hostFormRowHeight
 	}
 	if state.editor.protocol == protocolSSH {
@@ -707,6 +729,9 @@ func (state *State) advancedSectionHeight() float32 {
 	if !state.editor.advancedOpen {
 		return advancedHeaderHeight
 	}
+	if state.editor.protocol == protocolWSL {
+		return advancedHeaderHeight + 2*hostFormRowHeight + 64
+	}
 	return advancedHeaderHeight + state.sshAdvancedRowsHeight() + state.idleAdvancedRowsHeight()
 }
 
@@ -715,7 +740,7 @@ func (state *State) hostDialogExtra() float32 {
 	if state.editor.protocol == protocolVNC || state.editor.protocol == protocolRDP {
 		return state.desktopRowsHeight()
 	}
-	if !idleKeepAliveProtocol(state.editor.protocol) {
+	if !idleKeepAliveProtocol(state.editor.protocol) && state.editor.protocol != protocolWSL {
 		return 0
 	}
 	return state.advancedSectionHeight()

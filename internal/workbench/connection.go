@@ -663,7 +663,7 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	}
 	session.established = false
 	session.disconnected = false
-	if session.restored && session.isLocal() && state.localStart == localStartHome {
+	if session.restored && session.HostID == localHostID && state.localStart == localStartHome {
 		// The folder a restored tab was left in is what the home choice
 		// forgets; a tab that ends and starts again in this run keeps its own.
 		session.localDirectory = ""
@@ -682,17 +682,9 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.role = sshconn.EndpointTarget
 	session.jumpPath = ""
 	session.desktopTunnel = false
-	if host.ID == localHostID {
+	if host.isLocal() {
 		// A shell on this machine: nothing to dial, so it is connected at once.
-		conn := newLocalConn(state.resolveLocalShell(host), state.networkProxy)
-		if _, wsl := localshell.WSLDistro(conn.shell); wsl {
-			// A distribution is the Linux system the shell runs in, not the
-			// Windows that hosts it. The monitor and the tooling that reads the
-			// session's system follow the distribution.
-			session.host.System = sshconn.SystemLinux
-		}
-		conn.dir = localStartupDirectory(session.localDirectory, conn.shell)
-		session.conn = conn
+		session.conn = state.localConnection(session, host)
 		state.finishStartingConnection(session, automatic)
 		// There is no goroutine to report that it is connected, so say so now:
 		// the shell starts here instead of on a wake nobody would send.
@@ -781,7 +773,7 @@ func (state *State) sshConfigFor(session *Session, host Host) (config sshconn.Co
 }
 
 func (state *State) reuseRouteFor(host Host) (connectionRoute, bool) {
-	if host.ID == localHostID || host.Protocol == protocolSerial {
+	if host.isLocal() || host.Protocol == protocolSerial {
 		return connectionRoute{}, true
 	}
 	config, route, valid := state.hostCatalog.sshConfigFor(host, host, state.connectionEnv(nil))

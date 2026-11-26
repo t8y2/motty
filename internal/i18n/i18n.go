@@ -112,6 +112,7 @@ type Messages struct {
 	SSHSync SSHSyncMessages
 	// Desktop holds the remote-desktop tabs' texts; see desktop.go.
 	Desktop DesktopMessages
+	WSL     WSLMessages
 	// About holds the About page's texts; see about.go.
 	About AboutMessages
 
@@ -1363,7 +1364,7 @@ func For(language Language) Messages {
 		messages.History = chineseHistory
 		messages.Completion = chineseCompletion
 		messages.SSHSync = chineseSSHSync
-		messages.Desktop = chineseDesktop
+		messages.Desktop, messages.WSL = chineseDesktop, chineseWSL
 		messages.About = chineseAbout
 		return messages
 	case TraditionalChinese:
@@ -1378,7 +1379,7 @@ func For(language Language) Messages {
 		messages.History = traditionalHistory
 		messages.Completion = traditionalCompletion
 		messages.SSHSync = traditionalSSHSync
-		messages.Desktop = traditionalDesktop
+		messages.Desktop, messages.WSL = traditionalDesktop, traditionalWSL
 		messages.About = traditionalAbout
 		return messages
 	default:
@@ -1393,7 +1394,7 @@ func For(language Language) Messages {
 		messages.History = englishHistory
 		messages.Completion = englishCompletion
 		messages.SSHSync = englishSSHSync
-		messages.Desktop = englishDesktop
+		messages.Desktop, messages.WSL = englishDesktop, englishWSL
 		messages.About = englishAbout
 		return messages
 	}

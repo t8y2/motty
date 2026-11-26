@@ -13,6 +13,7 @@ import (
 
 	"motty/internal/charset"
 	"motty/internal/desktop"
+	"motty/internal/localshell"
 	"motty/internal/serial"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconfig"
@@ -32,6 +33,7 @@ const (
 	protocolSerial
 	protocolVNC
 	protocolRDP
+	protocolWSL
 )
 
 // hostTerminal is how an SSH host's interactive session is carried. Mosh is
@@ -55,6 +57,10 @@ const (
 
 // isSSH reports whether the host is reached over SSH.
 func (host Host) isSSH() bool { return host.Protocol == protocolSSH }
+
+func (host Host) isWSL() bool { return host.Protocol == protocolWSL }
+
+func (host Host) isLocal() bool { return host.ID == localHostID || host.isWSL() }
 
 // mosh reports whether this SSH host's interactive terminal runs over mosh.
 // The SSH connection is used only for the bootstrap; the session has no SSH
@@ -92,6 +98,8 @@ func (host Host) defaultPort() uint16 {
 		return defaultVNCPort
 	case protocolRDP:
 		return defaultRDPPort
+	case protocolWSL:
+		return 0
 	}
 	return defaultPort
 }
@@ -134,7 +142,9 @@ func (session *Session) canBrowseFiles() bool {
 // in a host catalog. Fields a protocol does not use stay empty, and a file
 // without any of them describes an SSH host as before.
 type savedTransport struct {
-	Protocol string `json:"protocol,omitempty"` // "telnet", "serial", "vnc" or "rdp"
+	Protocol     string `json:"protocol,omitempty"` // "telnet", "serial", "vnc", "rdp" or "wsl"
+	WSLDirectory string `json:"wsl_directory,omitempty"`
+	WSLNoGUI     bool   `json:"wsl_no_gui,omitempty"`
 	// Terminal is "mosh" for an SSH host whose interactive session runs over
 	// mosh. Empty is SSH, and a file without it describes the host as before.
 	Terminal string `json:"terminal,omitempty"`
@@ -262,6 +272,9 @@ func (host Host) transport() savedTransport {
 		transport.Effects = host.Effects
 		transport.DesktopWidth, transport.DesktopHeight = savedDesktopSize(host.DesktopWidth, host.DesktopHeight)
 		return transport
+	case protocolWSL:
+		return savedTransport{Protocol: "wsl", WSLDirectory: host.WSLDirectory, WSLNoGUI: host.WSLNoGUI,
+			LoginCommand: host.LoginCommand, NoHistory: host.NoHistory}
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
 		if host.Backspace == backspaceCtrlH {
@@ -380,6 +393,11 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.ColorDepth = rdpColorDepth(transport.ColorDepth)
 		host.Effects = transport.Effects
 		host.DesktopWidth, host.DesktopHeight = savedDesktopSize(transport.DesktopWidth, transport.DesktopHeight)
+	case "wsl":
+		host.Protocol = protocolWSL
+		host.WSLDirectory, host.WSLNoGUI = transport.WSLDirectory, transport.WSLNoGUI
+		host.LoginCommand, host.NoHistory = transport.LoginCommand, transport.NoHistory
+		return validWSLDirectory(host.WSLDirectory) && validSingleLineCommand(host.LoginCommand)
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone
@@ -413,6 +431,10 @@ func restoredBackspace(saved string) backspaceKey {
 // validEndpoint reports whether address can name a destination of the protocol:
 // a host name for the network protocols, a device name for a serial port.
 func validEndpoint(protocol hostProtocol, address string) bool {
+	if protocol == protocolWSL {
+		_, valid := localshell.WSLDistro(localshell.WSLShell(address))
+		return address == "" || valid
+	}
 	if protocol != protocolSerial {
 		return validHost(address)
 	}
@@ -432,6 +454,9 @@ func validEndpoint(protocol hostProtocol, address string) bool {
 // terminal transport is part of an SSH destination: typing its SSH address must
 // not silently open the mosh host saved for it.
 func sameEndpoint(a Host, b Host) bool {
+	if a.isWSL() && b.isWSL() {
+		return strings.EqualFold(a.Address, b.Address) && a.User == b.User
+	}
 	if a.Protocol != b.Protocol || a.Terminal != b.Terminal || a.Address != b.Address {
 		return false
 	}
@@ -618,6 +643,11 @@ func lineText(line serial.Settings) string {
 // with its scheme, since a bare name reads as SSH, and a serial port with its line.
 func hostTarget(host Host) string {
 	switch host.Protocol {
+	case protocolWSL:
+		if host.Address == "" {
+			return "WSL"
+		}
+		return host.Address
 	case protocolVNC:
 		target := "vnc://" + host.Address
 		if host.ViaSSH {
@@ -659,6 +689,12 @@ func hostTarget(host Host) string {
 // normalizeEndpoint gives a host the port its protocol defaults to when it has
 // none, and takes the account and port away from one that has no use for them.
 func (host *Host) normalizeEndpoint() {
+	if host.isWSL() {
+		host.Port, host.System = 0, wslHostSystem(host.Address)
+		host.Credential, host.Proxy, host.ProxyProfile, host.ProxyBypass = "", nil, "", ""
+		host.Encoding, host.IdleKeepAlive, host.IdleInput, host.IdleInputCustom = "", 0, idleInputProtocolDefault, ""
+		return
+	}
 	if host.Protocol == protocolSerial {
 		host.User, host.Port = "", 0
 		return
