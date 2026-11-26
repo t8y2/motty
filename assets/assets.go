@@ -38,3 +38,13 @@ var LockupLight []byte
 //
 //go:embed viva-tile.png
 var VivaTile []byte
+
+// SymbolsNerdFontMono is the Nerd Fonts symbols-only face: the private-use icon
+// glyphs programs print in a terminal (Powerline separators, Devicons, Font
+// Awesome, Octicons and the like). Neither Windows, macOS nor Linux is
+// guaranteed to have a font that draws them, and the terminal's own font almost
+// never does. It is icon-only, and every terminal face puts it last: it draws
+// what the chosen font lacks and changes nothing else.
+//
+//go:embed fonts/SymbolsNerdFontMono-Regular.ttf
+var SymbolsNerdFontMono []byte

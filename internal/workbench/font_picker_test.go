@@ -527,3 +527,54 @@ func TestAnOpenWeightListKeepsTheArrowKeys(t *testing.T) {
 	}
 	state.Close()
 }
+
+// The bundled icon font belongs behind every terminal face, after the fallbacks
+// the user chose, and is not part of the saved choice.
+func TestTerminalFacePutsTheIconFontLast(t *testing.T) {
+	options := fontOptions(t, testFonts)
+	options.TerminalSymbolFont = "Symbols Nerd Font Mono"
+	state := newTestState(t, options)
+	state.fonts.fallbacks = []string{"Menlo", "Fira Code", "Iosevka"}
+	face := state.terminalFace()
+	want := []string{"Menlo", "Fira Code", "Iosevka", "Symbols Nerd Font Mono"}
+	if got := gfx.MonoFallbacks(face); !slices.Equal(got, want) {
+		t.Fatalf("terminal fallbacks = %q, want %q", got, want)
+	}
+	if got := state.snapshot().TerminalFontFallbacks; slices.Contains(got, "Symbols Nerd Font Mono") {
+		t.Fatalf("the icon font was saved as a user fallback: %q", got)
+	}
+}
+
+// The icon font is behind every face, so it is not one of the families the
+// picker offers, and filtering it must leave the caller's list alone.
+func TestTheIconFontIsNotOfferedAsAFont(t *testing.T) {
+	options := fontOptions(t, testFonts)
+	options.TerminalSymbolFont = "Symbols Nerd Font Mono"
+	state := newTestState(t, options)
+	families := []string{"Menlo", "Symbols Nerd Font Mono", "Fira Code"}
+	got := state.withoutSymbolFont(families)
+	if slices.Contains(got, "Symbols Nerd Font Mono") || !slices.Contains(got, "Menlo") || !slices.Contains(got, "Fira Code") {
+		t.Fatalf("filtered families = %q", got)
+	}
+	if !slices.Contains(families, "Symbols Nerd Font Mono") {
+		t.Fatal("filtering changed the caller's list")
+	}
+	if again := state.withoutSymbolFont(families); slices.Contains(again, "Symbols Nerd Font Mono") {
+		t.Fatalf("the icon font came back: %q", again)
+	}
+}
+
+// The picker's own read is a different path from the face's installed list: it
+// must filter the icon font too.
+func TestTheFontPickerListHidesTheIconFont(t *testing.T) {
+	options := fontOptions(t, testFonts)
+	options.TerminalSymbolFont = "Symbols Nerd Font Mono"
+	state := newTestState(t, options)
+	state.finishFontPickerLoad([]string{"Menlo", "Symbols Nerd Font Mono"})
+	if got := state.fonts.installed; slices.Contains(got, "Symbols Nerd Font Mono") {
+		t.Fatalf("the picker offers the icon font: %q", got)
+	}
+	if !slices.Contains(state.fonts.installed, "Menlo") {
+		t.Fatalf("the picker lost an installed family: %q", state.fonts.installed)
+	}
+}

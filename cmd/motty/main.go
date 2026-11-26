@@ -13,6 +13,7 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"motty/assets"
 	"motty/internal/buildinfo"
 	"motty/internal/datadir"
 	"motty/internal/diag"
@@ -32,6 +33,11 @@ type tray struct {
 
 // recentLog keeps what the program logged, for the diagnostics report.
 var recentLog = diag.NewLog(400, 64<<10)
+
+// terminalSymbolFontFamily is the family of the icon font this process
+// registered, or "" when the platform could not take it. Every terminal face
+// puts it last, for the private-use glyphs no installed font draws.
+var terminalSymbolFontFamily string
 
 func main() {
 	// AppKit requires the process's main thread for NSApplication, windows and
@@ -89,6 +95,17 @@ func main() {
 	// connection normally does this itself, but a quit can outrun one.
 	defer workbench.ShutdownSecurityKeyAgents()
 	err := app.RunApplication(func(application *app.Application) error {
+		// A terminal prints icons from the Nerd Fonts private-use area, and no
+		// system font is known to draw them: user prompts and file tools would
+		// otherwise show boxes on a machine without a Nerd Font installed. The
+		// font is icon-only and every terminal face puts it behind the chosen
+		// one. Best effort: without it the terminal is what it was.
+		if family, unregister, fontErr := app.RegisterFont(assets.SymbolsNerdFontMono); fontErr != nil {
+			log.Printf("motty: icon font: %v", fontErr)
+		} else {
+			terminalSymbolFontFamily = family
+			defer unregister()
+		}
 		application.OnQuitRequest(windows.quitWithDocuments)
 		status := newTray(application)
 		// The icon is the user's choice in General settings; read it before the
@@ -446,6 +463,7 @@ func openWorkbenchWindow(application *app.Application, status *tray, hub *workbe
 		KnownHostsPath:     knownHostsPath(datadir.Current().Dir),
 		Keystore:           keystore(),
 		PreferredLanguages: preferredLanguages,
+		TerminalSymbolFont: terminalSymbolFontFamily,
 		Raise:              func() { mainWindow.Show() },
 		StartAtLogin:       loginStart(),
 		StatusArea:         status.hasStatusArea,

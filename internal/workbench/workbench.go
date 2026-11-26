@@ -1313,6 +1313,7 @@ func New(options Options) *State {
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
 	state.localShellMenu.defaultWSLDistro = localshell.DefaultWSLDistro()
+	state.fonts.symbol = state.options.TerminalSymbolFont
 	state.refreshEditMenu()
 	// The command drawer shows by default; a saved state may close it.
 	// The reference cell stands in until the first paint measures the font on the

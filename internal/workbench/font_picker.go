@@ -126,6 +126,10 @@ type fontsUI struct {
 	// choice; usable is the part of it the face is made from.
 	fallbacks []string
 	usable    []string
+	// symbol is the icon font the application registered, behind every terminal
+	// face and after the user's fallbacks. It is not one of fallbacks: it is not
+	// the user's choice, is never saved, and is not offered in the picker.
+	symbol string
 	fontList
 	// kind is what the picker is open for; the fields below are the picker's,
 	// whichever it is open for.
@@ -240,7 +244,32 @@ func (state *State) terminalFace() gfx.MonoFace {
 	case fonts.classic:
 		base = gfx.MonoClassic
 	}
-	return gfx.MonoStack(base, fonts.usable...)
+	// The icon font comes after everything the user chose: a fallback they added
+	// draws its glyphs first, and the bundled face only takes what is still
+	// missing.
+	var stack [maxFallbackFonts + 1]string
+	count := copy(stack[:], fonts.usable)
+	if fonts.symbol != "" {
+		stack[count] = fonts.symbol
+		count++
+	}
+	return gfx.MonoStack(base, stack[:count]...)
+}
+
+// withoutSymbolFont drops the registered icon font from a list of installed
+// families. It stands behind every terminal face, so it is not offered as one to
+// pick, and choosing it as a fallback would only repeat what the face already has.
+func (state *State) withoutSymbolFont(families []string) []string {
+	if state.fonts.symbol == "" || !slices.Contains(families, state.fonts.symbol) {
+		return families
+	}
+	kept := make([]string, 0, len(families)-1)
+	for _, family := range families {
+		if family != state.fonts.symbol {
+			kept = append(kept, family)
+		}
+	}
+	return kept
 }
 
 // applyTerminalFace makes the terminal draw in the font, fallbacks and weights as
@@ -283,7 +312,7 @@ func (state *State) listFonts(list func() []string, fn func(*State, []string)) {
 	}
 	go func() {
 		families := list()
-		state.aiPost(func(s *State) { fn(s, families) })
+		state.aiPost(func(s *State) { fn(s, s.withoutSymbolFont(families)) })
 	}()
 }
 
@@ -361,7 +390,7 @@ func (state *State) finishFontPickerLoad(families []string) {
 	if families == nil {
 		families = []string{}
 	}
-	list.installed = families
+	list.installed = state.withoutSymbolFont(families)
 	fonts.built = false
 	if fonts.kind == pickInterfaceFont {
 		state.reconcileInterfaceFont()

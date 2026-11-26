@@ -395,6 +395,10 @@ type Options struct {
 	// MonoFamilies lists the installed fixed-pitch font families. Nil uses
 	// app.MonospaceFamilies.
 	MonoFamilies func() []string
+	// TerminalSymbolFont is the family of an icon-only font the application
+	// registered at run time, or "". Every terminal face puts it last, for the
+	// private-use glyphs the chosen font and the fallbacks lack.
+	TerminalSymbolFont string
 	// SetTerminalFontWeights names the weights the terminal's text is drawn at,
 	// main for its regular text and bold for its bold runs (0 for the platform's
 	// own), and reports whether the platform has the choice. Nil uses the
