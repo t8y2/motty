@@ -114,6 +114,32 @@ func TestHostKeyInstallCommandPOSIX(t *testing.T) {
 		check(t, file, want)
 	})
 
+	t.Run("append after a different key ending in newline adds no blank line", func(t *testing.T) {
+		home := t.TempDir()
+		file := filepath.Join(makeSSHDir(t, home), "authorized_keys")
+		other := ssh.MarshalAuthorizedKey(testDeploySigner(t).PublicKey())
+		original := append(bytes.Clone(other), '\n')
+		write(t, file, original)
+		want := append(bytes.Clone(original), key...)
+		run(t, home, 0, "motty-key-installed\n")
+		check(t, file, want)
+		run(t, home, 0, "motty-key-already-present\n")
+		check(t, file, want)
+	})
+
+	t.Run("stale lock directory from an older version does not block", func(t *testing.T) {
+		home := t.TempDir()
+		dir := makeSSHDir(t, home)
+		lock := filepath.Join(dir, ".motty-authorized-keys.lock")
+		if err := os.Mkdir(lock, 0700); err != nil {
+			t.Fatal(err)
+		}
+		run(t, home, 0, "motty-key-installed\n")
+		if info, err := os.Stat(lock); err == nil && info.IsDir() {
+			t.Fatal("the stale lock directory was not removed")
+		}
+	})
+
 	for _, linkDirectory := range []bool{true, false} {
 		name := "refuse authorized_keys symlink"
 		if linkDirectory {

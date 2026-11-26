@@ -25,8 +25,19 @@ file="$dir/authorized_keys"
 lock="$dir/.motty-authorized-keys.lock"
 [ ! -L "$dir" ] || exit 24
 mkdir -p "$dir"
-mkdir "$lock"
-trap 'rmdir "$lock"' EXIT
+[ ! -L "$lock" ] || exit 24
+# Older versions used a lock directory. Remove an empty leftover so an
+# interrupted deployment from that version cannot block this one forever.
+if [ -d "$lock" ]; then
+    rmdir "$lock" 2>/dev/null || exit 26
+fi
+# flock releases the lock when the shell dies, so a dropped connection cannot
+# leave a lock directory behind. On systems without flock the temp-file swap
+# below is still atomic; it just does not serialize concurrent deployments.
+if command -v flock >/dev/null 2>&1; then
+    exec 9>"$lock"
+    flock -x 9
+fi
 [ ! -L "$file" ] || exit 24
 if [ -e "$file" ]; then
     [ -f "$file" ] || exit 24
@@ -46,12 +57,26 @@ if [ -e "$file" ]; then
         [ "$status" -eq 1 ] && [ -r "$file" ] || exit 25
     fi
 fi
-if [ -s "$file" ]; then
-    # Separate the new key even if the existing file has no final newline.
-    printf '\n%s %s\n' "$algorithm" "$blob" >> "$file"
+tmp="$dir/.motty-authorized-keys.$$"
+trap 'rm -f "$tmp"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if [ -e "$file" ]; then
+    cat "$file" > "$tmp" || exit 25
 else
-    printf '%s %s\n' "$algorithm" "$blob" >> "$file"
+    : > "$tmp" || exit 25
 fi
+if [ -s "$tmp" ]; then
+    if [ "$(tail -c 1 "$tmp" | wc -l | tr -d ' ')" -eq 0 ]; then
+        printf '\n%s %s\n' "$algorithm" "$blob" >> "$tmp"
+    else
+        printf '%s %s\n' "$algorithm" "$blob" >> "$tmp"
+    fi
+else
+    printf '%s %s\n' "$algorithm" "$blob" >> "$tmp"
+fi
+mv "$tmp" "$file" || exit 25
 printf '%s\n' motty-key-installed
 `
 
