@@ -128,9 +128,6 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 
 // Seal encrypts the document under the password.
 func Seal(document Document, password string) ([]byte, error) {
-	if len(password) < MinPasswordLength {
-		return nil, ErrWeakPassword
-	}
 	plain, err := json.Marshal(document)
 	if err != nil {
 		return nil, err
@@ -139,8 +136,13 @@ func Seal(document Document, password string) ([]byte, error) {
 }
 
 // SealEnvelope encrypts plain under password inside an authenticated envelope
-// carrying format and version.
+// carrying format and version. Every sealed file of this program is held to
+// MinPasswordLength, whichever of them it is: the envelope is only as strong
+// as the password.
 func SealEnvelope(format string, version int, plain []byte, password string) ([]byte, error) {
+	if len(password) < MinPasswordLength {
+		return nil, ErrWeakPassword
+	}
 	if len(plain) > MaxSize {
 		return nil, ErrTooLarge
 	}

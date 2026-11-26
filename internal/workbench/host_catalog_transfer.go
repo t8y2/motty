@@ -18,6 +18,10 @@ import (
 const (
 	hostCatalogEncryptedFormat  = "motty-host-catalog-encrypted"
 	hostCatalogEncryptedVersion = 1
+	// The two exports are saved under different names, so the files are told
+	// apart on disk: only the encrypted one holds saved passwords.
+	plainHostCatalogName     = "motty-hosts.json"
+	encryptedHostCatalogName = "motty-hosts-encrypted.json"
 )
 
 type hostCatalogSecret struct {
@@ -65,6 +69,8 @@ func (state *State) runExportEncryptedHostCatalog(form *formDialog) string {
 	switch {
 	case password == "":
 		return m.HostCatalogErrPasswordEmpty
+	case len(password) < backup.MinPasswordLength:
+		return m.Tools.BackupErrPasswordShort
 	case password != form.value(1):
 		return m.Tools.BackupErrPasswordMismatch
 	}
@@ -88,7 +94,7 @@ func (state *State) runExportEncryptedHostCatalog(form *formDialog) string {
 	if err != nil {
 		return state.backupErrorText(err)
 	}
-	state.writeExportedHostCatalog(sealed, len(document.Hosts))
+	state.writeExportedHostCatalog(sealed, len(document.Hosts), encryptedHostCatalogName)
 	return ""
 }
 
@@ -108,13 +114,15 @@ func (state *State) exportPlainHostCatalog() {
 		return
 	}
 	data = append(data, '\n')
-	state.writeExportedHostCatalog(data, len(document.Hosts))
+	state.writeExportedHostCatalog(data, len(document.Hosts), plainHostCatalogName)
 }
 
-func (state *State) writeExportedHostCatalog(data []byte, count int) {
+// writeExportedHostCatalog asks where to save an export and writes it there
+// privately; suggestedName is the file name offered.
+func (state *State) writeExportedHostCatalog(data []byte, count int, suggestedName string) {
 	path, err := state.options.SaveFile(app.SaveFileOptions{
 		Title:            state.messages.ExportHosts,
-		SuggestedName:    "motty-hosts.json",
+		SuggestedName:    suggestedName,
 		DefaultExtension: "json",
 		Filters:          []app.FileFilter{{Name: "Motty host catalog", Pattern: "*.json"}},
 	})

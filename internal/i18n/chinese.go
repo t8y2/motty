@@ -691,7 +691,7 @@ var ChineseMessages = Messages{
 	HostCatalogExportEncrypted:           "加密导出",
 	HostCatalogExportPlain:               "不带密码导出",
 	HostCatalogErrPasswordEmpty:          "请输入导出密码，或选择不带密码导出。",
-	HostCatalogImportPasswordTitle:       "输入导入密码",
+	HostCatalogImportPasswordTitle:       "输入导出密码",
 	HostCatalogImportPasswordDescription: "该主机目录已加密，请输入导出时设置的密码以导入主机和已保存的密码。",
 	HostCatalogImportUnlock:              "导入",
 

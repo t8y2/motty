@@ -13,6 +13,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"motty/internal/backup"
 	"motty/internal/i18n"
 	"motty/internal/sshconn"
 	"motty/internal/workbench/icons"
@@ -247,6 +248,15 @@ func TestHostCatalogEncryptedExportImportRoundTripWithPasswords(t *testing.T) {
 	if state.modal != modalForm || state.form.dialogError != state.messages.HostCatalogErrPasswordEmpty {
 		t.Fatalf("empty password error = %q, modal=%v", state.form.dialogError, state.modal)
 	}
+	// A password shorter than a backup's is refused too: the file holds every
+	// saved password of the exported hosts, and nothing else protects it.
+	fillForm(state, "short", "short")
+	state.Click(hitFormSubmit)
+	if state.modal != modalForm || state.form.dialogError != state.messages.Tools.BackupErrPasswordShort {
+		t.Fatalf("short password error = %q, modal=%v", state.form.dialogError, state.modal)
+	}
+	state.form.set(0, "")
+	state.form.set(1, "")
 	// Mismatched confirmation is rejected.
 	fillForm(state, "export-pass-1", "export-pass-2")
 	state.Click(hitFormSubmit)
@@ -338,6 +348,10 @@ func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *
 	if err := state.secrets.vault.Set(hostProxyPasswordSecret(state.hosts[1].CatalogID, state.hosts[1].Proxy), wantProxyPW); err != nil {
 		t.Fatal(err)
 	}
+	// A host that is not part of the export keeps its password to itself.
+	if err := state.secrets.vault.Set(hostSecretName(state.hosts[0].CatalogID, hostPasswordPart), "unselected-pw"); err != nil {
+		t.Fatal(err)
+	}
 
 	// Export only the checked host (hosts[1]).
 	state.Click(hitHostCheckList.At(int(state.hosts[1].ID)))
@@ -346,6 +360,30 @@ func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *
 	state.Click(hitFormSubmit)
 	if state.modal != modalNone {
 		t.Fatalf("subset encrypted export failed: %q", state.form.dialogError)
+	}
+	sealed, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := backup.OpenEnvelope(hostCatalogEncryptedFormat, hostCatalogEncryptedVersion, sealed, "subset-pass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported hostCatalogDocument
+	if err := json.Unmarshal(plain, &exported); err != nil {
+		t.Fatal(err)
+	}
+	if len(exported.Hosts) != 1 || exported.Hosts[0].ID != state.hosts[1].CatalogID {
+		t.Fatalf("exported hosts = %+v, want only %q", exported.Hosts, state.hosts[1].CatalogID)
+	}
+	own, ownProxy := "host:"+state.hosts[1].CatalogID+":", hostProxyPasswordPrefix+state.hosts[1].CatalogID+":"
+	for _, secret := range exported.Secrets {
+		if !strings.HasPrefix(secret.Name, own) && !strings.HasPrefix(secret.Name, ownProxy) {
+			t.Errorf("the file holds a secret that is not the exported host's: %q", secret.Name)
+		}
+	}
+	if strings.Contains(string(sealed), "unselected-pw") {
+		t.Fatal("the encrypted export leaked a password")
 	}
 
 	// Target already has a DIFFERENT host occupying the same CatalogID.
@@ -386,6 +424,46 @@ func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *
 	}
 	if got, found, err := target.secrets.vault.Get(hostSecretName(occupier.CatalogID, hostPasswordPart)); err != nil || !found || got != "occupier-pw" {
 		t.Fatalf("occupier password was overwritten: (%q, %v, %v)", got, found, err)
+	}
+}
+
+// The two exports are not mistaken for each other on disk: they are offered
+// under different names, and the import's picker still lists both.
+func TestHostCatalogPlainAndEncryptedExportsAreOfferedUnderDifferentNames(t *testing.T) {
+	var offered []app.SaveFileOptions
+	options := testOptions(t)
+	options.SaveFile = func(got app.SaveFileOptions) (string, error) {
+		offered = append(offered, got)
+		return filepath.Join(t.TempDir(), "catalog.json"), nil
+	}
+	state := newTestState(t, options)
+	state.Click(hitExportHosts)
+	state.Click(hitFormBack) // without passwords
+	state.Click(hitExportHosts)
+	fillForm(state, testBackupPassword, testBackupPassword)
+	state.Click(hitFormSubmit)
+	if state.modal != modalNone || len(offered) != 2 {
+		t.Fatalf("modal %d, save dialogs %d, error %q", state.modal, len(offered), state.form.dialogError)
+	}
+	plain, encrypted := offered[0], offered[1]
+	if plain.SuggestedName == encrypted.SuggestedName || filepath.Ext(plain.SuggestedName) != filepath.Ext(encrypted.SuggestedName) {
+		t.Fatalf("plain export %q, encrypted export %q: not told apart, or not the same kind of file", plain.SuggestedName, encrypted.SuggestedName)
+	}
+
+	var picker app.OpenFileOptions
+	importing := newTestState(t, freshOptions(t))
+	importing.options.OpenFiles = func(got app.OpenFileOptions) ([]string, error) { picker = got; return nil, app.ErrCanceled }
+	importing.Click(hitImportHostCatalog)
+	for _, name := range []string{plain.SuggestedName, encrypted.SuggestedName} {
+		listed := false
+		for _, filter := range picker.Filters {
+			if matched, _ := filepath.Match(filter.Pattern, name); matched {
+				listed = true
+			}
+		}
+		if !listed {
+			t.Errorf("the import picker's filters %+v do not list %q", picker.Filters, name)
+		}
 	}
 }
 

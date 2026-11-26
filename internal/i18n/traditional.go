@@ -691,7 +691,7 @@ var TraditionalMessages = Messages{
 	HostCatalogExportEncrypted:           "加密匯出",
 	HostCatalogExportPlain:               "不帶密碼匯出",
 	HostCatalogErrPasswordEmpty:          "請輸入匯出密碼，或選擇不帶密碼匯出。",
-	HostCatalogImportPasswordTitle:       "輸入匯入密碼",
+	HostCatalogImportPasswordTitle:       "輸入匯出密碼",
 	HostCatalogImportPasswordDescription: "該主機目錄已加密，請輸入匯出時設定的密碼以匯入主機和已儲存的密碼。",
 	HostCatalogImportUnlock:              "匯入",
 
