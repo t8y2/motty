@@ -75,7 +75,6 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 			add(hitSFTPEditExternal, iconExternal, m.Tools.ExtEditButton)
 		}
 		add(hitSFTPRename, iconPencil, m.SFTPRename)
-		add(hitSFTPChmod, iconLock, m.SFTPPermissions)
 		if sftpOwnershipAvailable(&w.session, w.view) {
 			add(hitSFTPChown, iconWrench, m.SFTPOwnership)
 		}
@@ -87,6 +86,7 @@ func (w *sftpWindow) selectionActions(local bool) []sftpWindowAction {
 		}
 	}
 	if count > 0 {
+		add(hitSFTPChmod, iconLock, m.SFTPPermissions)
 		add(hitSFTPMove, iconFolderOpen, m.SFTPMove)
 		add(hitSFTPDelete, iconTrash, m.SFTPDelete)
 	}

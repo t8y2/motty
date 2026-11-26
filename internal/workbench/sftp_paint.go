@@ -395,15 +395,17 @@ func (state *State) declareSFTPPanel(c ui.C) {
 							add(hitSFTPEditExternal, iconExternal, messages.Tools.ExtEditButton, false)
 						}
 						add(hitSFTPRename, iconPencil, messages.SFTPRename, false)
-						add(hitSFTPChmod, iconLock, messages.SFTPPermissions, false)
-						if sftpOwnershipAvailable(session, view) {
-							add(hitSFTPChown, iconWrench, messages.SFTPOwnership, false)
-						}
-						if _, archive := state.selectedArchive(session, view); archive {
-							add(hitSFTPExtract, iconArchive, messages.Tools.Extract, false)
-						}
 					}
 					if !local {
+						add(hitSFTPChmod, iconLock, messages.SFTPPermissions, false)
+						if one && sftpOwnershipAvailable(session, view) {
+							add(hitSFTPChown, iconWrench, messages.SFTPOwnership, false)
+						}
+						if one {
+							if _, archive := state.selectedArchive(session, view); archive {
+								add(hitSFTPExtract, iconArchive, messages.Tools.Extract, false)
+							}
+						}
 						add(hitSFTPMove, iconFolderOpen, messages.SFTPMove, false)
 					}
 					add(hitSFTPDelete, iconTrash, messages.SFTPDelete, true)
@@ -1123,8 +1125,12 @@ func (state *State) declareSFTPDialog(c ui.C, viewport gfx.Rect, view *sftpView)
 		body = 6 + 2*dialogRowHeight(c.Theme()) // two fields: the link's name and target, or the owner and group
 	case view.dialog == sftpDialogChmod:
 		// The octal field, then the permission grid: a 16px header row and
-		// three 24px rows, with a 4px gap between them.
+		// three 24px rows, with a 4px gap between them. A selected folder can
+		// also opt into the same mode below it.
 		body = 6 + dialogRowHeight(c.Theme()) + 16 + 3*24 + 3*4
+		if sftpChmodRecursiveAvailable(view) {
+			body += 8 + c.Theme().Metrics.ControlHeight
+		}
 	case fieldDialog:
 		body = 6 + dialogRowHeight(c.Theme())
 	}
@@ -1361,6 +1367,10 @@ func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 				}
 				if view.dialog == sftpDialogChmod {
 					view.dialogChmod = state.declareSFTPChmodGrid(c, view)
+					if sftpChmodRecursiveAvailable(view) {
+						ui.Checkbox(c, state.pageFlag(view.chmodRecursive), state.messages.SFTPPermissionsRecursive).
+							Hit(hitSFTPChmodRecursive, state.messages.SFTPPermissionsRecursive).Grow(1)
+					}
 				}
 			})
 			if view.dialog == sftpDialogChown {

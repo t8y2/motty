@@ -217,10 +217,8 @@ func (state *State) sftpMenuRows(session *Session, view *sftpView) menuRows {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuRename, Label: messages.SFTPRename, Icon: icon(iconPencil), Disabled: busy})
 		}
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuMove, Label: messages.SFTPMove, Icon: icon(iconFolderOpen), Disabled: busy})
-	}
-	if one && !local {
 		rows.add(components.ContextMenuItem{ID: hitSFTPMenuChmod, Label: messages.SFTPPermissions, Icon: icon(iconLock), Disabled: busy})
-		if sftpOwnershipAvailable(session, view) {
+		if one && sftpOwnershipAvailable(session, view) {
 			rows.add(components.ContextMenuItem{ID: hitSFTPMenuChown, Label: messages.SFTPOwnership, Icon: icon(iconWrench), Disabled: busy})
 		}
 		if _, archive := state.selectedArchive(session, view); archive {
