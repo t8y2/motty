@@ -5,8 +5,67 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/sftpclient"
 )
+
+func TestSFTPPanelAutomaticCardIgnoresHistoryFilters(t *testing.T) {
+	for _, entry := range []string{"button", "drop", "paste"} {
+		for _, preference := range []struct {
+			name string
+			off  bool
+		}{{"on", false}, {"off", true}} {
+			t.Run(entry+"/"+preference.name, func(t *testing.T) {
+				state, session, _, remote := openTestSFTP(t)
+				state.sftpTransferAutoOpenOff = preference.off
+				center := &state.transfers
+				center.filter = transferFilterEnded
+				center.direction = transferDownload
+				center.search.SetText("unmatched-history")
+				state.updateTransferSearch()
+				center.groups[transferFilterWaiting].collapsed = true
+				local := filepath.Join(t.TempDir(), "auto-upload.txt")
+				if err := os.WriteFile(local, []byte("uploaded"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				switch entry {
+				case "button":
+					state.options.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{local}, nil }
+					state.Click(hitSFTPUpload)
+				case "drop":
+					var canvas gfx.Canvas
+					state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+					panel := state.contextRect
+					if result := state.FileDrop(gfx.FileDropEvent{
+						X: panel.X + panel.Width/2, Y: panel.Y + panel.Height - 40,
+						Phase: gfx.FileDropDrop, Paths: []string{local},
+					}); !result.Handled {
+						t.Fatal("the SFTP panel rejected the drop")
+					}
+				case "paste":
+					state.options.ClipboardFiles = func() ([]string, error) { return []string{local}, nil }
+					if !state.pasteSFTPClipboard(session.files) {
+						t.Fatal("the SFTP panel rejected the paste")
+					}
+				}
+				if center.open != !preference.off || center.compact != !preference.off {
+					t.Fatalf("automatic card: open=%v compact=%v, setting off=%v", center.open, center.compact, preference.off)
+				}
+				if center.filter != transferFilterEnded || center.direction != transferDownload || center.query != "unmatched-history" || !center.groups[transferFilterWaiting].collapsed {
+					t.Fatal("automatic display changed the full history filters")
+				}
+				waitTransfersDone(t, state, session, 1)
+				remote.mu.Lock()
+				contents := string(remote.files["/home/test/auto-upload.txt"])
+				remote.mu.Unlock()
+				if contents != "uploaded" {
+					t.Fatalf("uploaded contents = %q", contents)
+				}
+			})
+		}
+	}
+}
 
 func TestTransferPreferencesPersistAndControlAutomaticOpening(t *testing.T) {
 	_, options := newWorld(t)

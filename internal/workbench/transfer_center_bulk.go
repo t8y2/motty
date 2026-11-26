@@ -93,13 +93,11 @@ func transferGroupOf(snapshot sftpclient.TransferSnapshot) int {
 	}
 }
 
-// Leave the badge to report progress when a saved status or an explicit
-// search would otherwise open the center with the newly queued job hidden.
+// The compact card summarizes all transfers. Saved filters and collapsed groups
+// belong to the full history and must not suppress automatic progress notices.
 func (state *State) openTransferCenterForQueued() {
 	center := &state.transfers
-	if state.sftpTransferAutoOpenOff || center.open || center.query != "" || center.direction != transferAnyDirection ||
-		center.groups[transferFilterWaiting].collapsed ||
-		!transferFilterShows(center.filter, sftpclient.TransferSnapshot{State: sftpclient.TransferQueued}) {
+	if state.sftpTransferAutoOpenOff || center.open {
 		return
 	}
 	center.open, center.compact, center.scroll = true, true, 0

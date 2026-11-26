@@ -421,21 +421,21 @@ func TestTransferCenterUploadOpensAndPreservesTheFilter(t *testing.T) {
 	})
 }
 
-func TestQueuedTransferDoesNotOpenCollapsedWaitingGroup(t *testing.T) {
+func TestQueuedTransferOpensCompactCardWithCollapsedWaitingGroup(t *testing.T) {
 	state, _, _, _ := openTestSFTP(t)
 	state.transfers.filter = transferFilterWaiting
 	state.transfers.groups[transferFilterWaiting].collapsed = true
 
 	state.openTransferCenterForQueued()
-	if state.transfers.open {
-		t.Fatal("queued transfer opened the center with its waiting group collapsed")
+	if !state.transfers.open || !state.transfers.compact || !state.transfers.groups[transferFilterWaiting].collapsed {
+		t.Fatal("queued transfer did not show a compact card while preserving the collapsed group")
 	}
 }
 
 func TestTransferCenterFilterSelectionPreservedAcrossReopenAndSaved(t *testing.T) {
 	state, session, _, _ := openTestSFTP(t)
 
-	for _, chosenFilter := range []int{transferFilterRunning, transferFilterWaiting, transferFilterEnded, transferFilterFailed, transferFilterAll} {
+	for _, chosenFilter := range []int{transferFilterRunning, transferFilterWaiting, transferFilterEnded, transferFilterFailed, transferFilterAll, transferFilterPending} {
 		local := filepath.Join(t.TempDir(), fmt.Sprintf("upload-%d.txt", chosenFilter))
 		if err := os.WriteFile(local, []byte("hello"), 0o600); err != nil {
 			t.Fatal(err)
@@ -461,11 +461,10 @@ func TestTransferCenterFilterSelectionPreservedAcrossReopenAndSaved(t *testing.T
 		}
 		state.Click(hitTransfersClose)
 
-		// Queue an upload. The center opens only for a filter that shows queued jobs.
+		// The compact card opens regardless of the full history's saved filter.
 		state.queueSFTPUpload(session.files, local, false)
-		wantOpen := transferFilterShows(chosenFilter, sftpclient.TransferSnapshot{State: sftpclient.TransferQueued})
-		if state.transfers.open != wantOpen || state.transfers.filter != chosenFilter {
-			t.Fatalf("upload: open=%v want %v, filter=%d want %d", state.transfers.open, wantOpen, state.transfers.filter, chosenFilter)
+		if !state.transfers.open || !state.transfers.compact || state.transfers.filter != chosenFilter {
+			t.Fatalf("upload: open=%v compact=%v, filter=%d want %d", state.transfers.open, state.transfers.compact, state.transfers.filter, chosenFilter)
 		}
 		if state.transfers.open && state.transfers.scroll != 0 {
 			t.Fatalf("upload left the open center scrolled to %v", state.transfers.scroll)
