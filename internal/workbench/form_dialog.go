@@ -77,6 +77,7 @@ type formDialog struct {
 	fields                       [maxFormFields]formField
 	count                        int
 	dialogError                  string
+	dialogErrorSelection         ui.TextSelectionState // what the user selected of dialogError, to copy it
 	run                          func(*State, *formDialog) string
 	// cancel, if set, runs instead of closing when the user cancels; a form that
 	// stands between two screens uses it to go back.

@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"runtime"
 
+	"motty/internal/workbench/icons"
+
 	"github.com/vivaui/viva/app/systemauth"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/workbench/icons"
 )
 
 var appLockHits = tree.Feature("app-lock")
@@ -39,6 +40,7 @@ type appLockUI struct {
 	field                      ui.Field
 	bound, shown, active       bool
 	error                      string
+	errorSelection             ui.TextSelectionState // what the user selected of error, to copy it
 	logo                       ui.Box
 	formAction                 appLockAction
 	formFields                 [3]appLockFormField
@@ -178,7 +180,9 @@ func (state *State) declareAppLockPage(c ui.C) {
 				button.Outline()
 			}
 			if u.error != "" {
-				ui.Paragraph(c, u.error, 0).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(18).MarginTop(12)
+				ui.TextSelectionArea(c, &u.errorSelection).Children(func() {
+					ui.Paragraph(c, u.error, 0).FontSize(metrics.FontSizeS).Color(pal.danger).LineHeight(18).MarginTop(12)
+				})
 			}
 		})
 	})

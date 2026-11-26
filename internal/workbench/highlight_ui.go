@@ -9,14 +9,15 @@ import (
 	"slices"
 	"strings"
 
+	"motty/internal/highlight"
+	"motty/internal/workbench/icons"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/highlight"
-	"motty/internal/workbench/icons"
 )
 
 // Keyword highlighting. The highlight package finds the words; this file keeps
@@ -61,15 +62,16 @@ type highlightUI struct {
 	builtinOff bool // zero value: the built-in rules are on
 	rules      []highlightRule
 
-	pattern       text.Editor
-	regex, folded bool // folded: match case
-	color         highlight.Color
-	colorPicker   ui.ColorPickerState
-	colorValue    gfx.Color
-	dialogError   string
-	editing       int
-	editRule      highlightRule
-	isEditing     bool
+	pattern              text.Editor
+	regex, folded        bool // folded: match case
+	color                highlight.Color
+	colorPicker          ui.ColorPickerState
+	colorValue           gfx.Color
+	dialogError          string
+	dialogErrorSelection ui.TextSelectionState // what the user selected of dialogError, to copy it
+	editing              int
+	editRule             highlightRule
+	isEditing            bool
 
 	// patternForm and patternText are the pattern field's row and text, bound to pattern.
 	patternForm  ui.FormFieldState
@@ -406,7 +408,9 @@ func (state *State) declareHighlightDialogBody(c ui.C) {
 			}
 		})
 		if form.dialogError != "" {
-			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
+			ui.TextSelectionArea(c, &form.dialogErrorSelection).Children(func() {
+				ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
+			})
 		}
 	})
 }

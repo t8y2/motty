@@ -642,7 +642,9 @@ func (state *State) declareDashboardDialog(c ui.C) {
 			state.declareDashboardOrderList(c)
 		}
 		if e.error != "" {
-			ui.Text(c, e.error).FontSize(12).Color(state.pal.danger).Height(20).LineHeight(20).Shrink(0).Ellipsis()
+			ui.TextSelectionArea(c, &e.errorSelection).Shrink(0).Children(func() {
+				ui.Text(c, e.error).FontSize(12).Color(state.pal.danger).Height(20).LineHeight(20).Shrink(0).Ellipsis()
+			})
 		} else {
 			ui.Text(c, m.PickerHint).FontSize(12).Color(state.pal.muted).Height(20).LineHeight(20).Shrink(0).Ellipsis()
 		}

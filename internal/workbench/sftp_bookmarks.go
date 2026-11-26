@@ -53,10 +53,11 @@ type sftpBookmarkEditor struct {
 	fieldBound [3]bool
 	// scopeRow is the “Available to” field around the scope trigger, as the
 	// editor painted it before the profile list became a page scroll area.
-	scopeRow  ui.FormFieldState
-	viewport  gfx.Rect
-	errorText string
-	scroll    *ui.ScrollState
+	scopeRow           ui.FormFieldState
+	viewport           gfx.Rect
+	errorText          string
+	errorTextSelection ui.TextSelectionState // what the user selected of errorText, to copy it
+	scroll             *ui.ScrollState
 	// emptyDraw paints the centered empty state over the list's viewport; it is
 	// made once so a paint does not allocate a closure.
 	emptyDraw             func(*ui.DrawContext)
@@ -410,7 +411,9 @@ func (w *sftpWindow) declareBookmarkBody(c ui.C) {
 		})
 		w.declareBookmarkProfileList(c)
 		if b.errorText != "" {
-			ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24).LineHeight(24)
+			ui.TextSelectionArea(c, &b.errorTextSelection).Children(func() {
+				ui.Text(c, b.errorText).FontSize(theme.Metrics.FontSizeS).Color(w.owner.pal.danger).Ellipsis().Height(24).LineHeight(24)
+			})
 		}
 	})
 }

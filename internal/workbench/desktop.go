@@ -1,12 +1,14 @@
 package workbench
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"math"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -108,11 +110,18 @@ type desktopView struct {
 	// inverting is whether the remote's pointer shows the picture through its
 	// body (see desktop.PointerShape.Invert). No system can draw such a shape
 	// as a cursor, so over the picture the workbench paints it itself from
-	// pointerPixels: the shape, with each inverting pixel replaced by the
-	// inverse of the picture under it.
-	inverting     bool
-	pointerInside bool // whether the pointer is over the picture, not the bars
-	pointerPixels []byte
+	// pointerPixels: two alternating buffers so the frame last painted keeps an
+	// immutable Pix slice while the next one is built, paired with a stable
+	// bitmap ID and incrementing version so native renderers re-upload when the
+	// inverted pixels change.
+	inverting            bool
+	pointerInside        bool // whether the pointer is over the picture, not the bars
+	pointerPixels        [2][]byte
+	pointerPixelSlot     int
+	pointerBitmapID      uint64
+	pointerBitmapVersion uint32
+	pointerBitmapWidth   int
+	pointerBitmapHeight  int
 	// pixelScale is the device pixels per logical pixel as last painted, and area
 	// where the picture was shown, in the page's coordinates.
 	pixelScale float32
@@ -331,6 +340,29 @@ func (view *desktopView) pointerCursor(scale float32, over bool) (gfx.PointerCur
 	return gfx.PointerCursorCrosshair, nil
 }
 
+// desktopPointerBitmapIDBase keeps painted-pointer bitmaps in their own
+// identity space, below gfx.Surface's 1<<61 tile range and distinct from
+// Motty's static icons and blurred thumbnails.
+const desktopPointerBitmapIDBase = uint64(1<<60 | 1<<56)
+
+var desktopPointerBitmapIDs atomic.Uint64
+
+func copyPremultipliedBGRA(dst, src []byte) {
+	a := src[3]
+	switch a {
+	case 0:
+		dst[0], dst[1], dst[2], dst[3] = 0, 0, 0, 0
+	case 255:
+		copy(dst, src)
+	default:
+		alpha := uint32(a)
+		dst[0] = byte((uint32(src[0])*alpha + 127) / 255)
+		dst[1] = byte((uint32(src[1])*alpha + 127) / 255)
+		dst[2] = byte((uint32(src[2])*alpha + 127) / 255)
+		dst[3] = a
+	}
+}
+
 // paintPointer paints the remote's pointer over the picture when its shape
 // shows the picture through its body. An inverting pointer has no image a
 // system could draw as a cursor, so the workbench paints it: the shape's own
@@ -353,6 +385,9 @@ func (view *desktopView) paintPointer(canvas *gfx.Canvas, origin gfx.Point, scal
 	// the picture under it is read one device pixel at a time, so the inverse
 	// follows the picture at the resolution it is shown in.
 	pixelScale := canvas.PixelScale()
+	if pixelScale <= 0 {
+		pixelScale = 1
+	}
 	hotX, hotY := min(max(shape.HotX, 0), shape.Width-1), min(max(shape.HotY, 0), shape.Height-1)
 	left := int(math.Floor(float64((view.pointer.X-float32(hotX))*pixelScale) + 0.5))
 	top := int(math.Floor(float64((view.pointer.Y-float32(hotY))*pixelScale) + 0.5))
@@ -362,10 +397,11 @@ func (view *desktopView) paintPointer(canvas *gfx.Canvas, origin gfx.Point, scal
 		return
 	}
 	needed := width * height * 4
-	if cap(view.pointerPixels) < needed {
-		view.pointerPixels = make([]byte, needed)
+	slot := view.pointerPixelSlot
+	if cap(view.pointerPixels[slot]) < needed {
+		view.pointerPixels[slot] = make([]byte, needed)
 	}
-	pixels := view.pointerPixels[:needed]
+	pixels := view.pointerPixels[slot][:needed]
 	for y := range height {
 		pageY := (float64(top+y) + 0.5) / float64(pixelScale)
 		remoteY := min(max(int(math.Floor((pageY-float64(origin.Y))/float64(scale))), 0), pictureHeight-1)
@@ -375,7 +411,7 @@ func (view *desktopView) paintPointer(canvas *gfx.Canvas, origin gfx.Point, scal
 			column := min(x*shape.Width/width, shape.Width-1)
 			index := row*shape.Width + column
 			if !shape.Invert[index] {
-				copy(pixels[at:at+4], shape.BGRA[index*4:index*4+4])
+				copyPremultipliedBGRA(pixels[at:at+4], shape.BGRA[index*4:index*4+4])
 				continue
 			}
 			pageX := (float64(left+x) + 0.5) / float64(pixelScale)
@@ -388,8 +424,26 @@ func (view *desktopView) paintPointer(canvas *gfx.Canvas, origin gfx.Point, scal
 			pixels[at], pixels[at+1], pixels[at+2], pixels[at+3] = 255-blue, 255-green, 255-red, 255
 		}
 	}
-	canvas.DrawBitmapPixels(gfx.Bitmap{Pix: pixels, Width: width, Height: height, Stride: width * 4},
-		gfx.Point{X: float32(left) / pixelScale, Y: float32(top) / pixelScale})
+	if view.pointerBitmapID == 0 {
+		view.pointerBitmapID = desktopPointerBitmapIDBase + desktopPointerBitmapIDs.Add(1)
+	}
+	prev := view.pointerPixels[1-slot]
+	if view.pointerBitmapVersion > 0 &&
+		view.pointerBitmapWidth == width && view.pointerBitmapHeight == height &&
+		bytes.Equal(pixels, prev) {
+		pixels = prev
+	} else {
+		view.pointerBitmapVersion++
+		if view.pointerBitmapVersion == 0 {
+			view.pointerBitmapVersion = 1
+		}
+		view.pointerBitmapWidth, view.pointerBitmapHeight = width, height
+		view.pointerPixelSlot = 1 - slot
+	}
+	canvas.DrawBitmapPixels(gfx.Bitmap{
+		Pix: pixels, Width: width, Height: height, Stride: width * 4,
+		ID: view.pointerBitmapID, Version: view.pointerBitmapVersion,
+	}, gfx.Point{X: float32(left) / pixelScale, Y: float32(top) / pixelScale})
 }
 
 // desktopGeometry is where a remote-desktop page puts things, in the page's own
@@ -1001,6 +1055,7 @@ func (state *State) desktopPointer(session *Session, event gfx.PointerEvent) gfx
 	}
 	geometry := state.desktopGeometryAtSize(session, event.Viewport)
 	before := view.pointer
+	entered := !view.pointerInside
 	view.pointer = gfx.Point{X: event.X, Y: event.Y}
 	view.pointerInside = true
 	moved := view.pointer != before
@@ -1023,7 +1078,7 @@ func (state *State) desktopPointer(session *Session, event gfx.PointerEvent) gfx
 		view.buttons &^= button
 	}
 	_ = view.session.SendPointer(x, y, view.buttons)
-	return gfx.EventResult{Handled: event.Kind != gfx.PointerMove, Repaint: (panned || view.inverting && moved) && view.width > 0}
+	return gfx.EventResult{Handled: event.Kind != gfx.PointerMove, Repaint: (panned || view.inverting && (moved || entered)) && view.width > 0}
 }
 
 // desktopScroll turns scrolling into wheel notches.

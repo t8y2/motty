@@ -12,15 +12,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
+	layoutcore "motty/internal/workspace"
+
 	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/sftpclient"
-	"motty/internal/sshconn"
-	layoutcore "motty/internal/workspace"
 )
 
 type sftpCrumb struct {
@@ -252,6 +253,7 @@ type sftpView struct {
 	cancelExtract         context.CancelFunc
 	dialogEntry           sftpclient.Entry
 	dialogEntries         []sftpclient.Entry
+	chmodRecursive        bool
 	deleteMethod          sftpDeleteMethod
 	deleteRemaining       []sftpclient.Entry
 	deleteCompleted       int
@@ -264,6 +266,7 @@ type sftpView struct {
 	deleteFailedItems     int
 	deleteFirstFailure    string
 	dialogError           string
+	dialogErrorSelection  ui.TextSelectionState // what the user selected of dialogError, to copy it
 	moveAfterRename       bool
 	moveTargetDir         string
 	panelDrag             sftpPanelDrag
@@ -1862,10 +1865,11 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 	view.dialogEditor = text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
 	view.dialogEntries = nil
+	view.chmodRecursive = false
 	view.dialogError = ""
 	view.deleteMethod = sftpDeleteNormal
 	if dialog != sftpDialogCreateDirectory && dialog != sftpDialogCreateFile {
-		if dialog == sftpDialogDelete || dialog == sftpDialogMove {
+		if dialog == sftpDialogDelete || dialog == sftpDialogMove || dialog == sftpDialogChmod {
 			for _, row := range selectedSFTPRows(view) {
 				view.dialogEntries = append(view.dialogEntries, row.entry)
 			}
@@ -1885,7 +1889,11 @@ func (state *State) openSFTPDialog(view *sftpView, dialog sftpDialogKind) {
 		view.dialogEditor.Insert(view.path)
 	case sftpDialogChmod:
 		view.dialogEditor.Restrict(func(value rune) bool { return value >= '0' && value <= '7' }, 3)
-		view.dialogEditor.Insert(fmt.Sprintf("%03o", view.dialogEntry.Mode.Perm()))
+		// A single mode is safe to prefill. With mixed modes the field stays
+		// empty and the grid stands down until the user enters what they mean.
+		if mode, ok := commonSFTPChmodMode(view.dialogEntries); ok {
+			view.dialogEditor.Insert(fmt.Sprintf("%03o", mode))
+		}
 	case sftpDialogChown:
 		// A name is what the listing shows; the number stands in when the
 		// server's account files did not name the owner. Typing is not filtered
@@ -1927,6 +1935,7 @@ func (state *State) closeSFTPDialog(view *sftpView) {
 	view.dialogEditor, view.dialogEditor2 = text.Editor{}, text.Editor{}
 	view.dialogEntry = sftpclient.Entry{}
 	view.dialogEntries = nil
+	view.chmodRecursive = false
 	view.deleteMethod = sftpDeleteNormal
 	view.downloadPending = nil
 	view.downloadConflictName = ""
@@ -2207,19 +2216,25 @@ func (state *State) clickSFTPDialog(view *sftpView, id gfx.ID) {
 			return
 		}
 	}
-	if view.dialog == sftpDialogChmod && id.Scope() == hitSFTPChmodBits {
-		// A permission checkbox flips one bit of the octal field, so the typed
-		// value and the checkboxes always agree (issue #392).
-		index := item(id)
-		if index < 0 || index > 8 {
+	if view.dialog == sftpDialogChmod {
+		if id == hitSFTPChmodRecursive {
+			view.chmodRecursive = !view.chmodRecursive
 			return
 		}
-		mode, ok := sftpChmodFromDialog(view)
-		if !ok {
-			return
+		if id.Scope() == hitSFTPChmodBits {
+			// A permission checkbox flips one bit of the octal field, so the typed
+			// value and the checkboxes always agree (issue #392).
+			index := item(id)
+			if index < 0 || index > 8 {
+				return
+			}
+			mode, ok := sftpChmodFromDialog(view)
+			if !ok {
+				return
+			}
+			mask := uint32(1) << uint(8-index)
+			state.setSFTPChmodDialog(view, mode^mask)
 		}
-		mask := uint32(1) << uint(8-index)
-		state.setSFTPChmodDialog(view, mode^mask)
 	}
 	switch id {
 	case hitSFTPDialogClose, hitSFTPDialogCancel:
@@ -2498,6 +2513,28 @@ func ownershipItemScope(field int) gfx.Scope {
 	return hitSFTPChownGroupItem
 }
 
+func commonSFTPChmodMode(entries []sftpclient.Entry) (uint32, bool) {
+	if len(entries) == 0 {
+		return 0, false
+	}
+	mode := entries[0].Mode.Perm()
+	for _, entry := range entries[1:] {
+		if entry.Mode.Perm() != mode {
+			return 0, false
+		}
+	}
+	return uint32(mode), true
+}
+
+func sftpChmodRecursiveAvailable(view *sftpView) bool {
+	for _, entry := range view.dialogEntries {
+		if entry.IsDir() && !entry.IsLink() {
+			return true
+		}
+	}
+	return false
+}
+
 // sftpChmodFromDialog reads the dialog's octal field; ok is false while the
 // text is not a usable mode.
 func sftpChmodFromDialog(view *sftpView) (uint32, bool) {
@@ -2637,10 +2674,28 @@ func (state *State) submitSFTPDialog(view *sftpView) {
 			view.dialogError = state.messages.SFTPErrModeInvalid
 			return
 		}
-		remotePath := path.Join(view.path, view.dialogEntry.Name)
-		queued = view.worker.Chmod(remotePath, os.FileMode(mode))
-		operation = sftpclient.OperationChmod
-		status = fmt.Sprintf(state.messages.SFTPChangingPermissionsFmt, view.dialogEntry.Name)
+		entries := view.dialogEntries
+		if len(entries) == 0 && view.dialogEntry.Name != "" {
+			entries = []sftpclient.Entry{view.dialogEntry}
+		}
+		if len(entries) == 0 {
+			view.dialogError = state.messages.SFTPUnavailable
+			return
+		}
+		sources := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			sources = append(sources, path.Join(view.path, entry.Name))
+		}
+		recursive := view.chmodRecursive && sftpChmodRecursiveAvailable(view)
+		if len(sources) > 1 || recursive {
+			queued = view.worker.ChmodSelection(sources, os.FileMode(mode), recursive)
+			operation = sftpclient.OperationChmodSelection
+			status = fmt.Sprintf(state.messages.SFTPChangingPermissionsCountFmt, len(sources))
+		} else {
+			queued = view.worker.Chmod(sources[0], os.FileMode(mode))
+			operation = sftpclient.OperationChmod
+			status = fmt.Sprintf(state.messages.SFTPChangingPermissionsFmt, view.dialogEntry.Name)
+		}
 	case sftpDialogChown:
 		owner := value
 		group := strings.TrimSpace(view.dialogEditor2.String())
@@ -2818,6 +2873,19 @@ func (state *State) pumpSFTP(session *Session) {
 					state.listSFTP(view, "")
 					continue
 				}
+			}
+			if result.Operation == sftpclient.OperationChmodSelection {
+				if result.Err != nil {
+					detail := fmt.Sprintf(state.messages.SFTPErrorFmt, result.Err)
+					if errors.Is(result.Err, sftpclient.ErrCanceled) {
+						detail = state.messages.SFTPCanceled
+					}
+					state.fileOpenNotice(view.detached, state.messages.SFTPPermissionsTitle, detail, components.ToastError)
+				}
+				view.forgetListings()
+				view.refreshStatus = fmt.Sprintf(state.messages.SFTPPermissionsChangedCountFmt, result.Files, result.Mode.Perm())
+				state.listSFTP(view, view.path)
+				continue
 			}
 			if result.Operation == sftpclient.OperationMoveSelection {
 				if result.Err != nil {

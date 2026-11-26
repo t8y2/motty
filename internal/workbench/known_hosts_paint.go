@@ -255,7 +255,9 @@ func (state *State) declareKnownHostsDialog(c ui.C) {
 		ui.Column(c).Fill().Gap(8).Children(func() {
 			ui.Text(c, messages.KnownHostsVerifyWarning).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.muted).LineHeight(24)
 			if view.dialogError != "" {
-				ui.Text(c, view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(38)
+				ui.TextSelectionArea(c, &view.dialogErrorSelection).Children(func() {
+					ui.Text(c, view.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(38)
+				})
 			}
 		})
 	})

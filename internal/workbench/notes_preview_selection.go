@@ -3,9 +3,9 @@ package workbench
 import (
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 )
 
 var hitNotePreviewText = tree.ID(notesHits, "preview-text")
@@ -30,9 +30,9 @@ func notePreviewSelectionPointerContent(e gfx.PointerEvent, n *notesUI) gfx.Even
 	} else if !v.previewSelect.Dragging() {
 		return gfx.EventResult{}
 	}
-	result := v.previewSelect.Pointer(e, func(point gfx.Point) (components.TextPoint, bool) {
+	result := v.previewSelect.Pointer(e, func(point gfx.Point) (ui.TextPoint, bool) {
 		offset, ok := n.rendered.OffsetAt(point)
-		return components.TextPoint{Offset: offset}, ok
+		return ui.TextPoint{Offset: offset}, ok
 	})
 	if !result.Handled {
 		return gfx.EventResult{}
@@ -66,7 +66,7 @@ func (s *State) notePreviewShortcutContent(e gfx.KeyEvent, n *notesUI) gfx.Event
 	}
 	if !e.Release && !e.Repeat {
 		if all {
-			v.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: n.rendered.TextLen()})
+			v.previewSelect.Select(ui.TextPoint{}, ui.TextPoint{Offset: n.rendered.TextLen()})
 		} else if value := n.rendered.SelectedText(v.previewSelect.In(0)); value != "" && s.options.SetClipboardText != nil {
 			if err := s.options.SetClipboardText(value); err != nil {
 				n.error = err.Error()

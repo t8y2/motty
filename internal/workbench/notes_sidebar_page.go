@@ -105,7 +105,9 @@ func (s *State) declareNoteSidebarPreview(c ui.C, n *notesUI, width float32) {
 		})
 		ui.Divider(c).Height(1).MarginSides(4, 0, 0, 0).Background(s.pal.line)
 		if n.error != "" {
-			ui.Text(c, n.error).FontSize(11).Color(s.pal.danger).MarginSides(4, 0, 0, 0)
+			ui.TextSelectionArea(c, &n.errorSelection).Children(func() {
+				ui.Text(c, n.error).FontSize(11).Color(s.pal.danger).MarginSides(4, 0, 0, 0)
+			})
 		}
 		ui.Column(c).Grow(1).FillWidth().MarginSides(6, 0, 0, 0).Children(func() {
 			s.declareNotePreview(c, n, max(1, width-16), true)

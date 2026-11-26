@@ -26,6 +26,7 @@ func (t *Terminal) Clone() *Terminal {
 		clone.hist = cloneLines(t.hist)
 	}
 	clone.histSpare = nil
+	clone.promptSaved = cloneLines(t.promptSaved)
 	clone.tabs = append([]bool(nil), t.tabs...)
 	clone.hyperlinks = append([]hyperlinkRecord(nil), t.hyperlinks...)
 	clone.hyperlinkByTarget = maps.Clone(t.hyperlinkByTarget)

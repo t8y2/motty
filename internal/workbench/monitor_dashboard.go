@@ -11,12 +11,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/monitoring"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
+
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 var dashboardHits = tree.Feature("monitor-dashboard")
@@ -74,6 +75,7 @@ type dashboardEditor struct {
 	queryField                    ui.Field
 	selected                      []string
 	error                         string
+	errorSelection                ui.TextSelectionState // what the user selected of error, to copy it
 	scroll, scrollSynced, content float32
 	bounds                        gfx.Rect
 	fromHosts                     bool

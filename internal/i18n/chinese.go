@@ -1233,7 +1233,8 @@ var ChineseMessages = Messages{
 	SFTPDeletedFmt:              "已删除 %s",
 	SFTPDeletedCountFmt:         "已删除 %d 个项目",
 	SFTPPermissionsTitle:        "修改权限",
-	SFTPPermissionsDescription:  "输入三位八进制权限，例如 644 或 755。",
+	SFTPPermissionsDescription:  "输入三位八进制权限，例如 644 或 755；所有选中项目都将应用此权限。",
+	SFTPPermissionsRecursive:    "应用到所有子项目",
 	SFTPPermissionsMode:         "八进制权限",
 	SFTPPermissionsSubmit:       "应用",
 	SFTPPermissionsOwner:        "所有者",
@@ -1273,6 +1274,9 @@ var ChineseMessages = Messages{
 	SFTPEditConflictTitle:       "远程文件已变化",
 	SFTPEditConflictDescription: "服务器上已有更新版本。可保留本地修改，或重新加载远程文件并放弃本地修改。",
 	SFTPEditReloadConfirm:       "重新加载远程文件",
+
+	SFTPChangingPermissionsCountFmt: "正在修改 %d 个项目的权限…",
+	SFTPPermissionsChangedCountFmt:  "已将 %d 个项目的权限修改为 %03o",
 
 	StatsMeasuring:   "正在测量主机资源…",
 	StatsUnsupported: "主机不支持资源读数",

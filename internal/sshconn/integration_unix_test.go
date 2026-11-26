@@ -369,6 +369,85 @@ func TestIntegrationFirstPromptEraseSurvivesVenvSnapshotRestore(t *testing.T) {
 	}
 }
 
+// TestIntegrationFirstPromptSurvivesResizeBeforeRedraw verifies issue #1642 end
+// to end on real Bash and Zsh PTYs: when the login shell prints its initial
+// prompt, the activation line's echo is hidden up to IntegrationReadyMarker,
+// and the terminal resizes before typing at the first integrated prompt, the
+// echoed input must not wipe the prompt off the row.
+func TestIntegrationFirstPromptSurvivesResizeBeforeRedraw(t *testing.T) {
+	for _, name := range []string{"bash", "zsh"} {
+		t.Run(name, func(t *testing.T) {
+			program, err := exec.LookPath(name)
+			if err != nil {
+				t.Skipf("%s unavailable: %v", name, err)
+			}
+			h := integrationPTYServer(t, name, program)
+			w := openShellWith(t, h, ShellConfig{Cols: 80, Rows: 24})
+			screen := term.New(80, 24, 100)
+			const token = "first-prompt-resize"
+			screen.SetPromptToken(token)
+
+			// Wait for the pre-injection login prompt so the screen cursor stands
+			// past column zero, matching a newly opened SSH terminal.
+			consumed := 0
+			w.until("initial login prompt", func(out string) bool {
+				screen.Write([]byte(out[consumed:]))
+				consumed = len(out)
+				return screen.Cursor().X > 0
+			})
+
+			path, _ := h.conn.ProbeShell(context.Background())
+			line, err := h.conn.UploadIntegration(context.Background(), path, token, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			suppressFrom := consumed
+			marker := string(IntegrationReadyMarker(token))
+			ready := 0
+			screen.SetPromptReady(func() { ready++ })
+			w.shell.Write([]byte(line))
+			fedAfterMarker := 0
+			w.until("first integrated prompt", func(out string) bool {
+				idx := strings.Index(out[suppressFrom:], marker)
+				if idx < 0 {
+					return false
+				}
+				after := out[suppressFrom+idx+len(marker):]
+				if len(after) > fedAfterMarker {
+					screen.Write([]byte(after[fedAfterMarker:]))
+					fedAfterMarker = len(after)
+				}
+				consumed = len(out)
+				return ready > 0
+			})
+
+			promptRow := screen.Cursor().Y
+			promptText := strings.TrimRight(screen.RowText(promptRow), " ")
+			if promptText == "" {
+				t.Fatalf("expected non-empty prompt before resize, got row %q", screen.RowText(promptRow))
+			}
+
+			// Resize the terminal screen before the shell redraws, then type "docker".
+			screen.Resize(60, 24)
+			w.shell.Write([]byte("docker"))
+			w.until("echoed docker", func(out string) bool {
+				if len(out) > consumed {
+					screen.Write([]byte(out[consumed:]))
+					consumed = len(out)
+				}
+				return strings.Contains(screen.RowText(screen.Cursor().Y), "docker")
+			})
+			gotRow := screen.RowText(screen.Cursor().Y)
+			if !strings.HasPrefix(gotRow, promptText) {
+				t.Fatalf("typing after resize wiped the prompt: got row %q, want prefix %q", gotRow, promptText)
+			}
+
+			w.shell.Write([]byte("\x15exit\r"))
+			w.waitDone()
+		})
+	}
+}
+
 func TestIntegrationReportsRealShellDirectoriesWithoutChangingProfiles(t *testing.T) {
 	for _, name := range []string{"bash", "zsh"} {
 		t.Run(name, func(t *testing.T) {

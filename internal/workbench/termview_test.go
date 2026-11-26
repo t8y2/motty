@@ -247,6 +247,16 @@ func TestTrueAndIndexedColorsResolveAgainstThePalette(t *testing.T) {
 	}
 }
 
+func TestDarkPaletteANSIBlackMatchesTerminalBackground(t *testing.T) {
+	entry := build(t, "\x1b[35;40mroot\x1b[0m ", -1)
+	if len(entry.spans) != 1 {
+		t.Fatalf("spans = %+v, want 1 span", entry.spans)
+	}
+	if got := entry.spans[0].color; got != darkPalette.terminal {
+		t.Errorf("SGR 40 background = %+v, want darkPalette.terminal %+v", got, darkPalette.terminal)
+	}
+}
+
 func TestTheCursorIsABlockOverItsCellEvenPastTheText(t *testing.T) {
 	inside := build(t, "abc", 1)
 	if len(inside.spans) != 1 || inside.spans[0].from != 1 || inside.spans[0].to != 2 || inside.spans[0].color != darkPalette.cursor {

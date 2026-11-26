@@ -4,6 +4,9 @@ package term
 // the hot path for ordinary output and does the same as print without the
 // per-character width and charset work.
 func (t *Terminal) printASCII(run []byte) {
+	if !t.pend && len(run) > 0 {
+		t.notePromptWrite()
+	}
 	t.clearStalePrompt()
 	l := t.scr.lines[t.cy]
 	t.stamp(l)
@@ -137,6 +140,7 @@ func (t *Terminal) fillRun(runes []rune) int {
 	}
 	t.repairWide(l, t.cx-1)
 	t.repairWide(l, to)
+	t.notePromptWrite()
 	t.stamp(l)
 	t.advance(l, to, runes[n-1])
 	return n
@@ -190,6 +194,7 @@ func (t *Terminal) print(r rune) {
 		t.wrap()
 		l = t.scr.lines[t.cy]
 	}
+	t.notePromptWrite()
 	t.stamp(l)
 	x := t.cx
 	if t.modes.Insert {

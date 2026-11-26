@@ -28,9 +28,10 @@ type workspaceTemplateMenu struct {
 }
 
 type workspaceTemplateDelete struct {
-	templateID string
-	name       string
-	error      string
+	templateID     string
+	name           string
+	error          string
+	errorSelection ui.TextSelectionState // what the user selected of error, to copy it
 }
 
 func (state *State) workspaceTemplateByID(id string) (WorkspaceTemplate, int, bool) {
@@ -164,8 +165,10 @@ func (state *State) declareWorkspaceTemplateDeleteDialog(c ui.C) {
 			return
 		}
 		ui.Column(c).Fill().Children(func() {
-			ui.Text(c, target.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
-				Color(state.pal.danger).LineHeight(20)
+			ui.TextSelectionArea(c, &target.errorSelection).Children(func() {
+				ui.Text(c, target.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+					Color(state.pal.danger).LineHeight(20)
+			})
 		})
 	})
 	dialog.Footer(func() {

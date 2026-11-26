@@ -356,8 +356,10 @@ func (w *remoteToolsWindow) declareFormDialog(c ui.C) {
 				}
 			}
 			if form.dialogError != "" {
-				ui.Paragraph(c, form.dialogError, 0).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(w.ui.pal.danger).LineHeight(formProblemLine).MarginSides(formProblemGap, 0, 0, 0)
+				ui.TextSelectionArea(c, &form.dialogErrorSelection).Children(func() {
+					ui.Paragraph(c, form.dialogError, 0).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
+						Color(w.ui.pal.danger).LineHeight(formProblemLine).MarginSides(formProblemGap, 0, 0, 0)
+				})
 			} else if form.testNote != "" {
 				ui.Paragraph(c, form.testNote, 0).FontSize(w.ui.Theme().Metrics.FontSizeS).Weight(gfx.WeightMedium).
 					Color(w.ui.pal.success).LineHeight(formProblemLine).MarginSides(formProblemGap, 0, 0, 0)

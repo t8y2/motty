@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // TestNotesDrawerPreviewSwitchPaintsChosenNote guards the narrow-card layout,
@@ -50,7 +50,7 @@ func TestNotesDrawerPreviewSwitchPaintsChosenNote(t *testing.T) {
 			if s.notes.previewLayout.source != short {
 				t.Fatal("preview still laid out for the previous note after the switch")
 			}
-			all := components.MarkdownSelection{Focus: s.notes.rendered.TextLen()}
+			all := ui.TextRange{Focus: s.notes.rendered.TextLen()}
 			if got := s.notes.rendered.SelectedText(all); !strings.Contains(got, "A short note.") {
 				t.Fatalf("preview paints the wrong note: %q", got)
 			}

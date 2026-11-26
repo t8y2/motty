@@ -10,12 +10,12 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/components"
+	"motty/internal/configstore"
+	"motty/internal/sshconn"
+
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/configstore"
-	"motty/internal/sshconn"
 )
 
 const (
@@ -151,6 +151,7 @@ type remoteLogView struct {
 	formMode           remoteLogForm
 	formOriginal       remoteLogPath
 	formError          string
+	formErrorSelection ui.TextSelectionState // what the user selected of formError, to copy it
 	follow             bool
 	height             float32
 	expanded, resizing bool
@@ -183,7 +184,7 @@ type remoteLogView struct {
 	plainEnd     int64
 	wrapCols     int
 	wrap         []remoteLogLineWrap
-	selection    components.TextSelection
+	selection    ui.TextSelection
 	// textOrigin and cellWidth are the text's last painted origin and cell
 	// width; a pointer press is mapped to a byte offset through them.
 	textOrigin gfx.Point

@@ -486,7 +486,9 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 	dialog.Body(func() {
 		ui.Column(c).Height(bodyHeight).Children(func() {
 			if state.dialogError != "" {
-				ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
+				ui.TextSelectionArea(c, &state.dialogErrorSelection).Children(func() {
+					ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(24)
+				})
 			}
 		})
 	})

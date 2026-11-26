@@ -3,8 +3,8 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 func TestPlainTextOffsetAtUsesWideRuneBoundaries(t *testing.T) {
@@ -18,7 +18,7 @@ func TestPlainTextOffsetAtUsesWideRuneBoundaries(t *testing.T) {
 	if !ok || offset != len("中") {
 		t.Fatalf("offset inside the first wide rune = %d, %v; want %d", offset, ok, len("中"))
 	}
-	if got := view.SelectedText(components.MarkdownSelection{Focus: offset}); got != "中" {
+	if got := view.SelectedText(ui.TextRange{Focus: offset}); got != "中" {
 		t.Fatalf("selected %q, want the whole first rune", got)
 	}
 	offset, ok = view.OffsetAt(gfx.Point{X: 25})

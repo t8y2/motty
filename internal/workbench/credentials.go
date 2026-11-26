@@ -7,11 +7,12 @@ import (
 	"slices"
 	"strings"
 
+	"motty/internal/sshconn"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/sshconn"
 )
 
 // Identities. One login name and password kept once and used by several hosts: a
@@ -168,6 +169,7 @@ type credentialUI struct {
 	editing              string
 	name, user, password text.Editor
 	dialogError          string
+	dialogErrorSelection ui.TextSelectionState // what the user selected of dialogError, to copy it
 	// passwordShown swaps the password's bullets for its text, as the field's
 	// eye button does; closing the dialog forgets it.
 	passwordShown bool
@@ -333,8 +335,10 @@ func (state *State) declareCredentialDialog(c ui.C) {
 			}
 			state.credentialField(c, hitCredentialPassword, &form.passwordField, m.Password, placeholder, 62, true)
 			if form.dialogError != "" {
-				ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+				ui.TextSelectionArea(c, &form.dialogErrorSelection).Children(func() {
+					ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+						Color(state.pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+				})
 			}
 		})
 	})

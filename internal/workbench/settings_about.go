@@ -280,15 +280,17 @@ func (state *State) paintAboutSettings(page *settingsPage) {
 		})
 		page.group(m.About.InfoTitle, func() {
 			page.tileBox(func() {
-				page.pair(func() {
-					page.factTile(iconInfo, m.About.Version, facts.versionText)
-				}, func() {
-					page.factTile(iconDesktop, m.About.Platform, facts.platform)
-				})
-				page.pair(func() {
-					page.factTile(iconWrench, m.About.Build, facts.buildText(m.About))
-				}, func() {
-					page.factTile(iconTerminal, m.About.Runtime, facts.runtime)
+				ui.TextSelectionArea(c, &state.settings.aboutSelection).FillWidth().Gap(10).Children(func() {
+					page.pair(func() {
+						page.factTile(iconInfo, m.About.Version, facts.versionText)
+					}, func() {
+						page.factTile(iconDesktop, m.About.Platform, facts.platform)
+					})
+					page.pair(func() {
+						page.factTile(iconWrench, m.About.Build, facts.buildText(m.About))
+					}, func() {
+						page.factTile(iconTerminal, m.About.Runtime, facts.runtime)
+					})
 				})
 			})
 		})

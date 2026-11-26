@@ -83,6 +83,9 @@ const (
 	// server. The source is read through its own subsystem opener; the data
 	// never goes through this computer's disk.
 	OperationRemoteCopy
+	// OperationChmodSelection changes permissions on selected paths, and can
+	// also walk every folder below a selected directory.
+	OperationChmodSelection
 )
 
 // ExistingPolicy controls what a transfer does when its final destination or
@@ -603,6 +606,13 @@ func (worker *Worker) preserveTimes() bool {
 
 func (worker *Worker) Chmod(remotePath string, mode os.FileMode) bool {
 	return worker.enqueue(request{operation: OperationChmod, remote: remotePath, mode: mode})
+}
+
+// ChmodSelection changes each selected path's permissions. With recursive set,
+// a directory also receives the mode on every entry below it. Symbolic links
+// inside a walked tree are left alone so their targets are never changed.
+func (worker *Worker) ChmodSelection(paths []string, mode os.FileMode, recursive bool) bool {
+	return worker.enqueue(request{operation: OperationChmodSelection, sources: slices.Clone(paths), mode: mode, recursive: recursive})
 }
 
 // Chown changes a remote path's owner and group. owner and group are names the
@@ -1390,6 +1400,8 @@ func (worker *Worker) execute(next request) Result {
 		result.Err = err
 	case OperationChmod:
 		result.Err = chmod(client, next.remote, next.mode)
+	case OperationChmodSelection:
+		result.Files, result.Failures, result.Err = worker.chmodSelection(client, next.sources, next.mode, next.recursive, generation)
 	case OperationChown:
 		result.Err = worker.chown(client, next.remote, next.owner, next.group, generation)
 	case OperationSymlink:
@@ -4013,6 +4025,159 @@ func chmod(client Remote, remotePath string, mode os.FileMode) error {
 		return fmt.Errorf("sftp: chmod is not supported by the remote")
 	}
 	return changer.Chmod(remotePath, mode)
+}
+
+// PartialChmodError says a permission change applied to some entries but not
+// others. Failed counts entries, including every entry below a selected folder
+// that a recursive walk could not change.
+type PartialChmodError struct {
+	Failed int
+	First  error
+}
+
+func (err *PartialChmodError) Error() string {
+	if err.First == nil {
+		return fmt.Sprintf("sftp: permissions could not be changed for %d items", err.Failed)
+	}
+	return fmt.Sprintf("sftp: permissions could not be changed for %d items: %v", err.Failed, err.First)
+}
+
+func (err *PartialChmodError) Unwrap() error { return err.First }
+
+// errChmodLimit stops a recursive permission change that is too deep or holds
+// too many entries, just as a bounded removal must not walk an endless tree.
+var errChmodLimit = errors.New("sftp: permission change tree is too large")
+
+func (worker *Worker) chmodSelection(client Remote, paths []string, mode os.FileMode, recursive bool, generation uint64) (changed, failed int, err error) {
+	items := 0
+	var firstErr error
+	for _, remotePath := range paths {
+		if worker.canceled(generation) {
+			return changed, failed, ErrCanceled
+		}
+		pathChanged, pathFailed, pathErr := worker.chmodPath(client, remotePath, mode, recursive, generation, &items)
+		changed += pathChanged
+		failed += pathFailed
+		if pathErr == nil {
+			continue
+		}
+		if errors.Is(pathErr, ErrCanceled) || errors.Is(pathErr, ErrPathTraversal) || errors.Is(pathErr, errChmodLimit) {
+			return changed, failed, pathErr
+		}
+		if firstErr == nil {
+			firstErr = fmt.Errorf("%s: %w", remotePath, pathErr)
+		}
+	}
+	if failed > 0 {
+		return changed, failed, &PartialChmodError{Failed: failed, First: firstErr}
+	}
+	return changed, failed, nil
+}
+
+// chmodPath changes one selected path, walking plain folders below it when
+// recursive is set. Links are neither changed nor followed in that mode: chmod
+// follows a link on servers without lsetstat, and walking one could leave the
+// selected tree. A non-recursive selection keeps the single chmod behavior.
+func (worker *Worker) chmodPath(client Remote, remotePath string, mode os.FileMode, recursive bool, generation uint64, items *int) (changed, failed int, firstErr error) {
+	if remotePath == "" {
+		return 0, 1, fmt.Errorf("sftp: chmod requires a remote path")
+	}
+	if !recursive {
+		if err := chmod(client, remotePath, mode); err != nil {
+			return 0, 1, err
+		}
+		return 1, 0, nil
+	}
+	linker, ok := client.(remoteLinker)
+	if !ok {
+		return 0, 1, fmt.Errorf("sftp: recursive permission change is not supported by the remote")
+	}
+	info, err := linker.Lstat(remotePath)
+	if err != nil {
+		return 0, 1, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return 0, 0, nil
+	}
+	if !info.IsDir() {
+		if err := chmod(client, remotePath, mode); err != nil {
+			return 0, 1, err
+		}
+		return 1, 0, nil
+	}
+	return worker.chmodTree(client, remotePath, mode, generation, 0, items)
+}
+
+// chmodTree changes a directory and every entry below it. Its caller has
+// already established that the root is a plain directory; ReadDir gives the
+// same distinction for every child, so the walk never follows a link.
+func (worker *Worker) chmodTree(client Remote, remotePath string, mode os.FileMode, generation uint64, depth int, items *int) (changed, failed int, firstErr error) {
+	if depth > maxRemoveDepth {
+		return 0, 1, fmt.Errorf("%w: %s is nested deeper than %d folders", errChmodLimit, remotePath, maxRemoveDepth)
+	}
+	if worker.canceled(generation) {
+		return 0, 0, ErrCanceled
+	}
+	infos, err := client.ReadDir(remotePath)
+	if err != nil {
+		return 0, 1, err
+	}
+	for _, info := range infos {
+		if info == nil {
+			continue
+		}
+		if worker.canceled(generation) {
+			return changed, failed, ErrCanceled
+		}
+		name := info.Name()
+		if !safeRemoteName(name) {
+			return changed, failed, fmt.Errorf("%w: %q", ErrPathTraversal, name)
+		}
+		*items++
+		if *items > maxTransferItems {
+			return changed, failed, fmt.Errorf("%w: %s holds more than %d items", errChmodLimit, remotePath, maxTransferItems)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		child := path.Join(remotePath, name)
+		if info.IsDir() {
+			childChanged, childFailed, childErr := worker.chmodTree(client, child, mode, generation, depth+1, items)
+			changed += childChanged
+			failed += childFailed
+			if childErr != nil {
+				if errors.Is(childErr, ErrCanceled) || errors.Is(childErr, ErrPathTraversal) || errors.Is(childErr, errChmodLimit) {
+					return changed, failed, childErr
+				}
+				if firstErr == nil {
+					firstErr = childErr
+				}
+			}
+			continue
+		}
+		if err := chmod(client, child, mode); err != nil {
+			failed++
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		changed++
+	}
+	if worker.canceled(generation) {
+		return changed, failed, ErrCanceled
+	}
+	// Restrict the folder only after its children are done: a mode such as 600
+	// removes the access needed to list or enter it for the rest of the walk.
+	if err := chmod(client, remotePath, mode); err != nil {
+		failed++
+		if firstErr == nil {
+			firstErr = err
+		}
+	} else {
+		changed++
+	}
+	return changed, failed, firstErr
 }
 
 // chown resolves the user and group the caller named and changes one path's

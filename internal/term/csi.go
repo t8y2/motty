@@ -132,15 +132,18 @@ func (t *Terminal) csiStandard(final byte) {
 	case 'D':
 		t.pend = false
 		t.cx = max(t.cx-n, 0)
+		t.notePromptColumn()
 	case 'E':
 		t.moveVertical('B', n)
 		t.cx = 0
 	case 'F':
 		t.moveVertical('A', n)
 		t.cx = 0
+		t.notePromptColumn()
 	case 'G', '`':
 		t.pend = false
 		t.cx = min(n-1, t.cols-1)
+		t.notePromptColumn()
 	case 'a':
 		t.pend = false
 		t.cx = min(t.cx+n, t.cols-1)
@@ -300,6 +303,7 @@ func (t *Terminal) moveTo(row, col int) {
 		t.cy = min(row-1, t.rows-1)
 	}
 	t.cx = min(col-1, t.cols-1)
+	t.notePromptColumn()
 }
 
 func (t *Terminal) setMargins() {

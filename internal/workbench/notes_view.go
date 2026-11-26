@@ -1,11 +1,13 @@
 package workbench
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
-	"slices"
-	"strings"
+	"github.com/vivaui/viva/ui"
 )
 
 type noteMode string
@@ -19,7 +21,7 @@ const (
 type noteViewState struct {
 	splitScroll                                          noteSplitScroll
 	codeActions                                          noteCodeActions
-	previewSelect                                        components.TextSelection
+	previewSelect                                        ui.TextSelection
 	previewSource                                        string
 	pointer                                              gfx.Point
 	pointerValid                                         bool

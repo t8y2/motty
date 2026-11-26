@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	layoutcore "motty/internal/workspace"
+
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	layoutcore "motty/internal/workspace"
 )
 
 var (
@@ -22,10 +23,11 @@ var (
 // workspaceSave is the small dialog that turns one running temporary workspace
 // into a reusable template. The workspace remains open after saving.
 type workspaceSave struct {
-	workspace layoutcore.WorkspaceID
-	layout    layoutcore.LayoutSpec
-	name      text.Editor
-	error     string
+	workspace      layoutcore.WorkspaceID
+	layout         layoutcore.LayoutSpec
+	name           text.Editor
+	error          string
+	errorSelection ui.TextSelectionState // what the user selected of error, to copy it
 	// nameField is the page's handle on the same editor the dialog reads.
 	nameField ui.Field
 }
@@ -206,8 +208,10 @@ func (state *State) declareWorkspaceSave(c ui.C) {
 				ui.TextField(c, &save.nameField, messages.WorkspaceDraftName, messages.WorkspaceDraftNamePlaceholder, ui.WithID(hitWorkspaceSaveName)).
 					Height(metrics.ControlHeight).MarginSides(gap, 0, 0, 0)
 				if save.error != "" {
-					ui.Text(c, save.error).FontSize(metrics.FontSizeM).Color(theme.Danger).
-						LineHeight(metrics.FontSizeM+7).MarginSides(gap, 0, 0, 0)
+					ui.TextSelectionArea(c, &save.errorSelection).Children(func() {
+						ui.Text(c, save.error).FontSize(metrics.FontSizeM).Color(theme.Danger).
+							LineHeight(metrics.FontSizeM+7).MarginSides(gap, 0, 0, 0)
+					})
 				}
 			})
 		})

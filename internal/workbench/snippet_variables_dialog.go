@@ -19,15 +19,16 @@ var (
 )
 
 type snippetPromptState struct {
-	snippetIndex    int
-	targetSessionID uint32
-	fromPage        bool
-	defs            []snippetVariableDef
-	editors         []text.Editor
-	fields          []ui.Field
-	fieldBound      []bool
-	rows            []ui.FormFieldState
-	dialogError     string
+	snippetIndex         int
+	targetSessionID      uint32
+	fromPage             bool
+	defs                 []snippetVariableDef
+	editors              []text.Editor
+	fields               []ui.Field
+	fieldBound           []bool
+	rows                 []ui.FormFieldState
+	dialogError          string
+	dialogErrorSelection ui.TextSelectionState // what the user selected of dialogError, to copy it
 	// list is the fields' scroll area, and preview the box the resolved
 	// command is shown in; both are what the last paint laid out, so the
 	// wheel handler and the tests read them between paints.
@@ -189,7 +190,9 @@ func (state *State) declareSnippetVariablesDialogBody(c ui.C, preview string) {
 		})
 
 		if prompt.dialogError != "" {
-			ui.Text(c, prompt.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(8, 0, 0, 0)
+			ui.TextSelectionArea(c, &prompt.dialogErrorSelection).Children(func() {
+				ui.Text(c, prompt.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(8, 0, 0, 0)
+			})
 		}
 	})
 }

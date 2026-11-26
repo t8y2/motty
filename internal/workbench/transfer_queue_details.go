@@ -67,13 +67,13 @@ func (state *State) declareTransferDetailCard(c ui.C, details *transferDetails, 
 		DismissID: dismiss, KeepOpenOnAnchor: true,
 	}
 	if ui.Popover(c, anchor, &details.open, spec, func() {
-		state.declareTransferDetailBody(c, entry, card)
+		state.declareTransferDetailBody(c, entry, card, &details.selection)
 	}) {
 		details.dismiss()
 	}
 }
 
-func (state *State) declareTransferDetailBody(c ui.C, entry *transferEntry, card gfx.ID) {
+func (state *State) declareTransferDetailBody(c ui.C, entry *transferEntry, card gfx.ID, selection *ui.TextSelectionState) {
 	m, shell := state.messages.Transfers, state.messages.SFTPWindow
 	theme := state.Theme()
 	snapshot := entry.snapshot
@@ -142,23 +142,25 @@ func (state *State) declareTransferDetailBody(c ui.C, entry *transferEntry, card
 	extra := max(0, int((c.Bounds().Height-70-float32(n)*(lineHeight+5))/lineHeight))
 	maxLines := 1 + min(extra, 5)
 	fieldsScope := tree.Sub(card.Scope(), tree.Name("detail-field"))
-	ui.Column(c).Width(width).Gap(5).
+	ui.Column(c).Width(width).
 		HitWith(card, m.Details, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, SkipTab: true}).
 		Children(func() {
-			for index, field := range fields[:n] {
-				ui.Row(c).Items(ui.Start).Gap(3).
-					HitWith(fieldsScope.At(index), field.name, gfx.HitOptions{
-						Role: gfx.RoleGroup, Description: field.value, SkipFocus: true, SkipTab: true,
-					}).
-					Children(func() {
-						if field.icon.ViewBox > 0 {
-							ui.Icon(c, field.icon).Size(14, 14).Color(theme.MutedForeground).Shrink(0).
-								MarginTop((lineHeight - 14) / 2)
-						}
-						ui.Text(c, field.name).Width(labelWidth).Shrink(0).FontSize(size).
-							Color(theme.MutedForeground).MarginLeft(labelOffset - 14)
-						ui.Paragraph(c, field.value, maxLines).Grow(1).FontSize(size).Color(theme.PopoverForeground)
-					})
-			}
+			ui.TextSelectionArea(c, selection).FillWidth().Gap(5).Children(func() {
+				for index, field := range fields[:n] {
+					ui.Row(c).Items(ui.Start).Gap(3).
+						HitWith(fieldsScope.At(index), field.name, gfx.HitOptions{
+							Role: gfx.RoleGroup, Description: field.value, SkipFocus: true, SkipTab: true,
+						}).
+						Children(func() {
+							if field.icon.ViewBox > 0 {
+								ui.Icon(c, field.icon).Size(14, 14).Color(theme.MutedForeground).Shrink(0).
+									MarginTop((lineHeight - 14) / 2)
+							}
+							ui.Text(c, field.name).Width(labelWidth).Shrink(0).FontSize(size).
+								Color(theme.MutedForeground).MarginLeft(labelOffset - 14)
+							ui.Paragraph(c, field.value, maxLines).Grow(1).FontSize(size).Color(theme.PopoverForeground)
+						})
+				}
+			})
 		})
 }

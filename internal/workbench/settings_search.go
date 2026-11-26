@@ -3,11 +3,12 @@ package workbench
 import (
 	"strings"
 
+	"motty/internal/i18n"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/i18n"
 )
 
 // Searching the settings. The search box above the category list looks through
@@ -90,6 +91,8 @@ type settingsUI struct {
 	// aboutCopied says the About page's build facts have been put on the
 	// clipboard in this visit, so its button says so.
 	aboutCopied bool
+	// aboutSelection is what the user selected of the build's facts, to copy it.
+	aboutSelection ui.TextSelectionState
 
 	// controls are the page's controls, recorded while it is declared and
 	// painted once it is laid out.

@@ -11,12 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"motty/internal/i18n"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/text"
-	"motty/internal/i18n"
+	"github.com/vivaui/viva/ui"
 )
 
 type savedNoteView struct {
@@ -104,6 +106,7 @@ type notesUI struct {
 	query                                   text.Editor
 	sideAll                                 bool
 	error                                   string
+	errorSelection                          ui.TextSelectionState // what the user selected of error, to copy it
 	saveDetail                              string
 	code                                    components.CodeEditor
 	doc                                     markdown.Document

@@ -1827,29 +1827,9 @@ func (c *Client) handleLicensing() error {
 func (c *Client) handleCapabilitiesExchange() error {
 	c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "waiting for Demand Active PDU")
 
-	channelID, userData, err := c.readDecryptedPDU()
+	da, err := c.readDemandActive()
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrCapabilitiesFailed, err)
-	}
-
-	if channelID != c.ioChannelID {
-		return fmt.Errorf("%w: demand active on unexpected channel %d (expected %d)",
-			ErrCapabilitiesFailed, channelID, c.ioChannelID)
-	}
-
-	hdr, rest, err := pdu.DecodeShareControlHeader(c.logPdu, userData)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrCapabilitiesFailed, err)
-	}
-
-	if hdr.PDUType != pdu.TypeDemandActive {
-		return fmt.Errorf("%w: expected Demand Active (0x%04X), got 0x%04X",
-			ErrCapabilitiesFailed, pdu.TypeDemandActive, hdr.PDUType)
-	}
-
-	da, err := pdu.DecodeDemandActive(c.logPdu, rest)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrCapabilitiesFailed, err)
+		return err
 	}
 
 	c.shareID.Store(da.ShareID)
@@ -1896,6 +1876,141 @@ func (c *Client) handleCapabilitiesExchange() error {
 	}
 
 	return c.sendConfirmActive()
+}
+
+// readDemandActive reads server PDUs until the Demand Active arrives.
+//
+// The Demand Active is not always the first PDU of the capabilities exchange.
+// A server may re-run the connection sequence with a Deactivate All first
+// (GNOME Remote Desktop does this: MS-RDPBCGR 1.3.1.3), and the logon result or
+// a server-side error can arrive at any point (Save Session Info and Set Error
+// Info are out-of-sequence PDUs: MS-RDPBCGR 1.3.2 and 3.2.5.2). Reading past
+// those is what reference clients do; failing on them reports a protocol error
+// in place of the server's real answer and rejects servers that work with
+// other clients.
+func (c *Client) readDemandActive() (*pdu.DemandActive, error) {
+	for {
+		channelID, userData, err := c.readDecryptedPDU()
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrCapabilitiesFailed, err)
+		}
+		da, err := c.capabilitiesPDU(channelID, userData)
+		if err != nil {
+			return nil, err
+		}
+		if da != nil {
+			return da, nil
+		}
+	}
+}
+
+// capabilitiesPDU decodes one PDU read while waiting for the Demand Active.
+// It returns the Demand Active when that PDU arrived and (nil, nil) for a PDU
+// that the connection sequence allows before it.
+func (c *Client) capabilitiesPDU(channelID uint16, userData []byte) (*pdu.DemandActive, error) {
+	if channelID != c.ioChannelID {
+		return nil, fmt.Errorf("%w: demand active on unexpected channel %d (expected %d)",
+			ErrCapabilitiesFailed, channelID, c.ioChannelID)
+	}
+
+	hdr, rest, err := pdu.DecodeShareControlHeader(c.logPdu, userData)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrCapabilitiesFailed, err)
+	}
+
+	// Match on the low 4 bits: the version nibble is not part of the type.
+	switch hdr.PDUType & 0x000F {
+	case pdu.TypeDemandActive & 0x000F:
+		da, err := pdu.DecodeDemandActive(c.logPdu, rest)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", ErrCapabilitiesFailed, err)
+		}
+		return da, nil
+
+	case pdu.TypeDeactivateAll & 0x000F:
+		// The server starts a deactivation-reactivation sequence. Until the
+		// client has activated a share there is nothing to deactivate, so the
+		// new Demand Active that follows is the one to answer.
+		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "Deactivate All before the Demand Active; skipping")
+		return nil, nil
+
+	case pdu.TypeData & 0x000F:
+		return nil, c.handleOutOfSequenceData(rest)
+
+	case pdu.TypeRedirect & 0x000F:
+		return nil, c.outOfSequenceRedirect(rest, false)
+	case pdu.TypeEnhancedRedirect & 0x000F:
+		return nil, c.outOfSequenceRedirect(rest, true)
+	}
+
+	return nil, fmt.Errorf("%w: expected Demand Active (0x%04X), got 0x%04X",
+		ErrCapabilitiesFailed, pdu.TypeDemandActive, hdr.PDUType)
+}
+
+// handleOutOfSequenceData handles a Share Data PDU that arrived before the
+// Demand Active. Save Session Info and Set Error Info are legal at any point in
+// the connection sequence; any other data PDU before activation is not, and
+// hiding it would turn a server-side failure into a successful connection.
+func (c *Client) handleOutOfSequenceData(data []byte) error {
+	sdHdr, payload, err := pdu.DecodeShareDataHeader(c.logPdu, data)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrCapabilitiesFailed, err)
+	}
+
+	if sdHdr.CompressedType&mppc.FlagCompressed != 0 {
+		if compType := sdHdr.CompressedType & 0x0F; compType <= mppc.TypeRDP5 {
+			if decompressed, derr := c.mppcDecomp.Decompress(payload, sdHdr.CompressedType); derr == nil {
+				payload = decompressed
+			}
+		}
+	}
+
+	switch sdHdr.PDUType2 {
+	case pdu.PDUType2SaveSessionInfo:
+		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "Save Session Info before the Demand Active")
+		c.handleSaveSessionInfo(payload)
+		return nil
+
+	case pdu.PDUType2SetErrorInfo:
+		var code uint32
+		if len(payload) >= 4 {
+			code = binary.LittleEndian.Uint32(payload[0:4])
+		}
+		if code != 0 {
+			return fmt.Errorf("%w: the server reported error 0x%08X (%s)",
+				ErrCapabilitiesFailed, code, pdu.ErrorInfoName(code))
+		}
+		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "Set Error Info before the Demand Active", util.Hex8("code", code))
+		return nil
+
+	case pdu.PDUType2Control:
+		// Server-to-client control (for example a refused shutdown) carries
+		// no state the capabilities exchange depends on.
+		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "Control PDU before the Demand Active")
+		return nil
+	}
+
+	return fmt.Errorf("%w: data PDU 0x%02X before the Demand Active",
+		ErrCapabilitiesFailed, sdHdr.PDUType2)
+}
+
+// outOfSequenceRedirect parses a redirection that arrived before the Demand
+// Active so the caller can reconnect to the target rather than report the
+// redirection PDU as a protocol error.
+func (c *Client) outOfSequenceRedirect(data []byte, enhanced bool) error {
+	ri, err := pdu.DecodeRedirectPDU(data, enhanced)
+	if err != nil {
+		return fmt.Errorf("%w: parsing server redirection: %v", ErrCapabilitiesFailed, err)
+	}
+	if ri.Flags&pdu.LBNoRedirect != 0 {
+		c.logPdu.LogAttrs(context.Background(), slog.LevelDebug, "server redirection before the Demand Active with LB_NOREDIRECT; ignoring")
+		return nil
+	}
+	c.logPdu.LogAttrs(context.Background(), slog.LevelInfo, "server redirection before the Demand Active",
+		slog.String("server", ri.Server),
+		slog.String("username", ri.Username),
+		slog.Bool("hasLBInfo", len(ri.LoadBalanceInfo) > 0))
+	return &RedirectError{Info: ri}
 }
 
 // sendConfirmActive builds and sends the Confirm Active PDU with our capability sets.

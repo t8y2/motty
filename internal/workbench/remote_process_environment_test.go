@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/components"
+	"motty/internal/remotetools"
+	"motty/internal/sshconn"
+
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/remotetools"
-	"motty/internal/sshconn"
 )
 
 func TestProcessDetailsKeepsTwoColumnMetadataAndSelectableEnvironment(t *testing.T) {
@@ -188,7 +188,7 @@ func TestEnvironmentTableCopiesCompleteMarkupLookingValues(t *testing.T) {
 	if text.mode != remoteDetailTable {
 		t.Fatalf("environment mode = %v, want table", text.mode)
 	}
-	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.textLen()})
+	text.selection.Select(ui.TextPoint{}, ui.TextPoint{Offset: text.textLen()})
 	selected, ok := text.selectedText()
 	want := header[0] + "\t" + header[1] + "\n" +
 		"PIPE\tleft|right\n" +
@@ -214,7 +214,7 @@ func TestEnvironmentTableCopiesDelimitedValuesAsLosslessTSV(t *testing.T) {
 	fitRemoteEnvironmentColumns(columns, text.bounds.Width)
 	text.setTableModel(columns, headings, rows)
 	state.paintRemoteDetailTableSlot(&canvas, &text)
-	text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: text.textLen()})
+	text.selection.Select(ui.TextPoint{}, ui.TextPoint{Offset: text.textLen()})
 	selected, ok := text.selectedText()
 	if !ok {
 		t.Fatal("environment table produced no selectable text")

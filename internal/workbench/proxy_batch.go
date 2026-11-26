@@ -11,22 +11,23 @@ import (
 )
 
 type proxyBatchAssociateDialog struct {
-	jumpID       uint32
-	jumpChoices  []uint32
-	query        text.Editor
-	search       ui.Field
-	searchBound  bool
-	selected     map[uint32]bool
-	overwrite    bool
-	viaShell     bool
-	relay        text.Editor
-	error        string
-	fromHostList bool
-	scroll       float32
-	content      float32
-	bounds       gfx.Rect
-	listRect     gfx.Rect
-	dialogBody   proxyBatchDialogBody
+	jumpID         uint32
+	jumpChoices    []uint32
+	query          text.Editor
+	search         ui.Field
+	searchBound    bool
+	selected       map[uint32]bool
+	overwrite      bool
+	viaShell       bool
+	relay          text.Editor
+	error          string
+	errorSelection ui.TextSelectionState // what the user selected of error, to copy it
+	fromHostList   bool
+	scroll         float32
+	content        float32
+	bounds         gfx.Rect
+	listRect       gfx.Rect
+	dialogBody     proxyBatchDialogBody
 }
 
 type proxyBatchDialogBody struct {
@@ -364,7 +365,9 @@ func (state *State) declareProxyBatchDialog(c ui.C) {
 
 			// 错误信息提示
 			if dialog.error != "" {
-				ui.Text(c, dialog.error).FontSize(metrics.FontSizeS).Color(pal.danger).MarginSides(2, 0, 0, 0)
+				ui.TextSelectionArea(c, &dialog.errorSelection).Children(func() {
+					ui.Text(c, dialog.error).FontSize(metrics.FontSizeS).Color(pal.danger).MarginSides(2, 0, 0, 0)
+				})
 			}
 		})
 	})
