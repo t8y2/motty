@@ -19,11 +19,13 @@ import (
 // private material in the vault to verify with afterwards.
 
 var (
-	hitHostKeyDeployClose  = tree.ID(dialogHits, "host-key-deploy-close")
-	hitHostKeyDeploySubmit = tree.ID(dialogHits, "host-key-deploy-submit")
-	hitHostKeyDeploySwitch = tree.ID(dialogHits, "host-key-deploy-switch")
-	hitHostKeyDeployStop   = tree.ID(dialogHits, "host-key-deploy-stop")
-	hitHostKeyDeployHosts  = tree.Sub(dialogHits, tree.Name("host-key-deploy-host"))
+	hitHostKeyDeployClose       = tree.ID(dialogHits, "host-key-deploy-close")
+	hitHostKeyDeploySubmit      = tree.ID(dialogHits, "host-key-deploy-submit")
+	hitHostKeyDeploySwitch      = tree.ID(dialogHits, "host-key-deploy-switch")
+	hitHostKeyDeployStop        = tree.ID(dialogHits, "host-key-deploy-stop")
+	hitHostKeyDeployHosts       = tree.Sub(dialogHits, tree.Name("host-key-deploy-host"))
+	hitHostKeyDeployStatus      = tree.Sub(dialogHits, tree.Name("host-key-deploy-status"))
+	hitHostKeyDeployDescription = tree.ID(dialogHits, "host-key-deploy-description")
 )
 
 type hostKeyDeployView struct {
@@ -149,21 +151,13 @@ func (state *State) declareHostKeyDeployment(c ui.C) {
 			if hasKey {
 				description = fmt.Sprintf(m.KeyDeployDescriptionFmt, key.Name, key.Fingerprint)
 			}
-			ui.Paragraph(c, description, 4).Color(state.pal.muted).FillWidth().Shrink(0)
+			ui.Paragraph(c, description, 4).Color(state.pal.muted).FillWidth().Shrink(0).Hit(hitHostKeyDeployDescription, m.KeyDeployDescriptionHint).Tooltip(m.KeyDeployDescriptionHint)
 			if !hasKey {
 				ui.Paragraph(c, m.KeyDeployKeyUnavailable, 2).Color(state.pal.danger).FillWidth().Shrink(0)
 				return
 			}
-			if v.started && state.hostKeyDeploy.running {
-				ui.Paragraph(c, m.KeyDeployRunning, 2).Color(state.pal.muted).FillWidth().Shrink(0)
-			} else if v.started {
-				ui.Paragraph(c, m.KeyDeployFinished, 2).Color(state.pal.muted).FillWidth().Shrink(0)
-			}
 			if !v.started {
-				ui.Checkbox(c, state.pageFlag(v.switchAuth), m.KeyDeploySwitch).Hit(hitHostKeyDeploySwitch, m.KeyDeploySwitch).Shrink(0)
-				if v.switchAuth {
-					ui.Paragraph(c, m.KeyDeploySwitchDescription, 2).Color(state.pal.muted).FillWidth().Shrink(0)
-				}
+				ui.Checkbox(c, state.pageFlag(v.switchAuth), m.KeyDeploySwitch).Hit(hitHostKeyDeploySwitch, m.KeyDeploySwitch).Shrink(0).Tooltip(m.KeyDeploySwitchDescription)
 			}
 			hosts := state.deployTargets()
 			if len(hosts) == 0 {
@@ -206,7 +200,7 @@ func (state *State) declareHostKeyDeployment(c ui.C) {
 						status = m.KeyDeployWaiting
 					}
 					if status != "" {
-						ui.Text(row.C, status).FontSize(metrics.FontSizeS).Color(color).Width(210).Ellipsis()
+						ui.Text(row.C, status).FontSize(metrics.FontSizeS).Color(color).Width(210).Ellipsis().Hit(hitHostKeyDeployStatus.At(int(host.ID)), status).Tooltip(status)
 					}
 				})
 			}).Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).Label(title)

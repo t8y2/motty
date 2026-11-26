@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -80,6 +81,9 @@ func TestDeploymentErrorsUseLocalizedCopyInsteadOfTheServerDetail(t *testing.T) 
 		if got == "" || got == "English server detail" {
 			t.Fatalf("%s used the server detail: %q", code, got)
 		}
+	}
+	if got := state.hostKeyDeployError(hostKeyDeployResult{Error: hostKeyDeployErrorHostKey}); !strings.Contains(got, "正常连接") {
+		t.Fatalf("host-key error has no next step: %q", got)
 	}
 }
 

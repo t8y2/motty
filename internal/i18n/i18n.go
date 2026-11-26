@@ -975,13 +975,12 @@ type Messages struct {
 	KeyDeployTitle              string
 	KeyDeployDescription        string
 	KeyDeployDescriptionFmt     string
+	KeyDeployDescriptionHint    string
 	KeyDeploySwitch             string
 	KeyDeploySwitchDescription  string
 	KeyDeploySubmit             string
 	KeyDeployClose              string
 	KeyDeployStop               string
-	KeyDeployRunning            string
-	KeyDeployFinished           string
 	KeyDeployWaiting            string
 	KeyDeployInstalled          string
 	KeyDeploySwitched           string

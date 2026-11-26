@@ -62,11 +62,11 @@ says so before you do. Deleting a key kept in Motty is final: there is no file t
 fall back on.
 
 **Deploy to Hosts** writes only the selected stored key's public half to the
-`~/.ssh/authorized_keys` of the hosts you choose. Each host needs a saved login
-password and an already-trusted host key; deployment never changes `sshd`
-configuration or disables password login. Turn on **Switch Motty to this key
-after a successful login** to verify the key with a fresh key-only connection
-and then change that host's saved authentication.
+`~/.ssh/authorized_keys` of the hosts you choose. Each host needs a login Motty
+can already use (a saved password, key, or SSH agent) and an already-trusted host
+key; deployment never changes `sshd` configuration or disables password login.
+Turn on **Switch Motty to this key after a successful login** to verify the key
+with a fresh key-only connection and then change that host's saved authentication.
 
 ### Certificates and the agent
 
