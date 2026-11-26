@@ -639,13 +639,14 @@ func TestMultilineLoginCommandFixedIntervalSendsLineByLineWithPasswordPrompt(t *
 	if len(results) != 3 {
 		t.Fatalf("results = %+v, want 3", results)
 	}
+	wantCommands := []string{"ssh ops@10.0.0.2", "***", "whoami"}
 	for i, r := range results {
-		if !r.Success || r.Step != i+1 || r.Total != 3 || r.HasExitCode || r.ExitCode != -1 || r.Command != "***" {
+		if !r.Success || r.Step != i+1 || r.Total != 3 || r.HasExitCode || r.ExitCode != -1 || r.Command != wantCommands[i] {
 			t.Fatalf("result[%d] = %+v", i, r)
 		}
 	}
-	if strings.Contains(state.status, "secret-pass") || strings.Contains(state.status, "whoami") {
-		t.Fatalf("final status leaked command text: %q", state.status)
+	if strings.Contains(state.status, "secret-pass") {
+		t.Fatalf("status leaked secret password: %q", state.status)
 	}
 }
 
@@ -779,7 +780,7 @@ func TestMultilineLoginCommandExpectFeedbackAndTimeout(t *testing.T) {
 	})
 
 	t.Run("expect timeout aborts with clear reason", func(t *testing.T) {
-		script := "ssh ops@10.0.0.2\n# @expect password:\n# @expect-timeout 5s\nsecret-pass"
+		script := "ssh ops@10.0.0.2\n# @expect ready>\n# @expect-timeout 5s\necho done"
 		state, shell, now := loginCommandSessionWithOptions(t, script, "wait", "", "")
 		session := &state.sessions[0]
 		token := session.term.folderToken
@@ -791,11 +792,51 @@ func TestMultilineLoginCommandExpectFeedbackAndTimeout(t *testing.T) {
 		*now += 5 * time.Second
 		state.Wake()
 
-		if session.LoginCommandAborted() == "" || !strings.Contains(session.LoginCommandAborted(), "password:") {
+		if session.LoginCommandAborted() == "" || !strings.Contains(session.LoginCommandAborted(), "ready>") {
 			t.Fatalf("expected expect-timeout abort notice, got %q", session.LoginCommandAborted())
 		}
 		if shell.typed() != "ssh ops@10.0.0.2\r" {
 			t.Fatalf("sent step 2 after expect timeout: %q", shell.typed())
+		}
+	})
+
+	t.Run("regex pattern and exact word secret matching", func(t *testing.T) {
+		script := "open-shop\n# @expect shopping>\nbuy milk\n# @expect /(?i)(verification|passcode):/\n998877\necho ok"
+		state, shell, _ := loginCommandSessionWithOptions(t, script, "wait", "", "")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		shell.say("shopping> ")
+		state.Wake()
+		if shell.typed() != "open-shop\rbuy milk\r" {
+			t.Fatalf("step 2 typed %q", shell.typed())
+		}
+		// Status bar must not leak @expect pattern when waiting.
+		if strings.Contains(state.status, "verification") || strings.Contains(state.status, "passcode") {
+			t.Fatalf("status bar leaked @expect pattern: %q", state.status)
+		}
+
+		shell.say("Verification: ")
+		state.Wake()
+		if shell.typed() != "open-shop\rbuy milk\r998877\r" {
+			t.Fatalf("step 3 typed %q", shell.typed())
+		}
+		shell.say("\r\n\x1b]133;D;0;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		shell.say("\r\n\x1b]133;D;0;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+
+		results := session.LoginCommandResults()
+		if len(results) != 4 {
+			t.Fatalf("results = %+v, want 4", results)
+		}
+		if results[1].Command != "buy milk" {
+			t.Fatalf("shopping> falsely masked non-secret command: %+v", results[1])
+		}
+		if results[2].Command != "***" {
+			t.Fatalf("Verification: did not mask secret command: %+v", results[2])
 		}
 	})
 }
@@ -886,7 +927,7 @@ func TestMultilineLoginCommandSecretRedaction(t *testing.T) {
 }
 
 func TestMultilineLoginCommandFixedIntervalWithWorkspaceCommand(t *testing.T) {
-	state, shell, now := loginCommandSessionWithOptions(t, "ssh ops@10.0.0.2\nsecret-pass", "interval", "500ms", "")
+	state, shell, now := loginCommandSessionWithOptions(t, "ssh ops@10.0.0.2\n# @secret\nsecret-pass", "interval", "500ms", "")
 	session := &state.sessions[0]
 	session.workspaceCommand = WorkspaceCommand{Command: "cd /srv/app"}
 	session.term.armInitialization(state, session)
@@ -915,7 +956,7 @@ func TestMultilineLoginCommandFixedIntervalWithWorkspaceCommand(t *testing.T) {
 		t.Fatalf("workspace step typed %q, want %q", shell.typed(), want3)
 	}
 	results := session.LoginCommandResults()
-	if len(results) != 2 || results[0].Command != "***" || results[1].Command != "***" {
+	if len(results) != 2 || results[0].Command != "ssh ops@10.0.0.2" || results[1].Command != "***" {
 		t.Fatalf("unexpected results: %+v", results)
 	}
 }
@@ -983,6 +1024,54 @@ func TestMultilineLoginCommandPauseAndDisconnectDuringWait(t *testing.T) {
 		}
 		if strings.Contains(session.LoginCommandAborted(), "hidden-pw") {
 			t.Fatalf("abort notice leaked secret: %q", session.LoginCommandAborted())
+		}
+	})
+}
+
+func TestAppendExpectDataSplitInputs(t *testing.T) {
+	stream := "\x1b]133;C;motty=abc\x07\x1b[32mops@host\x1b[0m's \x1b]0;title\x1b\\password: \x1b[K"
+	want := "ops@host's password: "
+
+	// 1-byte at a time split across every escape boundary.
+	var oneByte loginCommand
+	for i := 0; i < len(stream); i++ {
+		oneByte.appendExpectData([]byte{stream[i]})
+	}
+	if oneByte.expectText() != want {
+		t.Fatalf("1-byte split got %q, want %q", oneByte.expectText(), want)
+	}
+
+	// 2-byte and 3-byte splits.
+	for _, chunk := range []int{2, 3, 5} {
+		var split loginCommand
+		for i := 0; i < len(stream); i += chunk {
+			end := min(i+chunk, len(stream))
+			split.appendExpectData([]byte(stream[i:end]))
+		}
+		if split.expectText() != want {
+			t.Fatalf("%d-byte split got %q, want %q", chunk, split.expectText(), want)
+		}
+	}
+}
+
+func FuzzAppendExpectData(f *testing.F) {
+	f.Add([]byte("\x1b[31mhello\x1b[0m \x1b]133;A;motty=tok\x07$ \x1b]0;t\x1b\\"), uint8(3))
+	f.Add([]byte("password: \r\n\x1b[?2004h"), uint8(1))
+	f.Fuzz(func(t *testing.T, data []byte, split uint8) {
+		var whole loginCommand
+		whole.appendExpectData(data)
+
+		step := int(split%7) + 1
+		var chunked loginCommand
+		for i := 0; i < len(data); i += step {
+			end := min(i+step, len(data))
+			chunked.appendExpectData(data[i:end])
+		}
+		if whole.expectBuf != chunked.expectBuf {
+			t.Fatalf("whole=%q != chunked(%d)=%q", whole.expectBuf, step, chunked.expectBuf)
+		}
+		if strings.ContainsRune(whole.expectBuf, '\x1b') || strings.ContainsRune(whole.expectBuf, '\x07') {
+			t.Fatalf("control character leaked: %q", whole.expectBuf)
 		}
 	})
 }

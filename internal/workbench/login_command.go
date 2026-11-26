@@ -2,8 +2,10 @@ package workbench
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/gfx"
@@ -155,6 +157,7 @@ type loginStep struct {
 	hasDelay      bool
 	delay         time.Duration
 	expect        string
+	expectRE      *regexp.Regexp
 	hasTimeout    bool
 	expectTimeout time.Duration
 	secret        bool
@@ -164,12 +167,23 @@ func isSecretExpect(pattern string) bool {
 	if pattern == "" {
 		return false
 	}
+	if len(pattern) >= 3 && strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "/") {
+		pattern = pattern[1 : len(pattern)-1]
+	}
 	if cmdhistory.PasswordPrompt(pattern) {
 		return true
 	}
-	lower := strings.ToLower(pattern)
-	for _, kw := range []string{"password", "passphrase", "passcode", "secret", "token", "pin", "otp", "密码", "口令"} {
-		if strings.Contains(lower, kw) {
+	for _, kw := range []string{"密码", "口令", "验证码", "令牌"} {
+		if strings.Contains(pattern, kw) {
+			return true
+		}
+	}
+	words := strings.FieldsFunc(strings.ToLower(pattern), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	for _, w := range words {
+		switch w {
+		case "password", "passphrase", "passcode", "verification", "secret", "token", "pin", "otp", "credential":
 			return true
 		}
 	}
@@ -206,6 +220,7 @@ func parseLoginStepsWithValidation(value string) ([]loginStep, bool) {
 	var pendingDelay time.Duration
 	var hasPendingDelay bool
 	var pendingExpect string
+	var pendingExpectRE *regexp.Regexp
 	var pendingTimeout time.Duration
 	var hasPendingTimeout bool
 	var pendingSecret bool
@@ -238,6 +253,15 @@ func parseLoginStepsWithValidation(value string) ([]loginStep, bool) {
 						continue
 					}
 					pendingExpect = arg
+					pendingExpectRE = nil
+					if len(arg) >= 3 && strings.HasPrefix(arg, "/") && strings.HasSuffix(arg, "/") {
+						re, err := regexp.Compile(arg[1 : len(arg)-1])
+						if err != nil {
+							valid = false
+							continue
+						}
+						pendingExpectRE = re
+					}
 				case "@expect-timeout":
 					if !hasArg || arg == "" {
 						valid = false
@@ -266,6 +290,7 @@ func parseLoginStepsWithValidation(value string) ([]loginStep, bool) {
 			hasDelay:      hasPendingDelay,
 			delay:         pendingDelay,
 			expect:        pendingExpect,
+			expectRE:      pendingExpectRE,
 			hasTimeout:    hasPendingTimeout,
 			expectTimeout: pendingTimeout,
 			secret:        pendingSecret || isSecretExpect(pendingExpect),
@@ -273,6 +298,7 @@ func parseLoginStepsWithValidation(value string) ([]loginStep, bool) {
 		pendingDelay = 0
 		hasPendingDelay = false
 		pendingExpect = ""
+		pendingExpectRE = nil
 		pendingTimeout = 0
 		hasPendingTimeout = false
 		pendingSecret = false
@@ -571,32 +597,36 @@ func (login *loginCommand) expectText() string {
 	return text
 }
 
-func (login *loginCommand) matchesExpect(pattern string) bool {
-	if pattern == "" {
+func (login *loginCommand) matchesExpect(step loginStep) bool {
+	if step.expect == "" {
 		return false
 	}
 	text := login.expectText()
 	if text == "" {
 		return false
 	}
-	return strings.Contains(strings.ToLower(text), strings.ToLower(pattern))
+	if step.expectRE != nil {
+		return step.expectRE.MatchString(text)
+	}
+	return strings.Contains(strings.ToLower(text), strings.ToLower(step.expect))
 }
 
 func (login *loginCommand) isSecretStepAtSend(t *terminal, step loginStep) bool {
-	if step.secret || login.mode == loginSendFixedInterval || isSecretExpect(step.expect) {
+	if step.secret || isSecretExpect(step.expect) {
 		return true
-	}
-	if t != nil && t.screen != nil {
-		if cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
-			return true
-		}
 	}
 	if text := strings.TrimSpace(login.expectText()); text != "" {
 		lines := strings.Split(text, "\n")
 		for i := len(lines) - 1; i >= 0; i-- {
 			if trimmed := strings.TrimSpace(lines[i]); trimmed != "" {
-				return cmdhistory.PasswordPrompt(trimmed)
+				return cmdhistory.PasswordPrompt(trimmed) || isSecretExpect(trimmed)
 			}
+		}
+	}
+	if (login.next == 0 || login.seen) && t != nil && t.screen != nil {
+		row := t.screen.RowText(t.screen.Cursor().Y)
+		if cmdhistory.PasswordPrompt(row) || isSecretExpect(row) {
+			return true
 		}
 	}
 	return false
@@ -758,7 +788,7 @@ func (state *State) loginStepFinished(session *Session, now time.Duration) bool 
 		return false
 	}
 	if expect := t.login.nextExpect(); expect != "" {
-		return t.login.matchesExpect(expect)
+		return t.login.matchesExpect(t.login.stepAt(t.login.next))
 	}
 	if t.login.mode == loginSendFixedInterval && !t.login.isWorkspaceStep {
 		return !t.login.waitingDelay || now >= t.login.delayUntil
@@ -931,7 +961,11 @@ func (state *State) abortLoginCommands(session *Session, reason loginAbortReason
 	case loginAbortTimeout:
 		msg = fmt.Sprintf(m.LoginCommandAbortTimeoutFmt, cmd)
 	case loginAbortExpectTimeout:
-		msg = fmt.Sprintf(m.LoginCommandAbortExpectTimeoutFmt, t.login.nextExpect(), cmd)
+		expect := t.login.nextExpect()
+		if isSecretExpect(expect) {
+			expect = "***"
+		}
+		msg = fmt.Sprintf(m.LoginCommandAbortExpectTimeoutFmt, expect, cmd)
 	case loginAbortAbnormalPrompt:
 		msg = fmt.Sprintf(m.LoginCommandAbortPromptFmt, cmd)
 	}
@@ -1017,7 +1051,7 @@ func (state *State) runLoginCommand(session *Session) {
 		} else {
 			if !t.login.isWorkspaceStep {
 				if expect := t.login.nextExpect(); expect != "" {
-					state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, max(len(t.login.lines), 1), expect)
+					state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, max(len(t.login.lines), 1))
 					if now-t.login.sentAt >= t.login.nextExpectTimeout() {
 						state.abortLoginCommands(session, loginAbortExpectTimeout)
 					}
@@ -1209,7 +1243,7 @@ func (t *terminal) pauseInitialization() {
 
 func (state *State) sendInitializationCommand(session *Session, t *terminal) {
 	login := t.login
-	wasAtPrompt := t.promptReady
+	wasAtPrompt := t.promptIdle()
 	prevSubmitted := t.submittedLines
 	step := login.stepAt(login.next)
 	secret := login.isSecretStepAtSend(t, step)
@@ -1285,7 +1319,7 @@ func (state *State) sendInitializationCommand(session *Session, t *terminal) {
 			}
 		}
 		if expect := t.login.nextExpect(); expect != "" {
-			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, total, expect)
+			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandWaitingExpectFmt, t.login.next+1, total)
 		} else {
 			state.status = fmt.Sprintf(state.messages.Tools.LoginCommandStepSentFmt, t.login.activeIndex+1, total)
 		}
