@@ -2328,6 +2328,9 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalFileProperties {
 		return gfx.EventResult{Handled: true}
 	}
+	if state.modal == modalRecordingPlayback {
+		return state.scrollRecordingPlayback(event)
+	}
 	if state.modal == modalLocalProxy {
 		if scroll := state.localProxyUI.bodyScroll; scroll != nil {
 			result := scroll.Wheel(event)

@@ -1,9 +1,9 @@
 package workbench
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,18 +56,20 @@ func TestTerminalRecordingCapturesAcceptedSplitInputAndOutputDeterministically(t
 	if recording.active || len(recording.events) != 3 {
 		t.Fatalf("recording active=%t events=%d", recording.active, len(recording.events))
 	}
-	encoded := encodeTerminalRecording(recording)
-	var replayed terminalRecording
-	replayed.start(0)
-	if err := replayTerminalRecording(encoded, func(at time.Duration, direction terminalRecordingDirection, data []byte) error {
-		replayed.append(at, direction, data)
-		return nil
-	}); err != nil {
+	file, err := decodeRecordingFile(encodeAsciicast(recording, "title"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	replayed.stop()
-	if !bytes.Equal(encoded, encodeTerminalRecording(&replayed)) {
-		t.Fatal("recording replay was not deterministic")
+	cols, rows := session.term.screen.Size()
+	if file.cols != max(cols, minTerminalCols) || file.rows != max(rows, minTerminalRows) || file.title != "title" || len(file.events) != len(recording.events) {
+		t.Fatalf("decoded size %dx%d title %q events %d, screen %dx%d", file.cols, file.rows, file.title, len(file.events), cols, rows)
+	}
+	for index, event := range recording.events {
+		got := file.events[index]
+		// The file holds text: the byte no character can start is replaced.
+		if got.at != event.at || got.direction != event.direction || string(got.data) != strings.ToValidUTF8(string(event.data), "\uFFFD") {
+			t.Fatalf("event %d decoded as %+v, recorded %+v", index, got, event)
+		}
 	}
 	if got := string(recording.events[0].data); got != "ls" || recording.events[0].direction != terminalRecordingInput || recording.events[0].at != 0 {
 		t.Fatalf("first event=%+v data=%q", recording.events[0], got)
@@ -124,14 +126,14 @@ func TestTerminalRecordingStopsOnDisconnectAndIsBounded(t *testing.T) {
 	}
 }
 
-func TestTerminalRecordingExportUsesPrivateVersionedFile(t *testing.T) {
+func TestTerminalRecordingExportWritesAnAsciicastFilePrivately(t *testing.T) {
 	now := time.Second
 	state, _, _ := liveRecordingSession(t, &now)
 	session := &state.sessions[0]
 	session.term.recording.start(now)
 	session.term.recording.append(now+time.Millisecond, terminalRecordingOutput, []byte("hello\r\n"))
 	session.term.recording.stop()
-	path := filepath.Join(t.TempDir(), "session.mottyrec")
+	path := filepath.Join(t.TempDir(), "session.cast")
 	state.options.SaveFile = func(app.SaveFileOptions) (string, error) { return path, nil }
 
 	state.exportTerminalRecording(session)
@@ -139,8 +141,8 @@ func TestTerminalRecordingExportUsesPrivateVersionedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := replayTerminalRecording(data, func(time.Duration, terminalRecordingDirection, []byte) error { return nil }); err != nil {
-		t.Fatal(err)
+	if file, err := decodeRecordingFile(data); err != nil || len(file.events) != 1 {
+		t.Fatalf("export decodes as %+v, %v", file, err)
 	}
 	requirePrivateFile(t, path)
 }

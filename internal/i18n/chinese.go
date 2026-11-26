@@ -511,6 +511,13 @@ var ChineseMessages = Messages{
 	RecordingStopped:                       "终端录制已停止",
 	RecordingExportedFmt:                   "终端录制已导出到 %s",
 	RecordingExportFailedFmt:               "无法导出终端录制：%s",
+	RecordingOpen:                          "打开录制…",
+	RecordingInvalid:                       "这不是终端录制文件，或文件已损坏。",
+	RecordingPlay:                          "播放",
+	RecordingPause:                         "暂停",
+	RecordingPosition:                      "播放位置",
+	RecordingSpeed:                         "播放速度",
+	RecordingTruncated:                     "已达大小上限，后面的内容未记录",
 
 	NewHost:         "新建主机",
 	NewGroup:        "新建分组",

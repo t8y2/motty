@@ -603,6 +603,7 @@ const (
 	modalIconColorPicker
 	modalAgentHosts
 	modalAppLock
+	modalRecordingPlayback
 )
 
 // tone colors a session's headline.
@@ -1537,6 +1538,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalLocalProxy {
 		state.localProxyUI = localProxyUI{}
+	}
+	if state.modal == modalRecordingPlayback {
+		state.playback = nil
 	}
 	if state.modal == modalUpdate {
 		if state.update.checking {

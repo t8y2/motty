@@ -493,6 +493,13 @@ type Messages struct {
 	RecordingStopped                     string
 	RecordingExportedFmt                 string
 	RecordingExportFailedFmt             string
+	RecordingOpen                        string
+	RecordingInvalid                     string
+	RecordingPlay                        string
+	RecordingPause                       string
+	RecordingPosition                    string
+	RecordingSpeed                       string
+	RecordingTruncated                   string
 
 	// Toolbar and host table.
 	NewHost          string

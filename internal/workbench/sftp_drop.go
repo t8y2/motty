@@ -211,7 +211,7 @@ func (state *State) fileDropOnPage(event gfx.FileDropEvent) gfx.EventResult {
 		if state.clearTerminalDrop() {
 			repaint = true
 		}
-		return gfx.EventResult{Handled: state.terminalTakesPaths(event.X, event.Y), Repaint: repaint}
+		return gfx.EventResult{Handled: state.terminalTakesPaths(event.X, event.Y) || state.recordingDropArea(), Repaint: repaint}
 	}
 	repaint := state.clearDrop()
 	if session, view := state.dropPanel(event.X, event.Y); view != nil {
@@ -245,6 +245,10 @@ func (state *State) fileDropOnPage(event gfx.FileDropEvent) gfx.EventResult {
 	if state.terminalTakesPaths(event.X, event.Y) {
 		session, _ := state.sessionByIDPointer(state.activeSessionID)
 		session.term.send([]byte(quotedPaths(event.Paths, session.wslDistro()) + " "))
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.recordingDropArea() && len(event.Paths) == 1 {
+		state.openRecording(event.Paths[0])
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	return gfx.EventResult{Repaint: repaint}

@@ -113,7 +113,7 @@ func TestExportFileNameCarriesTheMomentOfSaving(t *testing.T) {
 	if got := terminalOutputName("", at); !strings.HasPrefix(got, "session-output-") || !strings.HasSuffix(got, ".txt") {
 		t.Fatalf("output name = %q", got)
 	}
-	if got := recordingName("a", at); !strings.HasSuffix(got, ".mottyrec") || !strings.Contains(got, "-terminal-") {
+	if got := recordingName("a", at); !strings.HasSuffix(got, ".cast") || !strings.Contains(got, "-terminal-") {
 		t.Fatalf("recording name = %q", got)
 	}
 }

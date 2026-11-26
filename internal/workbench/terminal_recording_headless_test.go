@@ -3,7 +3,6 @@
 package workbench
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,7 +55,7 @@ func TestHeadlessTerminalRecordingExportsReplayableShellIO(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	path := filepath.Join(t.TempDir(), "headless.mottyrec")
+	path := filepath.Join(t.TempDir(), "headless.cast")
 	if err := session.Driver().QueueSaveFile(path, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -68,17 +67,9 @@ func TestHeadlessTerminalRecordingExportsReplayableShellIO(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var replayed terminalRecording
-	replayed.start(0)
-	if err := replayTerminalRecording(data, func(at time.Duration, direction terminalRecordingDirection, data []byte) error {
-		replayed.append(at, direction, data)
-		return nil
-	}); err != nil {
+	replayed, err := decodeRecordingFile(data)
+	if err != nil {
 		t.Fatal(err)
-	}
-	replayed.stop()
-	if !bytes.Equal(data, encodeTerminalRecording(&replayed)) {
-		t.Fatal("headless export did not replay deterministically")
 	}
 	if shell.typed() != "printf headless" || len(replayed.events) != 2 {
 		t.Fatalf("typed=%q events=%d", shell.typed(), len(replayed.events))

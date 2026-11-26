@@ -463,7 +463,7 @@ func (state *State) clickSessionLogs(id gfx.ID) bool {
 	}
 	if view.moreMenu && id != hitSessionLogsMore {
 		view.moreMenu = false
-		if id != hitSessionLogsClearFavorite && id != hitSessionLogsClearAll {
+		if id != hitSessionLogsClearFavorite && id != hitSessionLogsClearAll && id != hitSessionLogsOpenRecording {
 			return true
 		}
 	}
@@ -495,6 +495,9 @@ func (state *State) clickSessionLogs(id gfx.ID) bool {
 		return true
 	case hitSessionLogsDelete:
 		state.askDeleteSessionLog()
+		return true
+	case hitSessionLogsOpenRecording:
+		state.chooseRecording()
 		return true
 	case hitSessionLogsClearFavorite:
 		state.askClearSessionLogs(false)

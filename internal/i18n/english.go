@@ -511,6 +511,13 @@ var EnglishMessages = Messages{
 	RecordingStopped:                       "Terminal recording stopped",
 	RecordingExportedFmt:                   "Terminal recording exported to %s",
 	RecordingExportFailedFmt:               "Could not export terminal recording: %s",
+	RecordingOpen:                          "Open recording…",
+	RecordingInvalid:                       "This is not a terminal recording, or the file is damaged.",
+	RecordingPlay:                          "Play",
+	RecordingPause:                         "Pause",
+	RecordingPosition:                      "Playback position",
+	RecordingSpeed:                         "Playback speed",
+	RecordingTruncated:                     "Cut short at the size limit",
 
 	NewHost:         "New Host",
 	NewGroup:        "New Group",

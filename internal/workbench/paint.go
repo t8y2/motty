@@ -2999,6 +2999,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareAIRenameDialog(c)
 	case modalHostImportResult:
 		state.declareHostImportResult(c)
+	case modalRecordingPlayback:
+		state.declareRecordingPlayback(c)
 	case modalFileProperties:
 		state.declareFileProperties(c)
 	case modalLocalProxy:

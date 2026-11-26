@@ -743,6 +743,8 @@ type State struct {
 	appearanceMode       appearanceMode
 	cornerStyle          cornerStyle
 	terminalTransparency ui.SliderState
+	// playback is the recording being played, while its dialog is open.
+	playback *recordingPlayback
 	// windowComposited is whether the desktop really shows through the window,
 	// as the platform reported when it opened: the setting means nothing without it.
 	windowComposited atomic.Bool
@@ -1939,6 +1941,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalHostImportResult:
 		state.clickHostImportResult(id)
+		return
+	case modalRecordingPlayback:
+		state.clickRecordingPlayback(id)
 		return
 	case modalSessionImportPreview:
 		state.clickSessionImportPreview(id)

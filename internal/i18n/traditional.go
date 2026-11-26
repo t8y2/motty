@@ -511,6 +511,13 @@ var TraditionalMessages = Messages{
 	RecordingStopped:                       "終端機錄製已停止",
 	RecordingExportedFmt:                   "終端機錄製已匯出到 %s",
 	RecordingExportFailedFmt:               "無法匯出終端機錄製：%s",
+	RecordingOpen:                          "開啟錄製…",
+	RecordingInvalid:                       "這不是終端機錄製檔，或檔案已損毀。",
+	RecordingPlay:                          "播放",
+	RecordingPause:                         "暫停",
+	RecordingPosition:                      "播放位置",
+	RecordingSpeed:                         "播放速度",
+	RecordingTruncated:                     "已達大小上限，後面的內容未記錄",
 
 	NewHost:         "新增主機",
 	NewGroup:        "新增群組",
