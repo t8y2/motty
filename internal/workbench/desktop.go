@@ -340,14 +340,6 @@ func (view *desktopView) pointerCursor(scale float32, over bool) (gfx.PointerCur
 	return gfx.PointerCursorCrosshair, nil
 }
 
-// paintPointer paints the remote's pointer over the picture when its shape
-// shows the picture through its body. An inverting pointer has no image a
-// system could draw as a cursor, so the workbench paints it: the shape's own
-// pixels, with each inverting pixel the inverse of the picture beneath it.
-// over says whether the pointer is over the picture and no control it is not
-// over holds the press, because the pointer a press belongs to stays with that
-// control. origin and scale are where one remote pixel sits and how many page
-// pixels it takes (see place).
 // desktopPointerBitmapIDBase keeps painted-pointer bitmaps in their own
 // identity space, below gfx.Surface's 1<<61 tile range and distinct from
 // Motty's static icons and blurred thumbnails.
@@ -371,6 +363,14 @@ func copyPremultipliedBGRA(dst, src []byte) {
 	}
 }
 
+// paintPointer paints the remote's pointer over the picture when its shape
+// shows the picture through its body. An inverting pointer has no image a
+// system could draw as a cursor, so the workbench paints it: the shape's own
+// pixels, with each inverting pixel the inverse of the picture beneath it.
+// over says whether the pointer is over the picture and no control it is not
+// over holds the press, because the pointer a press belongs to stays with that
+// control. origin and scale are where one remote pixel sits and how many page
+// pixels it takes (see place).
 func (view *desktopView) paintPointer(canvas *gfx.Canvas, origin gfx.Point, scale float32, over bool) {
 	shape := view.pointerShape
 	pictureWidth, pictureHeight := view.surface.Size()
