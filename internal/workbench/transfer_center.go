@@ -417,7 +417,7 @@ func (state *State) syncTransfers(view *sftpView) {
 	if state.sftpClearUploads {
 		for index := len(center.entries) - 1; index >= 0; index-- {
 			entry := &center.entries[index]
-			if entry.owner == view && entry.snapshot.Operation == sftpclient.OperationUpload && entry.snapshot.State == sftpclient.TransferCompleted {
+			if !entry.removed && entry.owner == view && entry.snapshot.Operation == sftpclient.OperationUpload && entry.snapshot.State == sftpclient.TransferCompleted {
 				state.removeTransfer(index)
 				changed = true
 			}
@@ -948,7 +948,7 @@ func (state *State) clickTransferTask(id gfx.ID, view *sftpView) bool {
 }
 
 func (center *transferCenter) shows(entry *transferEntry) bool {
-	return center.matches(entry) && transferFilterShows(center.filter, entry.snapshot)
+	return center.matches(entry) && (center.filter == transferFilterAll || center.filter == transferEntryGroup(entry))
 }
 
 func (center *transferCenter) matches(entry *transferEntry) bool {

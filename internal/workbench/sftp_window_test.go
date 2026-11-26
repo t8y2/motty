@@ -301,13 +301,17 @@ func TestSFTPWindowConflictNeedsConfirmation(t *testing.T) {
 	os.WriteFile(file, []byte("new content"), 0600)
 	w.queueEntries(true, []sftpclient.Entry{{Name: "notes.txt"}}, dir, w.view.path)
 	dualWait(t, state, w, view, func() bool {
-		return len(w.view.transfers) == 1 && w.view.transfers[0].State == sftpclient.TransferFailed
+		return len(w.view.transfers) == 1 && w.view.transfers[0].State == sftpclient.TransferFailed && len(w.view.conflictPrompt.targets) == 1
 	})
 	remote.mu.Lock()
 	before := string(remote.files["/home/test/notes.txt"])
 	remote.mu.Unlock()
 	if before != "hello world" {
 		t.Fatal("conflict overwrote without confirmation")
+	}
+	view.Keys("escape")
+	if len(w.view.conflictPrompt.targets) != 0 {
+		t.Fatal("Escape did not dismiss the quick conflict prompt")
 	}
 	index := state.transfers.byTask[transferKey{w.view, w.view.transfers[0].ID}]
 	dualClickID(t, view, tree.MountID(sftpWindowQueueActions, hitTransfersReplace.At(state.transfers.entries[index].id)))

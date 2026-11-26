@@ -101,3 +101,61 @@ func TestTransferConflictWaitsForAnotherConnectionsFileDialog(t *testing.T) {
 		})
 	}
 }
+
+func TestTransferConflictBlocksSFTPWindowBackgroundInteraction(t *testing.T) {
+	state, _, w, remote, _ := openSFTPTabFixture(t)
+	bulkConflict(t, state, w.view, remote, "exists", "old")
+	state.showTransferConflict(w.view)
+	if !w.transferConflictOpen() || !w.listBlocked() || w.queueDetailsAllowed() {
+		t.Fatal("an open conflict prompt did not block background file-window interactions")
+	}
+	w.click(hitTransferConflictCancel)
+	if w.transferConflictOpen() || w.listBlocked() || !w.queueDetailsAllowed() {
+		t.Fatal("canceling the conflict prompt left the file window blocked")
+	}
+}
+
+func TestNonRetryableConflictSettlesTerminalUploadAndCountsAsFailed(t *testing.T) {
+	_, options := newWorld(t)
+	options.Invalidate = func() {}
+	state := newTestState(t, options)
+	view, _ := bulkTestView(t, state)
+	snapshot := sftpclient.TransferSnapshot{
+		ID:        99,
+		Operation: sftpclient.OperationUpload,
+		State:     sftpclient.TransferFailed,
+		Retryable: false,
+		Source:    "/tmp/exists.txt",
+		Error:     sftpclient.ErrDestinationExists.Error(),
+	}
+	view.transfers = []sftpclient.TransferSnapshot{snapshot}
+	state.terminalUploads = []terminalUploadBatch{{view: view, total: 1, pending: map[uint64]struct{}{snapshot.ID: {}}}}
+	state.settleTerminalUploads(view)
+	if len(state.terminalUploads) != 0 {
+		t.Fatal("a non-retryable conflict hung terminal upload settlement")
+	}
+
+	// An orphaned conflict entry (no live owner) must classify consistently as Failed.
+	orphan := transferEntry{
+		id: 1,
+		snapshot: sftpclient.TransferSnapshot{
+			ID:        100,
+			Operation: sftpclient.OperationUpload,
+			State:     sftpclient.TransferFailed,
+			Retryable: true,
+			Source:    "/tmp/orphan.txt",
+			Error:     sftpclient.ErrDestinationExists.Error(),
+		},
+	}
+	state.describeTransfer(&orphan)
+	state.transfers.entries = []transferEntry{orphan}
+	state.describeTransferSummary()
+	if state.transfers.pending != 0 || state.transfers.failed != 1 ||
+		len(state.transfers.groups[transferFilterPending].members) != 0 ||
+		len(state.transfers.groups[transferFilterFailed].members) != 1 {
+		t.Fatalf("orphaned conflict misclassified: pending=%d failed=%d pendingGroup=%d failedGroup=%d",
+			state.transfers.pending, state.transfers.failed,
+			len(state.transfers.groups[transferFilterPending].members),
+			len(state.transfers.groups[transferFilterFailed].members))
+	}
+}

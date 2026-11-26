@@ -30,6 +30,9 @@ func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testin
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
+	// The path bar setting is in the shared settings group, below the initial viewport.
+	state.settings.jump = state.messages.Tools.FilesPathStyle
+	paint()
 	for _, input := range []bool{false, true} {
 		hit, ok := settingsChoiceIn(paint(), state.settingsPathLabel(input))
 		if !ok || hit.Role != gfx.RoleRadio || hit.Selected != !input {
@@ -58,6 +61,8 @@ func TestSFTPPathSettingPreservesBreadcrumbsByDefaultAndSavesTheChoice(t *testin
 	}
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsFiles)
+	state.settings.jump = state.messages.Tools.FilesPathStyle
+	paint()
 	clickSettingsChoice(t, state, state.settingsPathLabel(false))
 	saved, _, err = loadState(state.options.StatePath)
 	if err != nil || saved.SFTPPathInput {

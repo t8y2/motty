@@ -181,7 +181,7 @@ func (state *State) declareTransferResult(c ui.C, entry *transferEntry, width fl
 				}
 				return
 			}
-			glyph, tint := state.transferGroupLook(transferGroupOf(snapshot))
+			glyph, tint := state.transferGroupLook(transferEntryGroup(entry))
 			if snapshot.State == sftpclient.TransferCanceled {
 				glyph, tint = icons.X, pal.muted
 			}

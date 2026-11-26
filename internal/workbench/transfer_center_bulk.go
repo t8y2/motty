@@ -93,6 +93,22 @@ func transferGroupOf(snapshot sftpclient.TransferSnapshot) int {
 	}
 }
 
+func transferEntryGroup(entry *transferEntry) int {
+	if entry.conflict {
+		return transferFilterPending
+	}
+	switch entry.snapshot.State {
+	case sftpclient.TransferRunning:
+		return transferFilterRunning
+	case sftpclient.TransferQueued, sftpclient.TransferPaused:
+		return transferFilterWaiting
+	case sftpclient.TransferFailed:
+		return transferFilterFailed
+	default:
+		return transferFilterEnded
+	}
+}
+
 // The compact card summarizes all transfers. Saved filters and collapsed groups
 // belong to the full history and must not suppress automatic progress notices.
 func (state *State) openTransferCenterForQueued() {
@@ -139,7 +155,7 @@ func (state *State) describeTransferScope() {
 			continue
 		}
 		matched++
-		group := transferGroupOf(entry.snapshot)
+		group := transferEntryGroup(entry)
 		center.groups[group].members = append(center.groups[group].members, index)
 		if center.filter != transferFilterAll && center.filter != group {
 			continue

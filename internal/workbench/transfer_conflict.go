@@ -71,6 +71,19 @@ func (state *State) transferConflictAllowed(view *sftpView) bool {
 	return w == nil || !w.closeConfirm && w.externalConflict == 0 && !w.bookmark.open && !w.fileProperties.open && len(w.ui.queueBatch.targets) == 0
 }
 
+func (state *State) transferConflictShowing(view *sftpView) bool {
+	if view == nil || len(view.conflictPrompt.targets) == 0 || !state.transferConflictAllowed(view) {
+		return false
+	}
+	for _, target := range view.conflictPrompt.targets {
+		entry := state.transfers.capturedEntry(target)
+		if entry != nil && entry.snapshot.QueueOrder == target.attempt && transferRetryEligible(entry, true) {
+			return true
+		}
+	}
+	return false
+}
+
 func (state *State) declareTransferConflict(c ui.C, view *sftpView) {
 	if !state.transferConflictAllowed(view) || !state.pruneTransferConflict(view) {
 		return
