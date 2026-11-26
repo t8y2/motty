@@ -39,6 +39,7 @@ const (
 	EventAgentModeRequest                  // The user may switch from Ask to Agent
 	EventDone                              // the run finished; Usage is the sum over all turns
 	EventError                             // Text describes the failure; the run ends
+	EventSteer                             // Text is an interjection Run has put into the conversation
 )
 
 // Event is one item reported to the caller.
@@ -98,6 +99,19 @@ type Config struct {
 	// RedactToolResults masks secrets (see Redact) in tool output before it is
 	// sent to the model. The zero value leaves output untouched.
 	RedactToolResults bool
+
+	// Steer hands over the user's interjections queued since the last call, in
+	// the order they were sent. Run calls it only at its safe points: after a
+	// round of tool results, and when the model is about to finish. It must not
+	// block. Providers that run their own loop ignore it (see Steerable).
+	Steer func() []string
+}
+
+// Steerable reports whether Run takes interjections from Config.Steer for this
+// provider. A SessionProvider runs its own loop and cannot receive them.
+func Steerable(provider llm.Provider) bool {
+	_, session := provider.(SessionProvider)
+	return !session
 }
 
 const (
@@ -312,6 +326,17 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			calls = allowed
 		}
 		if final || len(calls) == 0 {
+			// An interjection that arrived while the model was answering has
+			// not been read yet: the answer so far stays in the history and the
+			// run goes on with the interjections, rather than ending unheard.
+			if steers := takeSteers(cfg); len(steers) > 0 {
+				if strings.TrimSpace(text) != "" {
+					msgs = append(msgs, llm.Message{Role: llm.RoleAssistant, Text: text, Thinking: thinking})
+				}
+				msgs = appendSteers(msgs, steers, emit, turn, usage, usageIncomplete)
+				safe = len(msgs)
+				continue
+			}
 			// A turn with no prose and no calls is never a real answer: say so
 			// instead of ending on an empty bubble. The exception is an answer
 			// the provider cut off at its output limit before any prose
@@ -394,7 +419,31 @@ func Run(ctx context.Context, cfg Config, history []llm.Message, userText string
 			emit(Event{Kind: EventError, Text: err.Error(), Step: turn, Usage: usage, UsageIncomplete: usageIncomplete})
 			return newMsgs(), err
 		}
+		// The round is complete, so the next request is the place to read what
+		// the user interjected while the tools ran.
+		if steers := takeSteers(cfg); len(steers) > 0 {
+			msgs = appendSteers(msgs, steers, emit, turn, usage, usageIncomplete)
+			safe = len(msgs)
+		}
 	}
+}
+
+// takeSteers returns the interjections queued for Run, or nil.
+func takeSteers(cfg Config) []string {
+	if cfg.Steer == nil {
+		return nil
+	}
+	return cfg.Steer()
+}
+
+// appendSteers puts each interjection into the conversation as a user message
+// and reports it, so the caller can show it where the model will read it.
+func appendSteers(msgs []llm.Message, steers []string, emit func(Event), turn int, usage llm.Usage, incomplete bool) []llm.Message {
+	for _, text := range steers {
+		msgs = append(msgs, llm.Message{Role: llm.RoleUser, Text: text})
+		emit(Event{Kind: EventSteer, Text: text, Step: turn, Usage: usage, UsageIncomplete: incomplete})
+	}
+	return msgs
 }
 
 func fail(emit func(Event), _ []llm.Message, step int, u llm.Usage, err error) ([]llm.Message, error) {
