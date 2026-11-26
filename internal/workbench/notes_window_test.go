@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
@@ -114,7 +113,7 @@ func TestNoteWindowSharesTabsAndReadsLiveDraftWithoutFileIO(t *testing.T) {
 			t.Fatal("live update missing")
 		}
 		d.note.content.previewScroll = 17
-		d.note.content.view.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: 2})
+		d.note.content.view.previewSelect.Select(ui.TextPoint{}, ui.TextPoint{Offset: 2})
 		s.openNoteWindow("second")
 		s.openNoteWindow("note")
 		if m.activeDocument() != d || d.note.content.previewScroll != 17 || d.note.content.view.previewSelect.Focus.Offset != 2 {

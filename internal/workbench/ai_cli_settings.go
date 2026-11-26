@@ -178,10 +178,12 @@ func (state *State) declareAIProviderForm(c ui.C, height float32) {
 			state.aiFormKeyField(c, hitAISetFormKey, &cfg.formAPIKey, m.FormKey, m.FormKeyPH, hint, keyHeight, aiFormFocusKey)
 		}
 		if cfg.formErr != "" {
-			problem := ui.Text(c, cfg.formErr).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(18)
-			if !cli {
-				problem.Weight(gfx.WeightMedium)
-			}
+			ui.TextSelectionArea(c, &cfg.formErrSelection).Children(func() {
+				problem := ui.Text(c, cfg.formErr).FontSize(metrics.FontSizeS).Color(state.pal.danger).LineHeight(18)
+				if !cli {
+					problem.Weight(gfx.WeightMedium)
+				}
+			})
 		}
 	})
 }

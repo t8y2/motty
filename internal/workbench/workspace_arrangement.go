@@ -4,8 +4,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/vivaui/viva/gfx"
 	layoutcore "motty/internal/workspace"
+
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 type workspaceArrangementItem struct {
@@ -27,6 +29,7 @@ type workspaceArrangement struct {
 	scrollSynced float32
 	bounds       gfx.Rect
 	err          string
+	errSelection ui.TextSelectionState // what the user selected of err, to copy it
 }
 
 func workspaceTemplateItems(template WorkspaceTemplate) []workspaceArrangementItem {

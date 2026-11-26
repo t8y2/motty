@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
 )
 
 func TestNotesRenderedPreviewSelectsAndCopiesText(t *testing.T) {
@@ -94,8 +94,8 @@ func TestNotesPreviewSelectionIsIsolatedAndClearedWhenContentChanges(t *testing.
 	if s.notes.rendered.SelectedText(s.notes.view.previewSelect.In(0)) != "" {
 		t.Fatal("Escape did not clear selection")
 	}
-	s.notes.view.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: 1})
-	s.notes.view.previewSelect.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary}, func(gfx.Point) (components.TextPoint, bool) { return components.TextPoint{}, true })
+	s.notes.view.previewSelect.Select(ui.TextPoint{}, ui.TextPoint{Offset: 1})
+	s.notes.view.previewSelect.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary}, func(gfx.Point) (ui.TextPoint, bool) { return ui.TextPoint{}, true })
 	s.selectNoteWithoutSave(s.notes.selected)
 	if s.notes.view.previewSelect.Dragging() {
 		t.Fatal("switching notes retained a drag")

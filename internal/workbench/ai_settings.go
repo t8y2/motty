@@ -14,9 +14,6 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/text"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/mcp"
 	"motty/internal/ai/probe"
@@ -24,6 +21,10 @@ import (
 	"motty/internal/ai/store"
 	"motty/internal/aiproviderimport"
 	"motty/internal/vault"
+
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 // The assistant's settings section is a part of the Settings page. Its state
@@ -185,20 +186,21 @@ type aiSettingsUI struct {
 	editID string
 	kind   string
 	// preset is the entry of aiPresets the form was last filled from.
-	preset         int
-	name           text.Editor
-	baseURL        text.Editor
-	modelsURL      text.Editor
-	proxyURL       text.Editor
-	apiKey         text.Editor
-	cliPath        text.Editor
-	cliAutoPath    string
-	cliPathMissing bool
-	authStyle      string // Anthropic only; empty means the API key default
-	apiFormat      string // OpenAI-compatible only; empty means Chat Completions
-	hadKey         bool
-	formErr        string
-	formFocus      aiFormFocus
+	preset           int
+	name             text.Editor
+	baseURL          text.Editor
+	modelsURL        text.Editor
+	proxyURL         text.Editor
+	apiKey           text.Editor
+	cliPath          text.Editor
+	cliAutoPath      string
+	cliPathMissing   bool
+	authStyle        string // Anthropic only; empty means the API key default
+	apiFormat        string // OpenAI-compatible only; empty means Chat Completions
+	hadKey           bool
+	formErr          string
+	formErrSelection ui.TextSelectionState // what the user selected of formErr, to copy it
+	formFocus        aiFormFocus
 	// deleteID is the provider the delete question is about.
 	deleteID string
 
@@ -251,12 +253,13 @@ type aiSettingsUI struct {
 
 	// The provider import dialog. The candidates carry credentials until the
 	// dialog closes or the import ends; only key presence is ever painted.
-	importStep       aiImportStep
-	importSources    []aiproviderimport.SourceInfo
-	importCandidates []aiproviderimport.Candidate
-	importSelected   map[int]bool
-	importErr        string
-	importResult     aiImportResult
+	importStep         aiImportStep
+	importSources      []aiproviderimport.SourceInfo
+	importCandidates   []aiproviderimport.Candidate
+	importSelected     map[int]bool
+	importErr          string
+	importErrSelection ui.TextSelectionState // what the user selected of importErr, to copy it
+	importResult       aiImportResult
 
 	// The reasoning configuration dialog for a model.
 	reasoningModelName  string

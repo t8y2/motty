@@ -966,7 +966,9 @@ func (state *State) declareSnippetInlineEditor(c ui.C, width float32, narrow boo
 			})
 
 			if inline.error != "" {
-				ui.Text(c, inline.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(4, 0, 0, 0)
+				ui.TextSelectionArea(c, &inline.errorSelection).Children(func() {
+					ui.Text(c, inline.error).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(4, 0, 0, 0)
+				})
 			}
 		})
 	})

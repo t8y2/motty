@@ -8,14 +8,15 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"motty/internal/sshconn"
+	"motty/internal/workbench/icons"
+	layoutcore "motty/internal/workspace"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/sshconn"
-	"motty/internal/workbench/icons"
-	layoutcore "motty/internal/workspace"
 )
 
 var (
@@ -482,7 +483,9 @@ func (state *State) declareRemoteLogForm(c ui.C, session *Session, view *remoteL
 				})
 			}
 			if view.formError != "" {
-				ui.Text(c, view.formError).Color(state.pal.danger).FillWidth()
+				ui.TextSelectionArea(c, &view.formErrorSelection).FillWidth().Children(func() {
+					ui.Text(c, view.formError).Color(state.pal.danger).FillWidth()
+				})
 			}
 		})
 	})
@@ -722,7 +725,7 @@ func (view *remoteLogView) clampSelection() {
 	if view.selection.Empty() {
 		return
 	}
-	clamp := func(point components.TextPoint) components.TextPoint {
+	clamp := func(point ui.TextPoint) ui.TextPoint {
 		point.Offset = int(min(max(int64(point.Offset), view.plainStart), view.plainEnd))
 		return point
 	}
@@ -770,15 +773,15 @@ func (view *remoteLogView) selectAll() bool {
 	if len(view.snapshot.lines) == 0 || view.plainEnd <= view.plainStart {
 		return false
 	}
-	view.selection.Select(components.TextPoint{Offset: int(view.plainStart)}, components.TextPoint{Offset: int(view.plainEnd)})
+	view.selection.Select(ui.TextPoint{Offset: int(view.plainStart)}, ui.TextPoint{Offset: int(view.plainEnd)})
 	return true
 }
 
 // selectionPoint is where a window point lies in the text: the row under it,
 // clamped to the painted rows, and the byte offset nearest inside that row.
-func (view *remoteLogView) selectionPoint(point gfx.Point) (components.TextPoint, bool) {
+func (view *remoteLogView) selectionPoint(point gfx.Point) (ui.TextPoint, bool) {
 	if len(view.rows) == 0 || view.cellWidth <= 0 {
-		return components.TextPoint{}, false
+		return ui.TextPoint{}, false
 	}
 	row := int((point.Y - view.textOrigin.Y) / remoteLogRowHeight)
 	row = min(max(row, 0), len(view.rows)-1)
@@ -804,7 +807,7 @@ func (view *remoteLogView) selectionPoint(point gfx.Point) (components.TextPoint
 			at = offset
 		}
 	}
-	return components.TextPoint{Offset: int(view.lineStarts[item.line] + int64(item.start) + int64(at))}, true
+	return ui.TextPoint{Offset: int(view.lineStarts[item.line] + int64(item.start) + int64(at))}, true
 }
 
 // remoteLogPointer selects log text with the pointer. The scroll area's own

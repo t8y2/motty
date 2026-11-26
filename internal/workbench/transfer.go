@@ -10,12 +10,13 @@ import (
 	"strconv"
 	"time"
 
+	"motty/internal/trzsz"
+	"motty/internal/zmodem"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/trzsz"
-	"motty/internal/zmodem"
 )
 
 // File transfer over the terminal's own stream: ZMODEM (sz and rz) and TRZSZ
@@ -96,8 +97,9 @@ type fileTransfer struct {
 	target  *folderTarget
 	sources []*os.File
 	// progress is what the card shows, refreshed as bytes move.
-	progress    zmodem.Progress
-	dialogError string
+	progress             zmodem.Progress
+	dialogError          string
+	dialogErrorSelection ui.TextSelectionState // what the user selected of dialogError, to copy it
 	// sizeText and doneText are built when the numbers change, not per paint.
 	text transferText
 }
@@ -882,7 +884,9 @@ func (state *State) declareFileTransferDialog(c ui.C) {
 			return
 		}
 		ui.Column(c).Fill().Children(func() {
-			ui.Text(c, transfer.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(20).MarginSides(8, 0, 0, 0)
+			ui.TextSelectionArea(c, &transfer.dialogErrorSelection).Children(func() {
+				ui.Text(c, transfer.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(20).MarginSides(8, 0, 0, 0)
+			})
 		})
 	})
 	saveFolder := state.downloadFolder()

@@ -7,12 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"motty/internal/i18n"
+	"motty/internal/knownhosts"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/i18n"
-	"motty/internal/knownhosts"
 )
 
 const (
@@ -76,18 +77,19 @@ type knownHostsView struct {
 	pageSize        int
 	// pageSizeChoice is what the page-size switcher edits; pageSize changes only
 	// through setKnownHostsPageSize.
-	pageSizeChoice    int
-	selected          int
-	countText         string
-	selectionText     string
-	pageText          string
-	pageNumberText    string
-	status            string
-	errorText         string
-	action            knownHostsAction
-	dialogDescription string
-	dialogError       string
-	paginationItems   [3]ui.PaginationItem
+	pageSizeChoice       int
+	selected             int
+	countText            string
+	selectionText        string
+	pageText             string
+	pageNumberText       string
+	status               string
+	errorText            string
+	action               knownHostsAction
+	dialogDescription    string
+	dialogError          string
+	dialogErrorSelection ui.TextSelectionState // what the user selected of dialogError, to copy it
+	paginationItems      [3]ui.PaginationItem
 	// list and rowDecl are the page's table: its rows and the builder that
 	// declares one. columns and headings are set on each paint so the list's
 	// cells line up with the header's.

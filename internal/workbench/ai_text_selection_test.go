@@ -4,11 +4,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vivaui/viva/keymap"
 	"motty/internal/ai/llm"
 	"motty/internal/ai/risk"
 
-	"github.com/vivaui/viva/components"
+	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/ui"
+
 	"github.com/vivaui/viva/gfx"
 )
 
@@ -16,7 +17,7 @@ import (
 // inside it would.
 func selectAnswerRange(panel *aiPanel, row, start, end int) {
 	surface := aiTextSurface(row, aiTextPrimary)
-	panel.textSelect.Select(components.TextPoint{Surface: surface, Offset: start}, components.TextPoint{Surface: surface, Offset: end})
+	panel.textSelect.Select(ui.TextPoint{Surface: surface, Offset: start}, ui.TextPoint{Surface: surface, Offset: end})
 }
 
 func selectAnswerText(t *testing.T, state *State, start, end int) *aiPanel {
@@ -525,7 +526,7 @@ func TestAnswerTextDragSelectsAcrossVisualLines(t *testing.T) {
 	if !result.Handled || result.Focus != id {
 		t.Fatalf("pressing the answer = %+v, want it focused", result)
 	}
-	if !panel.textSelect.Dragging() || panel.textSelect.Anchor != (components.TextPoint{Surface: aiTextSurface(0, aiTextPrimary)}) {
+	if !panel.textSelect.Dragging() || panel.textSelect.Anchor != (ui.TextPoint{Surface: aiTextSurface(0, aiTextPrimary)}) {
 		t.Fatalf("press did not start a selection: %+v", panel.textSelect)
 	}
 	answerPointer(state, gfx.PointerMove, end, id)
@@ -640,8 +641,8 @@ func TestSelectionAcrossMessagesCoversTheBlocksBetween(t *testing.T) {
 	paintAt(state, panelWide)
 	panel := &state.ai.panel
 	panel.textSelect.Select(
-		components.TextPoint{Surface: aiTextSurface(0, aiTextPrimary), Offset: len("alpha ")},
-		components.TextPoint{Surface: aiTextSurface(2, aiTextPrimary), Offset: len("epsilon")},
+		ui.TextPoint{Surface: aiTextSurface(0, aiTextPrimary), Offset: len("alpha ")},
+		ui.TextPoint{Surface: aiTextSurface(2, aiTextPrimary), Offset: len("epsilon")},
 	)
 	canvas, _ := paintAt(state, panelWide)
 	if got, ok := panel.aiTextSelectionText(); !ok || got != "beta\n\ngamma delta\n\nepsilon" {
@@ -666,7 +667,7 @@ func TestAnswerSelectionClearsWhenTheConversationIsReset(t *testing.T) {
 	state, _ := panelState(t, nil)
 	panel := selectAnswerText(t, state, 0, 5)
 	state.aiPanelReset()
-	if panel.hasAITextSelection() || panel.textSelect != (components.TextSelection{}) {
+	if panel.hasAITextSelection() || panel.textSelect != (ui.TextSelection{}) {
 		t.Fatalf("reset kept the selection: %+v", panel.textSelect)
 	}
 

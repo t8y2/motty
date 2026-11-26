@@ -1337,13 +1337,17 @@ func (state *State) declareSFTPDialogBody(c ui.C, view *sftpView) {
 				ui.Choice(c, &view.deleteMethod, sftpDeleteMethods[:], state.sftpDeleteMethodLabel).
 					Height(theme.Metrics.ControlHeight)
 				if showError {
-					ui.Text(c, view.dialogError).FontSize(theme.Metrics.FontSizeS).
-						Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
+					ui.TextSelectionArea(c, &view.dialogErrorSelection).Children(func() {
+						ui.Text(c, view.dialogError).FontSize(theme.Metrics.FontSizeS).
+							Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
+					})
 				}
 			})
 		case view.dialog == sftpDialogDeleteForce && showError:
-			ui.Text(c, view.dialogError).FontSize(c.Theme().Metrics.FontSizeS).
-				Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
+			ui.TextSelectionArea(c, &view.dialogErrorSelection).Children(func() {
+				ui.Text(c, view.dialogError).FontSize(c.Theme().Metrics.FontSizeS).
+					Weight(gfx.WeightMedium).Color(state.pal.danger).Ellipsis()
+			})
 		case sftpDialogShowsField(view.dialog):
 			inner := ui.Column(c).Shrink(0).Gap(8).PadSides(6, 4, 0, 4)
 			inner.Children(func() {

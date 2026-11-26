@@ -1,16 +1,17 @@
 package workbench
 
 import (
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
-	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/text"
 	layoutcore "motty/internal/workspace"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 func TestNotesSidebarExpandAllIsIndependentAndDisabledDuringSearch(t *testing.T) {
@@ -157,7 +158,7 @@ func TestNotesSidebarResizeScrollAndSelectionAreIndependent(t *testing.T) {
 	if n.previewScroll <= 0 || s.notes.previewScroll != 0 {
 		t.Fatal("scroll state leaked")
 	}
-	n.view.previewSelect.Select(components.TextPoint{}, components.TextPoint{Offset: n.rendered.TextLen()})
+	n.view.previewSelect.Select(ui.TextPoint{}, ui.TextPoint{Offset: n.rendered.TextLen()})
 	if n.rendered.SelectedText(n.view.previewSelect.In(0)) == "" {
 		t.Fatal("rendered preview cannot be selected")
 	}

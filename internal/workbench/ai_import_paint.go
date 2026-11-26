@@ -258,8 +258,10 @@ func (state *State) declareAIImportSourcesBody(c ui.C, initial gfx.ID, height fl
 		if cfg.importErr != "" {
 			ui.Row(c).Height(22).Gap(8).Items(ui.Center).Children(func() {
 				ui.Icon(c, icons.CircleAlert).Size(14, 14).Color(pal.danger).Shrink(0)
-				ui.Text(c, cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(pal.danger).LineHeight(17).Ellipsis()
+				ui.TextSelectionArea(c, &cfg.importErrSelection).Grow(1).Children(func() {
+					ui.Text(c, cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+						Color(pal.danger).LineHeight(17).Ellipsis()
+				})
 			})
 		}
 	})
@@ -305,8 +307,10 @@ func (state *State) declareAIImportPreviewBody(c ui.C, height float32) {
 		if cfg.importErr != "" {
 			ui.Row(c).Height(22).Gap(8).Items(ui.Center).Children(func() {
 				ui.Icon(c, icons.CircleAlert).Size(14, 14).Color(pal.danger).Shrink(0)
-				ui.Text(c, cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
-					Color(pal.danger).LineHeight(17).Ellipsis()
+				ui.TextSelectionArea(c, &cfg.importErrSelection).Grow(1).Children(func() {
+					ui.Text(c, cfg.importErr).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).
+						Color(pal.danger).LineHeight(17).Ellipsis()
+				})
 			})
 		}
 	})

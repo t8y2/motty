@@ -5,14 +5,15 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"motty/internal/ai/agent"
+	layoutcore "motty/internal/workspace"
+
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/ai/agent"
-	layoutcore "motty/internal/workspace"
 )
 
 // The assistant's panel: a column at the right edge of a terminal workspace.
@@ -123,7 +124,7 @@ const (
 // plain-text blocks of user messages and tool cards. Offsets are source bytes.
 type aiTextLayout interface {
 	TextLen() int
-	SelectedText(components.MarkdownSelection) string
+	SelectedText(ui.TextRange) string
 	OffsetAt(gfx.Point) (int, bool)
 }
 
@@ -160,7 +161,7 @@ func (panel *aiPanel) clearAITextSelection() {
 
 // selectionFor is the Markdown highlight to paint for one row, empty for every
 // other row and for plain-text blocks, which have their own painter.
-func (panel *aiPanel) selectionFor(index int) components.MarkdownSelection {
+func (panel *aiPanel) selectionFor(index int) ui.TextRange {
 	return panel.textSelect.In(aiTextSurface(index, aiTextPrimary))
 }
 
@@ -176,7 +177,7 @@ func (panel *aiPanel) aiTextSelectionText() (string, bool) {
 	if !panel.hasAITextSelection() {
 		return "", false
 	}
-	text := panel.textSelect.Text(panel.textSurfaces(), "\n\n", func(surface int, part components.MarkdownSelection) string {
+	text := panel.textSelect.Text(panel.textSurfaces(), "\n\n", func(surface int, part ui.TextRange) string {
 		row, block := aiTextSurfaceRow(surface)
 		if layout := panel.rows[row].textLayout(block); layout != nil {
 			return layout.SelectedText(part)
@@ -200,11 +201,11 @@ func (panel *aiPanel) selectionEnds(row int) (ends aiSelectionEnds) {
 	if panel.textSelect.Empty() {
 		return ends
 	}
-	for end, point := range [2]components.TextPoint{panel.textSelect.Anchor, panel.textSelect.Focus} {
+	for end, point := range [2]ui.TextPoint{panel.textSelect.Anchor, panel.textSelect.Focus} {
 		if pointRow, part := aiTextSurfaceRow(point.Surface); pointRow == row && row < len(panel.rows) {
 			if layout := panel.rows[row].textLayout(part); layout != nil {
 				ends[end].held = true
-				ends[end].text = layout.SelectedText(components.MarkdownSelection{Focus: layout.TextLen()})
+				ends[end].text = layout.SelectedText(ui.TextRange{Focus: layout.TextLen()})
 			}
 		}
 	}
@@ -214,13 +215,13 @@ func (panel *aiPanel) selectionEnds(row int) (ends aiSelectionEnds) {
 // keepSelectionEnds clears the selection when a rebuilt row no longer begins
 // with the text an end of the selection pointed into.
 func (panel *aiPanel) keepSelectionEnds(row int, ends aiSelectionEnds) {
-	for end, point := range [2]components.TextPoint{panel.textSelect.Anchor, panel.textSelect.Focus} {
+	for end, point := range [2]ui.TextPoint{panel.textSelect.Anchor, panel.textSelect.Focus} {
 		if !ends[end].held {
 			continue
 		}
 		_, part := aiTextSurfaceRow(point.Surface)
 		layout := panel.rows[row].textLayout(part)
-		if layout == nil || !strings.HasPrefix(layout.SelectedText(components.MarkdownSelection{Focus: layout.TextLen()}), ends[end].text) {
+		if layout == nil || !strings.HasPrefix(layout.SelectedText(ui.TextRange{Focus: layout.TextLen()}), ends[end].text) {
 			panel.clearAITextSelection()
 			return
 		}
@@ -232,9 +233,9 @@ func (panel *aiPanel) keepSelectionEnds(row int, ends aiSelectionEnds) {
 // painted block, so a drag that leaves a message or crosses the gap between two
 // goes on into the next. Above a block it is the block's start and below it its
 // end.
-func (panel *aiPanel) textPointAt(point gfx.Point) (components.TextPoint, bool) {
+func (panel *aiPanel) textPointAt(point gfx.Point) (ui.TextPoint, bool) {
 	var (
-		best     components.TextPoint
+		best     ui.TextPoint
 		found    bool
 		bestDist float32
 	)
@@ -264,7 +265,7 @@ func (panel *aiPanel) textPointAt(point gfx.Point) (components.TextPoint, bool) 
 				}
 				offset = at
 			}
-			best, bestDist, found = components.TextPoint{Surface: aiTextSurface(row, part), Offset: offset}, dist, true
+			best, bestDist, found = ui.TextPoint{Surface: aiTextSurface(row, part), Offset: offset}, dist, true
 		}
 	}
 	return best, found
@@ -388,7 +389,7 @@ type aiPanel struct {
 	// that is extending it. It may run through several messages and is never
 	// saved. textFirst and textLast are the rows the last paint put on screen,
 	// the ones a drag can reach; -1 when none was painted.
-	textSelect          components.TextSelection
+	textSelect          ui.TextSelection
 	textFirst, textLast int
 
 	// The active message or history scrollbar's geometry and pointer drag.

@@ -8,13 +8,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"motty/internal/autofill"
+	"motty/internal/otp"
+	"motty/internal/vault"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/autofill"
-	"motty/internal/otp"
-	"motty/internal/vault"
 )
 
 // Autofill rules. The autofill package decides when a rule may answer; this file
@@ -70,6 +71,7 @@ type autofillUI struct {
 	send                        autofill.Send
 	enter                       bool
 	dialogError                 string
+	dialogErrorSelection        ui.TextSelectionState // what the user selected of dialogError, to copy it
 	// The dialog's fields are page fields: a row and a text for each, the text bound to the
 	// editor above; fixedShown reveals the fixed text.
 	rows        [4]ui.FormFieldState
@@ -599,7 +601,9 @@ func (state *State) declareAutofillBody(c ui.C) {
 		state.declareAutofillField(c, 3, hitAutofillScope, m.Scope, m.ScopePlaceholder, false)
 		state.declareDialogCheck(c, hitAutofillEnter, m.Enter, form.enter, 4, 0)
 		if form.dialogError != "" {
-			ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+			ui.TextSelectionArea(c, &form.dialogErrorSelection).Children(func() {
+				ui.Text(c, form.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.danger).LineHeight(18).MarginSides(15, 0, 0, 0)
+			})
 		}
 	})
 	column.DrawOver(func(d *ui.DrawContext) {

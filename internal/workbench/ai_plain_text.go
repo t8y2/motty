@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // aiPlainTextLine is one painted row of a selectable, non-Markdown text block.
@@ -117,7 +117,7 @@ func (v *aiPlainTextView) appendLines(dst []string) []string {
 
 func (v *aiPlainTextView) TextLen() int { return len(v.source) }
 
-func (v *aiPlainTextView) SelectedText(selection components.MarkdownSelection) string {
+func (v *aiPlainTextView) SelectedText(selection ui.TextRange) string {
 	start, end := aiPlainTextRange(v.source, selection)
 	return v.source[start:end]
 }
@@ -164,7 +164,7 @@ func (v *aiPlainTextView) OffsetAt(point gfx.Point) (int, bool) {
 
 // paintSelection paints the translucent selection over flex's labels. The alpha
 // matches assistant selections and leaves the already-painted text readable.
-func (v *aiPlainTextView) paintSelection(canvas *gfx.Canvas, selection components.MarkdownSelection, color gfx.Color) {
+func (v *aiPlainTextView) paintSelection(canvas *gfx.Canvas, selection ui.TextRange, color gfx.Color) {
 	start, end := aiPlainTextRange(v.source, selection)
 	if start >= end || color.Alpha == 0 {
 		return
@@ -198,7 +198,7 @@ func aiMonoTextWidth(text string, cell float32) float32 {
 	return float32(cells) * cell
 }
 
-func aiPlainTextRange(text string, selection components.MarkdownSelection) (start, end int) {
+func aiPlainTextRange(text string, selection ui.TextRange) (start, end int) {
 	start, end = selection.Anchor, selection.Focus
 	if start > end {
 		start, end = end, start

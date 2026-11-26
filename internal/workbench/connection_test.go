@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/gfx"
 	"motty/internal/linkwatch"
 	"motty/internal/sftpclient"
 	"motty/internal/sshconn"
 	"motty/internal/termsize"
+
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 )
 
 // fakeConn stands in for a network connection: tests set its status the way
@@ -1330,5 +1331,54 @@ func TestARepeatedSecondFactorRoundDoesNotBlameThePassword(t *testing.T) {
 	}
 	if session.filledSecret == "" {
 		t.Fatal("a second-factor round forgot the saved password")
+	}
+}
+
+// The user checks a host key's fingerprint against one they were given, often by
+// pasting it: a drag across the dialog's fingerprint selects it as the server sent
+// it, and the dialog's buttons still answer the prompt.
+func TestHostKeyDialogFingerprintCanBeSelected(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(s *sshconn.Status) { s.Phase = sshconn.PhaseHostKeyPrompt; s.HostKey = testHostKey })
+	state.Wake()
+	canvas := &gfx.Canvas{}
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Title: "host key", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key,
+	}), canvas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(driver.Close)
+	var line gfx.Text
+	for _, text := range driver.Snapshot().Texts {
+		if text.Value == testHostKey.Fingerprint {
+			line = text
+		}
+	}
+	if line.Value == "" {
+		t.Fatal("the dialog does not show the fingerprint")
+	}
+	y := line.Bounds.Y + line.Bounds.Height/2
+	start, end := line.Bounds.X+1, line.Bounds.X+canvas.TextWidthStyle(line.Value, line.Style)+8
+	for _, step := range []func() error{
+		func() error { return driver.Press(start, y, gfx.PointerButtonPrimary) },
+		func() error { return driver.Move((start+end)/2, y) },
+		func() error { return driver.Move(end, y) },
+		func() error { return driver.Release(end, y, gfx.PointerButtonPrimary) },
+		driver.Paint,
+	} {
+		if err := step(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := state.hostKeySelection.Text(); got != testHostKey.Fingerprint {
+		t.Fatalf("the drag selected %q, want the fingerprint %q", got, testHostKey.Fingerprint)
+	}
+	state.Click(hitHostKeyTrust)
+	if len(fake.trusted) != 1 {
+		t.Fatalf("trust after selecting sent %v", fake.trusted)
 	}
 }

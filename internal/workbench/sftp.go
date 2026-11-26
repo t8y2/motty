@@ -12,15 +12,16 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
+	layoutcore "motty/internal/workspace"
+
 	"github.com/pkg/sftp"
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/sftpclient"
-	"motty/internal/sshconn"
-	layoutcore "motty/internal/workspace"
 )
 
 type sftpCrumb struct {
@@ -262,6 +263,7 @@ type sftpView struct {
 	deleteFailedItems     int
 	deleteFirstFailure    string
 	dialogError           string
+	dialogErrorSelection  ui.TextSelectionState // what the user selected of dialogError, to copy it
 	moveAfterRename       bool
 	moveTargetDir         string
 	panelDrag             sftpPanelDrag

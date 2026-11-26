@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/app"
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 func TestNotesEditingCommandsAndNativeAssistance(t *testing.T) {
@@ -116,7 +116,7 @@ func TestNotesPreviewReusesLayout(t *testing.T) {
 	}
 	s.notes.body.Insert(" changed")
 	s.paintNotePreviewContent(&c, b, &s.notes)
-	if !strings.Contains(s.notes.rendered.SelectedText(components.MarkdownSelection{Focus: s.notes.rendered.TextLen()}), "changed") {
+	if !strings.Contains(s.notes.rendered.SelectedText(ui.TextRange{Focus: s.notes.rendered.TextLen()}), "changed") {
 		t.Fatal("preview cache ignored changed draft")
 	}
 	b.Width = 200

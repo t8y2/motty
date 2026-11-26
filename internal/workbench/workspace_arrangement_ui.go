@@ -92,7 +92,9 @@ func (state *State) declareWorkspaceLayoutPanel(c ui.C, size gfx.Size, plan work
 				draft.scrollSynced = area.Offset
 			})
 			if draft.err != "" {
-				ui.Text(c, draft.err).FontSize(12).Color(state.pal.danger).LineHeight(20).Ellipsis()
+				ui.TextSelectionArea(c, &draft.errSelection).Children(func() {
+					ui.Text(c, draft.err).FontSize(12).Color(state.pal.danger).LineHeight(20).Ellipsis()
+				})
 			}
 		})
 	})

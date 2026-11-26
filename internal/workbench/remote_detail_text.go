@@ -5,13 +5,14 @@ import (
 	"sort"
 	"strings"
 
+	"motty/internal/remotetools"
+
 	"github.com/vivaui/viva/base"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/markdown"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/remotetools"
 )
 
 // remoteDetailText is one scrollable, selectable code or table document shared
@@ -26,7 +27,7 @@ type remoteDetailText struct {
 	layoutWidth float32
 	layoutSize  float32
 	lineHeight  float32
-	selection   components.TextSelection
+	selection   ui.TextSelection
 
 	// The page scroll area the dialog declares: the old bars stay always
 	// visible with their localized labels and percentage value, while the
@@ -89,9 +90,9 @@ func (text *remoteDetailText) clearSelection() {
 }
 
 // pointAt is where a window point lies in the text: it has one surface.
-func (text *remoteDetailText) pointAt(point gfx.Point) (components.TextPoint, bool) {
+func (text *remoteDetailText) pointAt(point gfx.Point) (ui.TextPoint, bool) {
 	offset, ok := text.offsetAt(point)
-	return components.TextPoint{Offset: offset}, ok
+	return ui.TextPoint{Offset: offset}, ok
 }
 
 func (text *remoteDetailText) selectedText() (string, bool) {
@@ -742,7 +743,7 @@ func (state *State) remoteDetailTextShortcut(event gfx.KeyEvent, text *remoteDet
 		if length == 0 {
 			return gfx.EventResult{}, false
 		}
-		text.selection.Select(components.TextPoint{}, components.TextPoint{Offset: length})
+		text.selection.Select(ui.TextPoint{}, ui.TextPoint{Offset: length})
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if state.shortcuts.actionFor(chord) != shortcutCopy {

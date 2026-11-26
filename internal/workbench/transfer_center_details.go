@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"motty/internal/sftpclient"
+	"motty/internal/workbench/icons"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/sftpclient"
-	"motty/internal/workbench/icons"
 )
 
 var (
@@ -40,6 +41,7 @@ type transferDetails struct {
 	leftAt                   time.Duration
 	intent                   components.HoverIntent
 	open                     bool
+	selection                ui.TextSelectionState // what the user selected of the card's fields, to copy it
 	// The body is a Draw slot that paints the fields in the old card's places.
 	fields                        [12]transferDetailField
 	fieldCount                    int

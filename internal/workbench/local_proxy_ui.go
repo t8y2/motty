@@ -7,12 +7,13 @@ import (
 	"strconv"
 	"strings"
 
+	"motty/internal/sshconn"
+	"motty/internal/systemproxy"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/sshconn"
-	"motty/internal/systemproxy"
 )
 
 const (
@@ -54,12 +55,13 @@ type localProxyUI struct {
 	// view or the extra section changed.
 	topBody bool
 	// bodyScroll is the body's scroll position, as of the last declaration.
-	bodyScroll     *ui.ScrollState
-	lastRemotePort uint16
-	lastStopped    bool
-	copied         gfx.ID
-	copyError      string
-	retryCopy      gfx.ID
+	bodyScroll         *ui.ScrollState
+	lastRemotePort     uint16
+	lastStopped        bool
+	copied             gfx.ID
+	copyError          string
+	copyErrorSelection ui.TextSelectionState // what the user selected of copyError, to copy it
+	retryCopy          gfx.ID
 	// The dialog's body is part of the window page; these are the slots its
 	// declaration leaves for the hand-painted field and phase line.
 	// portForm and portText are the port field's row and text, bound to port when first declared.
@@ -556,7 +558,9 @@ func (state *State) declareLocalProxyMainBody(c ui.C, snapshot localProxySnapsho
 		ui.Wrap(c, m.StopHint).FontSize(theme.Metrics.FontSizeS).Color(pal.muted).LineHeight(18)
 	}
 	if state.localProxyUI.copyError != "" {
-		ui.Wrap(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
+		ui.TextSelectionArea(c, &state.localProxyUI.copyErrorSelection).Children(func() {
+			ui.Wrap(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger).LineHeight(18)
+		})
 	}
 	ui.Row(c).Height(32).Gap(8).Children(func() {
 		ui.Button(c, m.DockerTitle).Link().Hit(hitLocalProxyDocker, m.DockerTitle).Basis(0).Grow(1)
@@ -661,7 +665,9 @@ func (state *State) declareLocalProxyDockerBody(c ui.C, snapshot localProxySnaps
 		ui.Button(c, label).Outline().Hit(hitLocalProxyDockerRestore, label).Grow(1)
 	})
 	if state.localProxyUI.copyError != "" {
-		ui.Text(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger)
+		ui.TextSelectionArea(c, &state.localProxyUI.copyErrorSelection).Children(func() {
+			ui.Text(c, state.localProxyUI.copyError).FontSize(theme.Metrics.FontSizeS).Color(pal.danger)
+		})
 	}
 }
 

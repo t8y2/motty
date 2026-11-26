@@ -7,12 +7,13 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/ui"
 	"motty/internal/backup"
 	"motty/internal/buildinfo"
 	"motty/internal/configstore"
 	"motty/internal/vault"
+
+	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 )
 
 // DevelopmentSource names the release profile offered to a new development
@@ -38,6 +39,7 @@ type developmentImport struct {
 	recordsImported bool
 	hosts           int
 	err             string
+	errSelection    ui.TextSelectionState // what the user selected of err, to copy it
 	// body declares the dialog's body: its checkbox writes passwords itself.
 	body *ui.Page
 }
@@ -302,7 +304,9 @@ func (state *State) declareDevelopmentImport(c ui.C) {
 			ui.Paragraph(c, body, lines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
 			ui.Checkbox(c, &view.passwords, m.DevelopmentImportPasswords).Color(state.pal.text)
 			if errorLines != 0 {
-				ui.Paragraph(c, errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+				ui.TextSelectionArea(c, &view.errSelection).Children(func() {
+					ui.Paragraph(c, errorText, errorLines).FontSize(metrics.FontSizeM).LineHeight(stateNoticeLine)
+				})
 			}
 		})
 	})

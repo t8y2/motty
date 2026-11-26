@@ -3315,7 +3315,9 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				}
 				if state.dialogError != "" {
 					// The serial line's error is long: up to two lines.
-					ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+					ui.TextSelectionArea(c, &state.dialogErrorSelection).Children(func() {
+						ui.Paragraph(c, state.dialogError, 2).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(16)
+					})
 					if state.isHostDialogKeyLost() {
 						ui.Row(c).Height(30).Items(ui.Center).MarginSides(8, 0, 0, 0).Children(func() {
 							ui.Button(c, state.messages.SettingsVaultForgetAll).Small().
@@ -3521,7 +3523,9 @@ func (state *State) declareDeleteHostBody(c ui.C) {
 		return
 	}
 	ui.Column(c).Fill().Children(func() {
-		ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20)
+		ui.TextSelectionArea(c, &state.dialogErrorSelection).Children(func() {
+			ui.Text(c, state.dialogError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(20)
+		})
 	})
 }
 
@@ -3602,7 +3606,9 @@ func (state *State) declareHostGroupDeleteDialog(c ui.C) {
 			// is the only place that can say why: it stays open, so the reason
 			// goes here rather than into the status line behind the scrim.
 			if state.dialogError != "" {
-				ui.Paragraph(c, state.dialogError, 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(groupDeleteNoticeLine)
+				ui.TextSelectionArea(c, &state.dialogErrorSelection).Children(func() {
+					ui.Paragraph(c, state.dialogError, 0).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(groupDeleteNoticeLine)
+				})
 			}
 			// The body's remaining 130 pixels are the two choices' rows, as the
 			// hand-painted group stretched them: a radio centres its circle and
@@ -3848,7 +3854,9 @@ func (state *State) declareHostKeyBody(c ui.C) {
 		}
 	}
 	state.hostKeyRows = rows
-	ui.Column(c).Fill().Gap(8).Children(func() {
+	// The user checks the fingerprint against one the server's owner gave them,
+	// often by pasting it: the rows are selectable.
+	ui.TextSelectionArea(c, &state.hostKeySelection).Fill().Gap(8).Children(func() {
 		for _, row := range rows {
 			ui.Row(c).Height(22).Gap(6).Children(func() {
 				ui.Text(c, row.label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(22).Width(labelWidth).Shrink(0)
@@ -3997,7 +4005,9 @@ func (state *State) declareKeyPassphraseDialog(c ui.C) {
 				Secret: true, Invalid: state.keyPassphraseError != "", Height: 62,
 			})
 			if state.keyPassphraseError != "" {
-				ui.Text(c, state.keyPassphraseError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
+				ui.TextSelectionArea(c, &state.keyPassphraseErrorSelection).Children(func() {
+					ui.Text(c, state.keyPassphraseError).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(state.pal.danger).LineHeight(18).MarginSides(12, 0, 0, 0)
+				})
 			}
 			if state.secrets.canSave {
 				// The save box sits 99 pixels below the body's top, as it always has.
