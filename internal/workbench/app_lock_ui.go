@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/vivaui/viva/app/systemauth"
 	"github.com/vivaui/viva/components"
@@ -100,6 +101,11 @@ func (state *State) paintAppLockPage(canvas *gfx.Canvas, size gfx.Size) {
 	state.titlebarLeading, state.titlebarTrailing = canvas.TitlebarInsets()
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: size.Height}, state.pal.workspace)
 	canvas.Fill(gfx.Rect{Width: size.Width, Height: windowBarHeight}, state.pal.shell)
+	canvas.MoveRegion(gfx.Rect{
+		X:      state.titlebarLeading,
+		Width:  max(size.Width-state.titlebarLeading-state.titlebarTrailing, 0),
+		Height: windowBarHeight,
+	})
 	state.windowPage().Draw(canvas, gfx.Rect{Width: size.Width, Height: size.Height}, state.declareWorkbenchPage)
 	if state.lockUI.logo.Rect().Width > 0 {
 		state.paintLockup(canvas, state.lockUI.logo.Rect())
@@ -203,6 +209,10 @@ func (state *State) appLockKey(event gfx.KeyEvent) gfx.EventResult {
 // handler is reached only while the lock page or its dialog owns the screen;
 // returning unhandled cannot dispatch a workspace shortcut behind it.
 func (state *State) appLockInputShortcut(event gfx.KeyEvent) gfx.EventResult {
+	// Windows offers Alt+Space here before opening its window menu.
+	if runtime.GOOS == "windows" && event.Text == " " && event.Modifiers == gfx.ModifierAlt {
+		return gfx.EventResult{}
+	}
 	text := event.Text != "" || event.Key == gfx.KeySpace
 	if text && event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta|gfx.ModifierAlt) == 0 {
 		return gfx.EventResult{}
