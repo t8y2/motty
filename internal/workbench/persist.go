@@ -55,6 +55,9 @@ type savedState struct {
 	VerticalTabsAutoHide       bool                    `json:"vertical_tabs_auto_hide,omitempty"`
 	VerticalTabsGrouping       bool                    `json:"vertical_tabs_grouping,omitempty"`
 	FullscreenBarAutoHide      bool                    `json:"desktop_fullscreen_bar_auto_hide,omitempty"`
+	FullscreenBarDock          string                  `json:"desktop_fullscreen_bar_dock,omitempty"`
+	FullscreenBarX             float64                 `json:"desktop_fullscreen_bar_x,omitempty"`
+	FullscreenBarY             float64                 `json:"desktop_fullscreen_bar_y,omitempty"`
 	NetworkProxy               string                  `json:"network_proxy,omitempty"`
 	TerminalOption             string                  `json:"terminalOption,omitempty"`
 	LocalShell                 string                  `json:"local_shell,omitempty"`
@@ -564,6 +567,9 @@ func (state *State) snapshot() savedState {
 		VerticalTabsAutoHide:       state.verticalTabs.autoHide,
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		FullscreenBarAutoHide:      state.desktopBar.autoHide,
+		FullscreenBarDock:          state.desktopBar.dock.String(),
+		FullscreenBarX:             float64(state.desktopBar.free.X),
+		FullscreenBarY:             float64(state.desktopBar.free.Y),
 		NetworkProxy:               state.networkProxy.String(),
 		SSHBrowser:                 string(state.sshBrowser),
 		TerminalOption:             state.terminalOption.String(),
@@ -1269,6 +1275,11 @@ func (state *State) restoreShared(saved savedState) {
 	}
 	state.terminalShowLatency = saved.TerminalShowLatency
 	state.desktopBar.autoHide = saved.FullscreenBarAutoHide
+	state.desktopBar.dock = desktopBarDockFromString(saved.FullscreenBarDock)
+	state.desktopBar.free = gfx.Point{
+		X: min(max(float32(saved.FullscreenBarX), 0), 1),
+		Y: min(max(float32(saved.FullscreenBarY), 0), 1),
+	}
 	state.terminalBellOff = saved.TerminalBellOff
 	state.pasteConfirmOff = saved.TerminalPasteConfirmOff
 	state.terminalInputClickOff = saved.TerminalInputClickOff

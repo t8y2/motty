@@ -37,6 +37,8 @@ var (
 	hitDesktopReconnect  = tree.ID(desktopHits, "reconnect")
 	hitDesktopFullscreen = tree.ID(desktopHits, "fullscreen")
 	hitDesktopBarPin     = tree.ID(desktopHits, "bar-pin")
+	hitDesktopBarDock    = tree.ID(desktopHits, "bar-dock")
+	hitDesktopBarDrag    = tree.ID(desktopHits, "bar-drag")
 	hitDesktopLatency    = tree.ID(desktopHits, "latency")
 	hitDesktopQuality    = tree.ID(desktopHits, "quality")
 	hitDesktopResolution = tree.ID(desktopHits, "resolution")
@@ -117,6 +119,8 @@ type desktopView struct {
 	qualityMenu bool
 	// resolutionMenu is whether the resolution menu of an RDP bar is open.
 	resolutionMenu bool
+	// dockMenu is whether the fullscreen bar's dock menu is open.
+	dockMenu bool
 }
 
 // imageDigest identifies the picture a desktop's clipboard was last given, so the
@@ -1020,6 +1024,8 @@ func (state *State) clickDesktop(id gfx.ID) bool {
 		state.toggleDesktopFullscreen(session)
 	case hitDesktopBarPin:
 		state.setDesktopFullscreenBarAutoHide(!state.desktopBar.autoHide)
+	case hitDesktopBarDock:
+		view.dockMenu = !view.dockMenu
 	case hitDesktopQuality:
 		if !view.ended {
 			view.qualityMenu = !view.qualityMenu

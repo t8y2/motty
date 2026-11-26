@@ -81,10 +81,14 @@ type Session interface {
 * **Fullscreen** in the desktop toolbar or tab menu, or `Ctrl+Alt+Enter`, uses
   Viva's native fullscreen window and gives the whole monitor to the selected
   desktop, hiding other panes, tabs and side panels without changing their saved
-  layout. The floating bar at the top centre holds the pin, the exit button, the
-  keyboard switch and the RTT badge. Pinned (the default), the bar stays
-  visible; unpinned, it hides and returns while the pointer reaches the top
-  edge, and the choice is remembered. The same chord restores the window.
+  layout. The floating bar holds the pin, the exit button, the keyboard switch,
+  the RTT badge and a menu that docks it to the top, bottom, left or right edge;
+  it can also be dragged anywhere over the picture, snapping to an edge when let
+  go near one. Its placement, edge or spot, is remembered on this computer.
+  Pinned (the default), the bar stays visible; unpinned, it hides and returns
+  only while the pointer reaches a thin strip along the docked edge, or the place
+  a free bar was left, so content near the picture's edge keeps its clicks. The
+  same chord restores the window.
   `Ctrl+Alt+G` still releases the keyboard. Fullscreen exits if the connection
   ends, another page is activated, or a Motty dialog needs attention. The
   fullscreen frame is not saved as the next launch's window placement.

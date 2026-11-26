@@ -85,39 +85,92 @@ func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, 
 		}
 	}
 	const pad = float32(4)
-	width := 2*pad + 2*barToolSize + 2*barToolGap + labelWidth
+	barHeight := barToolSize + 8
+	width := 2*pad + 3*barToolSize + 3*barToolGap + labelWidth
 	if latencyWidth > 0 {
 		width += barToolGap + latencyWidth
 	}
 	area := view.area
-	bar := gfx.Rect{X: max((area.Width-width)/2, 8), Y: 8, Width: width, Height: barToolSize + 8}
+	bar := gfx.Rect{Width: width, Height: barHeight}
+	switch {
+	case state.desktopBar.drag.active:
+		bar.X, bar.Y = state.desktopBar.drag.rect.X, state.desktopBar.drag.rect.Y
+	case state.desktopBar.dock == desktopBarDockFree:
+		centreX := area.X + state.desktopBar.free.X*area.Width
+		centreY := area.Y + state.desktopBar.free.Y*area.Height
+		bar.X = min(max(centreX-width/2, area.X), max(area.X+area.Width-width, area.X))
+		bar.Y = min(max(centreY-barHeight/2, area.Y), max(area.Y+area.Height-barHeight, area.Y))
+	default:
+		switch state.desktopBar.dock {
+		case desktopBarDockBottom:
+			bar.X = area.X + max((area.Width-width)/2, desktopBarEdgeMargin)
+			bar.Y = area.Y + area.Height - barHeight - desktopBarEdgeMargin
+		case desktopBarDockLeft:
+			bar.X = area.X + desktopBarEdgeMargin
+			bar.Y = area.Y + max((area.Height-barHeight)/2, desktopBarEdgeMargin)
+		case desktopBarDockRight:
+			bar.X = max(area.X+area.Width-width-desktopBarEdgeMargin, area.X+desktopBarEdgeMargin)
+			bar.Y = area.Y + max((area.Height-barHeight)/2, desktopBarEdgeMargin)
+		default:
+			bar.X = area.X + max((area.Width-width)/2, desktopBarEdgeMargin)
+			bar.Y = area.Y + desktopBarEdgeMargin
+		}
+	}
 	s := state.paneBody(session)
 	s.fullscreenText, s.fullscreenColor, s.fullscreenHint = "", gfx.Color{}, ""
 	s.fullscreenLatency = gfx.Rect{}
-	// The band that reveals an unpinned bar, for the pointer tracking to read on
-	// the next event. It follows the bar even while the bar is hidden, so the
-	// paint after the pointer arrives can show it.
-	state.desktopBar.zone = gfx.Rect{
-		X: area.X, Y: area.Y, Width: area.Width,
-		Height: bar.Y + bar.Height + fullscreenBarRevealSlack,
+	// The strip that reveals an unpinned bar and the bar's own rect, for the
+	// pointer tracking to read on the next event. Both follow the bar even while
+	// the bar is hidden, so the paint after the pointer arrives can show it.
+	state.desktopBar.bar = bar
+	switch state.desktopBar.dock {
+	case desktopBarDockBottom:
+		state.desktopBar.zone = gfx.Rect{
+			X: area.X, Y: area.Y + area.Height - desktopBarRevealDepth,
+			Width: area.Width, Height: desktopBarRevealDepth,
+		}
+	case desktopBarDockLeft:
+		state.desktopBar.zone = gfx.Rect{
+			X: area.X, Y: area.Y, Width: desktopBarRevealDepth, Height: area.Height,
+		}
+	case desktopBarDockRight:
+		state.desktopBar.zone = gfx.Rect{
+			X: area.X + area.Width - desktopBarRevealDepth, Y: area.Y,
+			Width: desktopBarRevealDepth, Height: area.Height,
+		}
+	case desktopBarDockFree:
+		// A free bar has no edge to reach for: it comes back where it was left.
+		state.desktopBar.zone = inflateRect(bar, fullscreenBarRevealSlack)
+	default:
+		state.desktopBar.zone = gfx.Rect{
+			X: area.X, Y: area.Y, Width: area.Width, Height: desktopBarRevealDepth,
+		}
 	}
-	ids := [3]gfx.ID{
+	ids := [4]gfx.ID{
 		state.paneIdentity(session, hitDesktopBarPin),
 		state.paneIdentity(session, hitDesktopFullscreen),
 		state.paneIdentity(session, hitDesktopCapture),
+		state.paneIdentity(session, hitDesktopBarDock),
 	}
-	if state.desktopBar.autoHide && !state.desktopBar.over && !desktopBarFocused(canvas, ids) {
+	if state.desktopBar.autoHide && !state.desktopBar.over && !view.dockMenu && !state.desktopBar.drag.active && !desktopBarFocused(canvas, ids) {
+		state.desktopBar.dragHit, state.desktopBar.labelHit = gfx.ID{}, gfx.ID{}
 		return
 	}
 	if latency != "" {
 		s.fullscreenText, s.fullscreenColor, s.fullscreenHint = latency, color, hint
-		left := bar.X + pad + barToolSize + barToolGap + labelWidth + barToolGap + barToolSize + barToolGap
-		s.fullscreenLatency = gfx.Rect{X: left, Y: bar.Y + pad, Width: latencyWidth, Height: barToolSize}
 	}
 	if s.fullscreenBarDraw == nil {
 		s.fullscreenBarDraw = state.paintDesktopFullscreenBar
 	}
-	ui.Slot(c).Absolute().Left(bar.X).Top(bar.Y).Width(bar.Width).Height(bar.Height).Draw(s.fullscreenBarDraw)
+	dragID := state.paneIdentity(session, hitDesktopBarDrag)
+	state.desktopBar.dragHit, state.desktopBar.labelHit = dragID, ids[1]
+	cursor := gfx.PointerCursorHand
+	if state.desktopBar.drag.active {
+		cursor = gfx.PointerCursorGrabbing
+	}
+	ui.Slot(c).Absolute().Left(bar.X).Top(bar.Y).Width(bar.Width).Height(bar.Height).
+		HitWith(dragID, "", gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Cursor: cursor}).
+		Draw(s.fullscreenBarDraw)
 	at := bar.X + pad
 	pinHint, pinIcon := m.FullscreenBarAutoHide, iconPin
 	if state.desktopBar.autoHide {
@@ -136,17 +189,25 @@ func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, 
 	}
 	state.declareIconButton(c, ids[2], iconKeyboard, captureHint, view.ended, style).
 		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize)
+	at += barToolSize + barToolGap
+	if latency != "" {
+		s.fullscreenLatency = gfx.Rect{X: at, Y: bar.Y + pad, Width: latencyWidth, Height: barToolSize}
+		at += latencyWidth + barToolGap
+	}
+	dockButton := state.declareIconButton(c, ids[3], iconEllipsis, m.FullscreenBarDock, false, iconButtonQuiet).
+		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize)
+	state.declareDesktopBarDockMenu(c, view, dockButton)
 }
 
 // desktopBarFocused reports whether the keyboard is on one of the fullscreen
 // bar's controls. An unpinned bar then stays out, as the auto-hidden sidebar
 // does while one of its rows has the keyboard.
-func desktopBarFocused(canvas *gfx.Canvas, ids [3]gfx.ID) bool {
+func desktopBarFocused(canvas *gfx.Canvas, ids [4]gfx.ID) bool {
 	if canvas == nil {
 		return false
 	}
 	focus := canvas.FocusVisible()
-	return focus == ids[0] || focus == ids[1] || focus == ids[2]
+	return focus == ids[0] || focus == ids[1] || focus == ids[2] || focus == ids[3]
 }
 
 // paintDesktopFullscreenBar paints the fullscreen bar's surface under its
