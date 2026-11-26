@@ -2660,7 +2660,7 @@ var traditionalTools = ToolsMessages{
 	BackupSavedFmt:                  "備份已儲存到 %s。",
 	BackupSavedKeysLeftOutFmt:       "備份已儲存到 %s；%d 個金鑰檔案無法讀取，未放入備份。",
 	BackupKeys:                      "SSH 金鑰檔案",
-	BackupKeysDescription:           "把本機上的私鑰檔案也放進備份和同步。儲存在 Motty 裡的金鑰已隨「SSH 金鑰」同步；檔案路徑只留在本機。",
+	BackupKeysDescription:           "把本機上的私鑰檔案也放進備份和同步。儲存在 Motty 裡的金鑰已隨「SSH 金鑰」同步；檔案路徑只留在本機。這是只增不減的：刪除本機金鑰或關閉開關都不會刪除備份或同步伺服器上已有的副本，但本機不會再把已刪除的金鑰取回來。",
 	BackupKeysFailedFmt:             "部分私鑰檔案無法寫入：%d 個。",
 	BackupFailedFmt:                 "備份失敗：%s",
 	BackupRestoreTitle:              "恢復備份",

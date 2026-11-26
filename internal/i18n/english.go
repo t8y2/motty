@@ -2660,7 +2660,7 @@ var englishTools = ToolsMessages{
 	BackupSavedFmt:                  "Backup saved to %s.",
 	BackupSavedKeysLeftOutFmt:       "Backup saved to %s; %d key file(s) could not be read and were left out.",
 	BackupKeys:                      "SSH key files",
-	BackupKeysDescription:           "Private key files on this computer go into backups and sync. Keys stored in Motty already travel with “SSH keys”; file paths stay on this computer.",
+	BackupKeysDescription:           "Private key files on this computer go into backups and sync. Keys stored in Motty already travel with “SSH keys”; file paths stay on this computer. This is add-only: removing a key here or turning this off never deletes copies already in backups or on the sync server, but a removed key is not brought back on this computer.",
 	BackupKeysFailedFmt:             "Some private key files could not be written: %d.",
 	BackupFailedFmt:                 "Backup failed: %s",
 	BackupRestoreTitle:              "Restore a backup",

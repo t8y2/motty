@@ -45,7 +45,10 @@ services.
 **SSH key files** is off by default. Turning it on includes private key files
 that the Keychain lists by path in backups and sync; a restore writes them under
 the data folder's `keys/` directory. Keys kept in Motty's vault already travel
-with the **SSH keys** category, and file paths themselves are never synced.
+with the **SSH keys** category, and file paths themselves are never synced. This
+is add-only: removing a key here or turning the switch off never deletes copies
+already in a backup or on the sync server, though this computer remembers the
+fingerprint and does not bring the key back.
 
 ## What stays local
 

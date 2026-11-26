@@ -257,6 +257,9 @@ func (state *State) importKeyFiles(paths []string) {
 			state.showActionFailure(m.KeyImportTitle, err, fmt.Sprintf(m.ActionFeedback.ImportPrivateKeyFailedFmt, elideMiddleRunes(name, 64)))
 			continue
 		}
+		if info.Fingerprint != "" {
+			state.clearKeyFileTombstone(info.Fingerprint)
+		}
 		known := slices.IndexFunc(state.identities, func(identity identityRecord) bool {
 			return !identity.Stored && identity.Path == absolute ||
 				identity.Error == "" && info.Fingerprint != "" && identity.Fingerprint == info.Fingerprint
@@ -503,6 +506,9 @@ func (state *State) removeSelectedIdentity() {
 		if identity.Stored {
 			state.confirmDeleteStoredKey(identity)
 			return
+		}
+		if identity.Fingerprint != "" {
+			state.tombstoneKeyFile(identity.Fingerprint)
 		}
 		state.identities = slices.Delete(state.identities, index, index+1)
 		state.selectedIdentityID = 0

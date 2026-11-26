@@ -2660,7 +2660,7 @@ var chineseTools = ToolsMessages{
 	BackupSavedFmt:                  "备份已保存到 %s。",
 	BackupSavedKeysLeftOutFmt:       "备份已保存到 %s；%d 个密钥文件无法读取，未放入备份。",
 	BackupKeys:                      "SSH 密钥文件",
-	BackupKeysDescription:           "把本机上的私钥文件也放进备份和同步。保存在 Motty 里的密钥已随「SSH 密钥」同步；文件路径只留在本机。",
+	BackupKeysDescription:           "把本机上的私钥文件也放进备份和同步。保存在 Motty 里的密钥已随「SSH 密钥」同步；文件路径只留在本机。这是只增不减的：删除本机密钥或关闭开关都不会删除备份或同步服务器上已有的副本，但本机不会再把已删除的密钥取回来。",
 	BackupKeysFailedFmt:             "部分私钥文件无法写入：%d 个。",
 	BackupFailedFmt:                 "备份失败：%s",
 	BackupRestoreTitle:              "恢复备份",

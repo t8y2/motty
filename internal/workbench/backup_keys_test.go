@@ -153,6 +153,70 @@ func TestASyncedComputerWithTheKeyToggleWritesTheServerKeys(t *testing.T) {
 	}
 }
 
+func TestARestoredKeyAlreadyOnThisComputerIsNotDuplicated(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	fingerprint := state.identities[0].Fingerprint
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault)
+	if written != 0 || failed != 0 {
+		t.Fatalf("written=%d failed=%d", written, failed)
+	}
+	if len(state.identities) != 1 {
+		t.Fatalf("the key was registered %d times", len(state.identities))
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(state.options.StatePath), "keys", "id_ed25519")); err == nil {
+		t.Fatal("a second copy of the key was written under keys/")
+	}
+}
+
+func TestARemovedFileKeyIsNotBroughtBackBySync(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	state.selectedIdentityID = state.identities[0].ID
+	fingerprint := state.identities[0].Fingerprint
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state.removeSelectedIdentity()
+	if len(state.identities) != 0 || !state.keyFileTombstoned(fingerprint) {
+		t.Fatalf("remove did not leave a tombstone: identities=%d tombstone=%v", len(state.identities), state.keyFileTombstoned(fingerprint))
+	}
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault)
+	if written != 0 || failed != 0 || len(state.identities) != 0 {
+		t.Fatalf("the removed key came back: written=%d failed=%d identities=%d", written, failed, len(state.identities))
+	}
+}
+
+func TestImportingAKeyAgainClearsItsRemovalTombstone(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	fingerprint := state.identities[0].Fingerprint
+	state.selectedIdentityID = state.identities[0].ID
+	state.removeSelectedIdentity()
+	state.importKeyFiles([]string{path})
+	if state.keyFileTombstoned(fingerprint) {
+		t.Fatal("re-importing the key kept the removal tombstone")
+	}
+}
+
 func TestTheSyncPageOffersPrivateKeyFilesOffByDefault(t *testing.T) {
 	state, _, _ := backupTestState(t)
 	var canvas gfx.Canvas

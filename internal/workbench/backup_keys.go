@@ -59,6 +59,30 @@ func (state *State) keyDirectory() string {
 	return filepath.Join(filepath.Dir(state.options.StatePath), "keys")
 }
 
+// keyFileTombstoned reports whether this computer removed the file key with
+// this fingerprint. The tombstone only stops a restore here; it never deletes
+// the copy in a backup or on the sync server.
+func (state *State) keyFileTombstoned(fingerprint string) bool {
+	return fingerprint != "" && state.keyFileTombstones[fingerprint]
+}
+
+// tombstoneKeyFile remembers that the user removed a file key here. It belongs
+// to this computer and is not part of the backup document.
+func (state *State) tombstoneKeyFile(fingerprint string) {
+	if fingerprint == "" {
+		return
+	}
+	if state.keyFileTombstones == nil {
+		state.keyFileTombstones = make(map[string]bool)
+	}
+	state.keyFileTombstones[fingerprint] = true
+}
+
+// clearKeyFileTombstone lets a key the user brings back be restored again.
+func (state *State) clearKeyFileTombstone(fingerprint string) {
+	delete(state.keyFileTombstones, fingerprint)
+}
+
 // backupKeyFiles reads the key files a backup carries. A key that cannot be
 // read, or is no longer the key it is listed as, is left out and counted: the
 // backup then says how many it left behind instead of carrying a file that
@@ -113,6 +137,17 @@ func (state *State) applyBackupKeys(keys []backup.Key, opened *vault.Vault) (wri
 	}
 	added := false
 	for _, key := range keys {
+		// A key this computer already lists is the same identity under another
+		// path; writing it again would make the keychain show a duplicate and
+		// leave a second plaintext copy under keys/.
+		if _, exists := state.identityForFingerprint(key.Fingerprint); exists {
+			continue
+		}
+		// A key removed here is not pulled back from the cloud. The cloud copy
+		// is deliberately left alone: this switch is add-only.
+		if state.keyFileTombstoned(key.Fingerprint) {
+			continue
+		}
 		target := filepath.Join(directory, key.Name)
 		if !keyFileMatches(target, key.Fingerprint) {
 			// A name another key already took keeps its file: the restored one
