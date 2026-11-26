@@ -2277,13 +2277,15 @@ var traditionalTools = ToolsMessages{
 	TransferChooseFolder:          "選擇資料夾",
 	TransferToFolderFmt:           "儲存到「%s」",
 
+	FilesPanelGroup: "SFTP 面板", FilesWindowGroup: "雙欄檔案傳輸", FilesCommonGroup: "共用設定",
+
 	CatFiles:                         "檔案",
 	FilesParallel:                    "並行傳輸數",
-	FilesPathStyle:                   "SFTP 面板路徑欄顯示方式",
-	FilesPathDescription:             "僅控制與終端機位於同一頁面的 SFTP 面板。選擇麵包屑或輸入框；使用輸入框時，修改路徑後按Enter進入目錄。",
+	FilesPathStyle:                   "路徑欄顯示方式",
+	FilesPathDescription:             "SFTP 面板與雙欄檔案傳輸共用此設定。選擇麵包屑或輸入框；使用輸入框時，修改路徑後按 Enter 進入目錄。",
 	FilesPathBreadcrumbs:             "麵包屑",
 	FilesPathInput:                   "輸入框",
-	FilesPanelAutoOpen:               "預設顯示檔案傳輸面板",
+	FilesPanelAutoOpen:               "預設顯示SFTP面板",
 	FilesTransferAutoOpen:            "傳輸時自動顯示傳輸中心",
 	FilesTransferAutoOpenDescription: "開始上傳或下載時顯示進度卡片。關閉後仍可從工具列開啟傳輸中心。",
 	FilesClearUploads:                "上傳完成後自動清除紀錄",

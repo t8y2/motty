@@ -213,8 +213,8 @@ func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 			if compact.Width <= 0 || compact.Height <= 0 || compact.Width >= area.Width || compact.Height >= area.Height {
 				t.Fatalf("compact card does not leave room for the terminal: card=%+v area=%+v", compact, area)
 			}
-			if compact.X < area.X || compact.Y < area.Y || compact.X+compact.Width > area.X+area.Width || compact.Y+compact.Height > area.Y+area.Height {
-				t.Fatalf("compact card outside terminal area: card=%+v area=%+v", compact, area)
+			if compact.X < area.X || compact.Y < windowBarHeight || compact.X+compact.Width > area.X+area.Width || compact.Y+compact.Height > area.Y+area.Height {
+				t.Fatalf("compact card overlaps the toolbar or leaves the workspace edges: card=%+v area=%+v", compact, area)
 			}
 			if compact.X+compact.Width <= area.X+area.Width/2 || compact.Y >= area.Y+area.Height/2 {
 				t.Fatalf("compact card is not in the terminal area's top-right corner: card=%+v area=%+v", compact, area)
@@ -272,6 +272,10 @@ func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 				t.Fatal("expanded transfer center has no list")
 			}
 			expanded := state.transfers.surface
+			// The taller full panel may be nudged upward to fit the viewport.
+			if compact.Y < expanded.Y-transferCenterGap || compact.Y > expanded.Y+transferCenterGap {
+				t.Fatalf("compact and full centers have different top spacing: compact=%+v expanded=%+v", compact, expanded)
+			}
 			viewport := gfx.Rect{Width: size.Width, Height: size.Height}
 			if expanded.Width <= 0 || expanded.Height <= 0 || expanded.X < viewport.X || expanded.Y < viewport.Y ||
 				expanded.X+expanded.Width > viewport.X+viewport.Width || expanded.Y+expanded.Height > viewport.Y+viewport.Height {
@@ -313,7 +317,7 @@ func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
 	}
 	activeCard := state.transfers.surface
 	area := state.workspacePixelBounds(gfx.Size{Width: 900, Height: 600})
-	if activeCard.Width <= 0 || activeCard.Height <= 0 || activeCard.X < area.X || activeCard.Y < area.Y ||
+	if activeCard.Width <= 0 || activeCard.Height <= 0 || activeCard.X < area.X || activeCard.Y < windowBarHeight ||
 		activeCard.X+activeCard.Width > area.X+area.Width || activeCard.Y+activeCard.Height > area.Y+area.Height {
 		t.Fatalf("active card outside terminal area: card=%+v area=%+v", activeCard, area)
 	}
@@ -338,7 +342,7 @@ func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	card := state.transfers.surface
-	if card.Width <= 0 || card.Height <= 0 || card.X < area.X || card.Y < area.Y ||
+	if card.Width <= 0 || card.Height <= 0 || card.X < area.X || card.Y < windowBarHeight ||
 		card.X+card.Width > area.X+area.Width || card.Y+card.Height > area.Y+area.Height {
 		t.Fatalf("completed card outside terminal area: card=%+v area=%+v", card, area)
 	}

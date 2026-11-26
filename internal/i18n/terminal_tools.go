@@ -1240,4 +1240,8 @@ type ToolsMessages struct {
 
 	FilesTransferAutoOpen, FilesTransferAutoOpenDescription string
 	FilesClearUploads, FilesClearUploadsDescription         string
+
+	FilesPanelGroup  string
+	FilesWindowGroup string
+	FilesCommonGroup string
 }

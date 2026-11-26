@@ -2277,13 +2277,15 @@ var chineseTools = ToolsMessages{
 	TransferChooseFolder:          "选择文件夹",
 	TransferToFolderFmt:           "保存到“%s”",
 
+	FilesPanelGroup: "SFTP 面板", FilesWindowGroup: "双栏文件传输", FilesCommonGroup: "公共设置",
+
 	CatFiles:                         "文件",
 	FilesParallel:                    "并行传输数",
-	FilesPathStyle:                   "SFTP 面板路径栏显示方式",
-	FilesPathDescription:             "仅控制与终端位于同一页面的 SFTP 面板。选择面包屑或输入框；使用输入框时，修改路径后按回车进入目录。",
+	FilesPathStyle:                   "路径栏显示方式",
+	FilesPathDescription:             "SFTP 面板与双栏文件传输共用此设置。选择面包屑或输入框；使用输入框时，修改路径后按回车进入目录。",
 	FilesPathBreadcrumbs:             "面包屑",
 	FilesPathInput:                   "输入框",
-	FilesPanelAutoOpen:               "默认显示文件传输面板",
+	FilesPanelAutoOpen:               "默认显示SFTP面板",
 	FilesTransferAutoOpen:            "传输时自动显示传输中心",
 	FilesTransferAutoOpenDescription: "开始上传或下载时显示进度卡片。关闭后仍可从工具栏打开传输中心。",
 	FilesClearUploads:                "上传完成后自动清除记录",

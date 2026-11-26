@@ -463,17 +463,27 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 	m := state.messages.Tools
 	downloadDescription, downloadActions := state.sftpFilesDownloadSetting()
 	page.groups(func() {
-		page.group("", func() {
+		page.group(m.FilesPanelGroup, func() {
 			page.toggleRow(m.FilesPanelAutoOpen, m.FilesPanelAutoOpenDescription, state.sftpPanelAutoOpen, hitSettingsPanelAutoOpen)
 			settingsChoiceRow(page, m.FilesPanelPosition, m.FilesPanelPositionDescription, &state.sftpPanelSide, settingsSFTPPanelPositionChoices[:], state.settingsSFTPPanelPositionLabel,
 				func() { state.save() }, nil)
-			settingsChoiceRow(page, m.FilesPathStyle, m.FilesPathDescription, &state.sftpPathInput, settingsPathChoices[:], state.settingsPathLabel,
-				func() { state.save() }, nil)
+			page.toggleRow(m.FilesFollow, m.FilesFollowDescription, !state.sftpFollowOff, hitSettingsFollowToggle)
+			page.toggleRow(m.FilesTerminalFollow, m.FilesTerminalFollowDescription, state.sftpTerminalFollow, hitSettingsTerminalFollowToggle)
+			page.actionRow(m.FilesFollowSetup, m.FilesFollowSetupDescription, false,
+				components.ButtonAction{ID: hitSettingsFollowSetup, Label: m.FilesFollowSetupCopy, Variant: components.ButtonOutline})
+		})
+		page.group(m.FilesWindowGroup, func() {
 			settingsChoiceRow(page, m.FilesWindowOrder, m.FilesWindowOrderDescription, &state.sftpWindowOrder, settingsSFTPWindowOrderChoices[:], state.settingsSFTPWindowOrderLabel,
 				func() { state.invalidateSFTPWindows(); state.save() }, nil)
 			settingsChoiceRow(page, m.FilesOpenMode, m.FilesOpenModeDescription, &state.sftpOpenMode, settingsSFTPOpenModeChoices[:], state.settingsSFTPOpenModeLabel,
 				func() { state.save() }, nil)
 			page.toggleRow(m.FilesDirectoryTree, m.FilesDirectoryTreeDescription, state.sftpDirectoryTree, hitSettingsDirectoryTree)
+		})
+		page.group(m.FilesCommonGroup, func() {
+			settingsChoiceRow(page, m.FilesPathStyle, m.FilesPathDescription, &state.sftpPathInput, settingsPathChoices[:], state.settingsPathLabel,
+				func() { state.save() }, nil)
+			page.actionRow(m.FilesColumns, state.sftpFilesColumnsSummary(), false,
+				components.ButtonAction{ID: hitSettingsConfigureColumns, Label: m.FilesColumnsCustomize, Variant: components.ButtonOutline})
 			mb := state.filePreviewMB
 			page.lineWith(m.FilesPreviewLimit, m.FilesPreviewLimitDescription, filePreviewStepperWidth, func() {
 				ui.Row(page.c).Gap(6).Shrink(0).Items(ui.Center).Children(func() {
@@ -482,11 +492,6 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 					page.button(hitSettingsPreviewPlus, "+", aiButtonOutline, false)
 				})
 			})
-			settingsChoiceRow(page, m.FilesParallel, "", &state.sftpParallel, settingsParallelChoices[:], state.settingsParallelLabel,
-				func() { state.applySFTPSettings(); state.save() }, nil)
-			page.actionRow(m.FilesColumns, state.sftpFilesColumnsSummary(), false,
-				components.ButtonAction{ID: hitSettingsConfigureColumns, Label: m.FilesColumnsCustomize, Variant: components.ButtonOutline})
-			page.actionRow(m.FilesDownloadDirectory, downloadDescription, false, downloadActions...)
 			state.paintEditorSetting(page)
 			if state.customEditorSettingVisible() {
 				path := state.customEditorPath
@@ -510,13 +515,10 @@ func (state *State) paintFilesSettings(page *settingsPage) {
 				}
 				page.actionRow(m.FilesCustomEditor, description, false, actions...)
 			}
+			page.actionRow(m.FilesDownloadDirectory, downloadDescription, false, downloadActions...)
+			settingsChoiceRow(page, m.FilesParallel, "", &state.sftpParallel, settingsParallelChoices[:], state.settingsParallelLabel,
+				func() { state.applySFTPSettings(); state.save() }, nil)
 			page.toggleRow(m.FilesKeepTimes, m.FilesKeepTimesDescription, !state.sftpKeepTimesOff, hitSettingsKeepTimesToggle)
-			page.toggleRow(m.FilesFollow, m.FilesFollowDescription, !state.sftpFollowOff, hitSettingsFollowToggle)
-			page.toggleRow(m.FilesTerminalFollow, m.FilesTerminalFollowDescription, state.sftpTerminalFollow, hitSettingsTerminalFollowToggle)
-			page.actionRow(m.FilesFollowSetup, m.FilesFollowSetupDescription, false,
-				components.ButtonAction{ID: hitSettingsFollowSetup, Label: m.FilesFollowSetupCopy, Variant: components.ButtonOutline})
-		})
-		page.group(state.messages.Transfers.Title, func() {
 			page.toggleRow(m.FilesTransferAutoOpen, m.FilesTransferAutoOpenDescription, !state.sftpTransferAutoOpenOff, hitSettingsTransferAutoOpen)
 			page.toggleRow(m.FilesClearUploads, m.FilesClearUploadsDescription, state.sftpClearUploads, hitSettingsClearUploads)
 		})

@@ -2277,13 +2277,15 @@ var englishTools = ToolsMessages{
 	TransferChooseFolder:          "Choose folder",
 	TransferToFolderFmt:           "Save to “%s”",
 
+	FilesPanelGroup: "SFTP panel", FilesWindowGroup: "Dual-pane file transfer", FilesCommonGroup: "Shared settings",
+
 	CatFiles:                         "Files",
 	FilesParallel:                    "Parallel transfers",
-	FilesPathStyle:                   "SFTP panel path field",
-	FilesPathDescription:             "Controls only the SFTP panel in the terminal page. Choose breadcrumbs or an input field; in the input field, edit the path and press Enter.",
+	FilesPathStyle:                   "Path bar style",
+	FilesPathDescription:             "Shared by the SFTP panel and dual-pane file transfer. Choose breadcrumbs or an input field; in the input field, edit the path and press Enter.",
 	FilesPathBreadcrumbs:             "Breadcrumbs",
 	FilesPathInput:                   "Input field",
-	FilesPanelAutoOpen:               "Show file transfer panel by default",
+	FilesPanelAutoOpen:               "Show SFTP panel by default",
 	FilesTransferAutoOpen:            "Show transfers automatically",
 	FilesTransferAutoOpenDescription: "Show the progress card when an upload or download starts. You can always open transfers from the toolbar.",
 	FilesClearUploads:                "Clear completed uploads automatically",

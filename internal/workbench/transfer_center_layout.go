@@ -27,25 +27,23 @@ func (state *State) declareTransferCenter(c ui.C) {
 	center.handlers(state)
 	viewport := c.Bounds()
 	anchor := center.anchor
+	if anchor.Width <= 0 {
+		anchor = gfx.Rect{X: max(viewport.Width-16, 0), Y: windowBarHeight, Width: 1, Height: 1}
+	}
 	width, preferredHeight := max(0, min(760, viewport.Width-24)), center.preferredHeight()
 	roomArea, margin := viewport, transferCenterGap
 	if center.compact {
 		area := state.transferCenterArea()
-		anchor = gfx.Rect{
-			X: area.X + area.Width - transferCenterInset - 1, Y: area.Y + transferCenterInset,
-			Width: 1, Height: 1,
-		}
+		anchor.X, anchor.Width = area.X+area.Width-transferCenterInset-1, 1
 		width, preferredHeight = max(0, min(360, area.Width-2*transferCenterInset)), 148
 		if center.active == 0 {
 			preferredHeight = 108
 		}
 		roomArea, margin = area, transferCenterInset
-	} else if anchor.Width <= 0 {
-		anchor = gfx.Rect{X: max(viewport.Width-16, 0), Y: windowBarHeight, Width: 1, Height: 1}
 	}
 	padding := c.Theme().Metrics.PadSurface
-	// Only the compact notice hangs from the terminal content. The full center
-	// keeps its toolbar anchor and original viewport sizing.
+	// Both sizes use the toolbar's vertical anchor and gap. The compact card
+	// keeps its right edge and available height within the workspace.
 	room := roomArea.Y + roomArea.Height - margin - anchor.Y - anchor.Height - transferCenterGap
 	side := components.PopoverBottom
 	if above := anchor.Y - transferCenterGap - (roomArea.Y + margin); room < preferredHeight+2*padding && above > room {
@@ -83,7 +81,7 @@ func (center *transferCenter) preferredHeight() float32 {
 	return min(540, height+max(76, float32(len(center.rows))*transferRowHeight))
 }
 
-// transferCenterArea is the content rectangle the progress notice floats in.
+// transferCenterArea bounds the progress notice's width, right edge and bottom.
 // On the terminal page it excludes the pane header, side panels and assistant;
 // file-manager tabs and section pages use their own visible content instead.
 func (state *State) transferCenterArea() gfx.Rect {
