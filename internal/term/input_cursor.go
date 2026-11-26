@@ -17,14 +17,40 @@ const maxInputMove = 4096
 // owning shell's marker counts, and a cursor with a pending wrap has no settled
 // position yet.
 func (t *Terminal) markPromptStart(own bool) {
-	t.promptActive, t.promptStale = false, false
+	t.promptActive, t.promptDrawing, t.promptWrote, t.promptStale = false, false, false, false
 	t.dropPromptRows()
 	if !own || t.onAlt || t.pend {
 		return
 	}
 	t.promptLine = t.scrolled + uint64(t.cy) + 1
 	t.promptStart = t.cx
+	t.promptDrawing = true
 	t.promptActive = true
+}
+
+// notePromptWrite records the column where the prompt's own text begins on its
+// first row. OSC 133 A is printed from PROMPT_COMMAND/precmd before PS1 is
+// expanded, so a prefix inside PS1 — such as the first-prompt line clear
+// (\r\e[2K) after SSH injection, or a prompt that returns to column zero — moves
+// the cursor left before any character of the prompt is written.
+func (t *Terminal) notePromptWrite() {
+	if !t.promptDrawing || t.onAlt || int(t.promptLine)-1-int(t.scrolled) != t.cy {
+		return
+	}
+	if !t.promptWrote || t.cx < t.promptStart {
+		t.promptStart = t.cx
+		t.promptWrote = true
+	}
+}
+
+// notePromptColumn follows leftward cursor motion on the prompt's first row
+// before any prompt text is written, so an empty or newline-leading PS1 after
+// \r\e[2K still records column zero rather than the pre-clear cursor column.
+func (t *Terminal) notePromptColumn() {
+	if t.promptDrawing && !t.promptWrote && !t.onAlt && !t.pend &&
+		int(t.promptLine)-1-int(t.scrolled) == t.cy && t.cx < t.promptStart {
+		t.promptStart = t.cx
+	}
 }
 
 // markInputStart records the cursor at OSC 133 B as the start of the input. Only
@@ -33,6 +59,10 @@ func (t *Terminal) markPromptStart(own bool) {
 // yet, so it records nothing.
 func (t *Terminal) markInputStart(own bool) {
 	t.inputStartSet = false
+	if own {
+		t.notePromptColumn()
+		t.promptDrawing = false
+	}
 	if !own || t.onAlt || t.pend {
 		return
 	}

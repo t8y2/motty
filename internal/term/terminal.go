@@ -209,15 +209,19 @@ type Terminal struct {
 
 	// promptLine is the buffer line the shell's prompt began on (OSC 133 A), and
 	// promptActive whether the cursor is still on that prompt; see
-	// markPromptStart. promptStale is whether a resize left the rows it drew on
-	// waiting for the shell's own redraw; promptSaved holds those rows and the
-	// cursor column as the shell drew them until it does.
-	promptLine   uint64
-	promptStart  int // the column the prompt began at
-	promptActive bool
-	promptStale  bool
-	promptSaved  []*line
-	promptCol    int
+	// markPromptStart. promptDrawing holds while the shell is still writing that
+	// prompt (until OSC 133 B, C or D, or a resize), so a prefix in PS1 that
+	// returns to column zero updates promptStart. promptStale is whether a resize
+	// left the rows it drew on waiting for the shell's own redraw; promptSaved
+	// holds those rows and the cursor column as the shell drew them until it does.
+	promptLine    uint64
+	promptStart   int // the column the prompt began at
+	promptActive  bool
+	promptDrawing bool
+	promptWrote   bool
+	promptStale   bool
+	promptSaved   []*line
+	promptCol     int
 
 	inputEnvironmentFn func(InputEnvironment)
 	homeDirectoryFn    func(string)
@@ -356,6 +360,18 @@ func (t *Terminal) ClearScreen() bool {
 	if t.onAlt {
 		return false
 	}
+	if row := int(t.promptLine) - 1 - int(t.scrolled); t.promptActive && row == t.cy {
+		t.promptLine = t.scrolled + 1
+	} else {
+		t.promptActive, t.promptDrawing, t.promptWrote = false, false, false
+	}
+	if t.inputStartSet && int(t.inputStart.Line)-1-int(t.scrolled) == t.cy {
+		t.inputStart.Line = t.scrolled + 1
+	} else {
+		t.inputStartSet = false
+	}
+	t.promptStale = false
+	t.dropPromptRows()
 	lines := t.main.lines
 	lines[t.cy], lines[0] = lines[0], lines[t.cy]
 	for i := 1; i < len(lines); i++ {
@@ -569,7 +585,7 @@ func (t *Terminal) Reset() {
 // resetState sets modes, cursor, margins and tabs to their defaults.
 func (t *Terminal) resetState() {
 	t.inputStartSet = false
-	t.promptActive, t.promptStale = false, false
+	t.promptActive, t.promptDrawing, t.promptWrote, t.promptStale = false, false, false, false
 	t.dropPromptRows()
 	t.setSync(false)
 	t.cx, t.cy, t.pend = 0, 0, false

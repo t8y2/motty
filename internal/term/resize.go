@@ -46,6 +46,7 @@ func (t *Terminal) reflowMain() {
 	split, prompt := t.promptSplit()
 	if prompt {
 		row := split - t.histCount
+		t.promptDrawing = false
 		if !t.promptStale || len(t.promptSaved) == 0 {
 			t.capturePromptRows(row)
 		} else {
@@ -205,7 +206,11 @@ func (t *Terminal) clearStalePrompt() {
 		return
 	}
 	row := int(t.promptLine) - 1 - int(t.scrolled)
-	if row < 0 || row >= len(t.main.lines) || t.cy != row || t.cx > t.promptStart {
+	start := t.promptStart
+	if t.promptCol > start && t.cols >= 2 {
+		start = min(start, t.cols-2)
+	}
+	if row < 0 || row >= len(t.main.lines) || t.cy != row || t.pend || t.cx > start {
 		return
 	}
 	rows := len(t.promptSaved)

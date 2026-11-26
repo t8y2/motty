@@ -126,3 +126,72 @@ func TestResizeKeepsThePromptWhenEchoedInputWraps(t *testing.T) {
 		t.Fatalf("the wrapped echo changed the prompt line: %q", text)
 	}
 }
+
+// Over SSH, shell integration is injected after the login shell has already
+// printed its first prompt, with the activation line's echo hidden. OSC 133 A
+// therefore arrives from PROMPT_COMMAND/precmd while the cursor still stands at
+// the end of the old prompt, and PS1's one-shot \r\e[2K prefix moves back to
+// column zero only afterwards (#1642). Typing after a resize must still keep
+// that prompt instead of taking the old cursor column for the prompt's start.
+func TestResizeKeepsTheFirstInjectedPromptWhenInputArrivesFirst(t *testing.T) {
+	prompt := "abc@ubuntu2404:~$ "
+	terminal := New(80, 8, 100)
+	terminal.SetPromptToken("t")
+	// Pre-injection login output and initial unintegrated prompt.
+	feed(terminal, "Last login: Thu Nov 26 15:04:26 2026 from 192.168.131.72\r\n"+prompt)
+	// First integrated prompt after the hidden activation line's ready marker.
+	feed(terminal, "\x1b]133;D;0;motty=t\x07\x1b]133;A;motty=t\x07\x1b]7;file://ubuntu/home/abc\x07"+
+		"\x1b]7777;motty-first-prompt\x07\r\x1b[2K"+prompt+"\x1b]133;B;motty=t\x07")
+	terminal.Resize(60, 8)
+	feed(terminal, "docker")
+	if got := terminal.RowText(1); got != prompt+"docker" {
+		t.Fatalf("prompt row after typing = %q, want %q", got, prompt+"docker")
+	}
+	feed(terminal, "\r\x1b[K\r\x1b]7777;motty-first-prompt\x07\r\x1b[2K"+prompt+"\x1b]133;B;motty=t\x07docker")
+	if got := terminal.RowText(1); got != prompt+"docker" {
+		t.Fatalf("prompt row after redraw = %q, want %q", got, prompt+"docker")
+	}
+}
+
+// A prompt that returns to column zero after output without a newline, or one
+// narrowed past the column it began at, must still keep the prompt when echoed
+// input arrives ahead of the shell's redraw.
+func TestResizeKeepsPromptAfterCarriageReturnOrNarrowClamp(t *testing.T) {
+	t.Run("carriage return inside PS1", func(t *testing.T) {
+		terminal := New(60, 6, 100)
+		terminal.SetPromptToken("t")
+		feed(terminal, "partial-output")
+		feed(terminal, "\x1b]133;A;motty=t\x07\r\x1b[2K$ \x1b]133;B;motty=t\x07")
+		terminal.Resize(40, 6)
+		feed(terminal, "docker")
+		if got := terminal.RowText(0); got != "$ docker" {
+			t.Fatalf("prompt row = %q, want %q", got, "$ docker")
+		}
+	})
+	t.Run("narrowed below nonzero prompt start", func(t *testing.T) {
+		terminal := New(60, 6, 100)
+		terminal.SetPromptToken("t")
+		feed(terminal, "01234567890123456789")
+		feed(terminal, "\x1b]133;A;motty=t\x07$ \x1b]133;B;motty=t\x07")
+		terminal.Resize(15, 6)
+		feed(terminal, "d")
+		if got := terminal.RowText(0); !strings.HasPrefix(got, "01234567890123") {
+			t.Fatalf("narrowed prompt row wiped before redraw: %q", got)
+		}
+	})
+	t.Run("indented prompt after line clear", func(t *testing.T) {
+		terminal := New(60, 6, 100)
+		terminal.SetPromptToken("t")
+		feed(terminal, "abc@ubuntu2404:~$ ")
+		feed(terminal, "\x1b]133;A;motty=t\x07\r\x1b[2K\x1b[4C$ \x1b]133;B;motty=t\x07")
+		terminal.Resize(40, 6)
+		feed(terminal, "docker")
+		if got := terminal.RowText(0); got != "    $ docker" {
+			t.Fatalf("indented prompt row = %q, want %q", got, "    $ docker")
+		}
+		feed(terminal, "\r\x1b[K\x1b[4C$ docker")
+		if got := terminal.RowText(0); got != "    $ docker" {
+			t.Fatalf("indented prompt row after redraw = %q, want %q", got, "    $ docker")
+		}
+	})
+}
