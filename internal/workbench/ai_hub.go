@@ -21,6 +21,16 @@ import (
 	"motty/internal/buildinfo"
 )
 
+// mcpDefaultPort is the loopback port the HTTP server prefers while the
+// settings remember no port of their own. A client's configuration names the
+// address once and is never asked for it again, so a copy that starts without a
+// remembered port — a new or emptied data directory, a second copy of the
+// application, a profile of its own — has to land on the same address as every
+// other one instead of on whatever the system offers that day. The port sits
+// above the privileged range so the server can open it, and below the system's
+// ephemeral range (from 32768) so an outgoing connection cannot take it.
+const mcpDefaultPort = 17890
+
 // AIHub serves the assistant's tools to external agents (MCP clients such as
 // Claude Code) for every window of the application. It is off until the user
 // turns it on in Settings, listens only on the loopback interface, and every
@@ -184,10 +194,7 @@ func (hub *AIHub) start(token string, mode gate.Mode, port int) error {
 	if err != nil {
 		return err
 	}
-	listener, err := mcp.Listen(net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil && port != 0 {
-		listener, err = mcp.Listen("127.0.0.1:0") // the remembered port is taken
-	}
+	listener, err := listenMCP(port)
 	if err != nil {
 		return err
 	}
@@ -205,6 +212,36 @@ func (hub *AIHub) start(token string, mode gate.Mode, port int) error {
 		_ = server.Serve(listener)
 	}()
 	return nil
+}
+
+// listenMCP opens the loopback listener on the first of mcpHTTPPorts that the
+// system gives up. A port another program holds is the reason to try the next
+// one, so only the last error is worth reporting.
+func listenMCP(remembered int) (net.Listener, error) {
+	var err error
+	for _, port := range mcpHTTPPorts(remembered) {
+		var listener net.Listener
+		listener, err = mcp.Listen(net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err == nil {
+			return listener, nil
+		}
+	}
+	return nil, err
+}
+
+// mcpHTTPPorts lists the ports to try in order: the remembered one when it is a
+// usable port, the default every copy of the application shares, and 0 for
+// whatever the system offers. The default stays ahead of 0 so a port another
+// program took moves the address to the shared one rather than away from it.
+func mcpHTTPPorts(remembered int) []int {
+	ports := make([]int, 0, 3)
+	if remembered > 0 && remembered < 65536 {
+		ports = append(ports, remembered)
+	}
+	if len(ports) == 0 || ports[0] != mcpDefaultPort {
+		ports = append(ports, mcpDefaultPort)
+	}
+	return append(ports, 0)
 }
 
 func (hub *AIHub) stop() {
