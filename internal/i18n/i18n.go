@@ -276,6 +276,8 @@ type Messages struct {
 	SettingsAppearanceSystem               string
 	SettingsAppearanceDark                 string
 	SettingsAppearanceLight                string
+	SettingsTransparency                   string
+	SettingsTransparencyDescription        string
 	SettingsCorners                        string
 	SettingsCornersRounded                 string
 	SettingsCornersSquare                  string
@@ -318,6 +320,8 @@ type Messages struct {
 	VerticalTabsAutoHide                   string
 	VerticalTabsScrollbar                  string
 	TabStripScrollbar                      string
+	TabStripScrollLeft                     string
+	TabStripScrollRight                    string
 	SettingsNetworkProxy                   string
 	SettingsNetworkProxyDescription        string
 	SettingsNetworkProxySystem             string

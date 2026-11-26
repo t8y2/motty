@@ -33,8 +33,8 @@
 # title is the host's label. The files panel is opened with its toolbar button
 # and the assistant with its window-bar button; the saved conversation is picked
 # from 对话历史 by geometry. The assistant's target picker is driven by its IDs.
-# `layout` reports the terminal/assistant divider as a crossing: it is the hit
-# area that resizes the panels, not text over text.
+# `layout` reports a panel divider as a crossing: it is the hit area that
+# resizes the panels, not text over text.
 #
 # Convert with cwebp -q 88 -m 6, then copy the three files to
 # website/public/showcase-base-dark.webp, showcase-light.webp and
@@ -53,9 +53,15 @@ type tester
 click id:shell/dialog-port
 key cmd+a
 type 2222
-click id:shell/dialog-icon
-settle 400
-click id:host-protocol-ui/dialog-icon-item/#9
+# The icon select is drawn by the form itself, so it has no stable hit ID; its
+# place in the 1560x975 dialog is used instead, as hero_shot.txt does. The list
+# is virtualized, so it is scrolled to the end before Ubuntu is clicked: options
+# outside the visible rows are not in the tree.
+click 500 552
+settle 600
+scroll 560 500 0 2000
+settle 700
+click "Ubuntu"
 settle 300
 click id:shell/dialog-submit
 settle 900

@@ -372,7 +372,7 @@ func (state *State) loginStepFinished(session *Session, now time.Duration) bool 
 	if !t.login.running {
 		return false
 	}
-	if t.promptReady && !t.promptDirty && t.promptVersion > t.login.promptVersion {
+	if t.promptIdle() && !t.promptDirty && t.promptVersion > t.login.promptVersion {
 		return true
 	}
 	if t.login.hasExitCode && ((t.login.exitCode != 0 && t.login.policy == loginFailureStop) || (t.login.line == "" || t.login.isWorkspaceStep)) {
@@ -579,7 +579,7 @@ func (state *State) runLoginCommand(session *Session) {
 			}
 		} else {
 			if !t.login.isWorkspaceStep {
-				if t.promptStarted && !t.promptReady && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
+				if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
 					if t.login.hasRemainingSteps() {
 						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 					} else {
@@ -608,12 +608,12 @@ func (state *State) runLoginCommand(session *Session) {
 	}
 	if t.login.waitPrompt {
 		if t.login.isWorkspaceStep {
-			if !t.promptReady || t.promptDirty || t.promptVersion <= t.login.promptVersion {
+			if !t.promptIdle() || t.promptDirty || t.promptVersion <= t.login.promptVersion {
 				return
 			}
 		} else if t.folderIntegrationSeen {
-			if !t.promptReady || t.promptDirty || t.promptVersion <= t.login.promptVersion {
-				if t.promptStarted && !t.promptReady && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
+			if !t.promptIdle() || t.promptDirty || t.promptVersion <= t.login.promptVersion {
+				if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
 					if t.login.hasRemainingSteps() {
 						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 					} else {
@@ -641,15 +641,11 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	switch {
-	case t.promptReady && !t.promptDirty:
-	case t.login.local && t.promptStarted && t.inputLine && !t.promptDirty && t.submittedLines == 0:
-		// Locally installed prompt hooks report the first A/B before any C.
-		// CMD never reports C. Both are ready for the one startup line, without
-		// claiming command-reporting support for other terminal features.
+	case t.promptIdle() && !t.promptDirty:
 	case !t.login.seen || t.folderIntegrationSeen:
 		// Once hooks report, only their prompt end authorizes a command.
 		if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() {
-			if t.promptStarted && !t.promptReady && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
+			if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
 				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			} else if !t.login.seen && now-t.login.armedAt >= loginCommandExecTimeout {
 				state.abortLoginCommands(session, loginAbortTimeout)

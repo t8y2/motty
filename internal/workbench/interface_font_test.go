@@ -45,6 +45,7 @@ func lastTold(told *[]interfaceFontChoice) string {
 func openInterfaceFontPickerFor(t testing.TB, state *State) {
 	t.Helper()
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	state.Click(hitInterfaceFontChoose)
 	waitForPicker(t, state, func() bool { return !state.uiFont.loading })
 	paintedTexts(state)
@@ -171,6 +172,7 @@ func TestTheInterfaceFontIsPreviewedConfirmedKeptAndRestored(t *testing.T) {
 	options, told := interfaceFontOptions(t, testInterfaceFonts)
 	state := newTestState(t, options)
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	state.Click(hitInterfaceFontChoose)
 	if state.modal != modalFontPicker || state.fonts.kind != pickInterfaceFont || !state.uiFont.loading {
 		t.Fatalf("modal %d, kind %d, loading %v", state.modal, state.fonts.kind, state.uiFont.loading)
@@ -245,6 +247,7 @@ func TestTheInterfaceFontPickerGuardsItsButtonsLikeTheTerminalFontOne(t *testing
 	options, _ := interfaceFontOptions(t, testInterfaceFonts)
 	state := newTestState(t, options)
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	state.Click(hitInterfaceFontChoose)
 	if !state.uiFont.loading {
 		t.Fatal("the list was read at once")
@@ -292,6 +295,7 @@ func TestAnInterfaceFontThatIsNotInstalledIsKeptButNotUsed(t *testing.T) {
 		t.Fatalf("the choice is %q, the engine was last told %q", second.uiFont.family, lastTold(told))
 	}
 	second.Click(hitSettings)
+	second.selectSettingsCategory(settingsAppearance)
 	_, texts := paintedTexts(second)
 	if !contains(texts, "Sarasa Gothic") || !contains(texts, "no longer installed") {
 		t.Fatalf("the settings row does not say the family is not used: %v", texts)
@@ -312,6 +316,7 @@ func TestAnInterfaceFontThatIsNotInstalledIsKeptButNotUsed(t *testing.T) {
 		t.Fatalf("missing %v, told %v", third.uiFont.missing, *told)
 	}
 	third.Click(hitSettings)
+	third.selectSettingsCategory(settingsAppearance)
 	if _, texts := paintedTexts(third); !contains(texts, "Sarasa Gothic") {
 		t.Fatalf("the row does not name the font in use: %v", texts)
 	}
@@ -339,6 +344,7 @@ func TestWhereThePlatformCannotFollowAFamilyTheRowIsHiddenOrSaysSo(t *testing.T)
 	options.SetInterfaceFont = func(string, int, int) bool { calls++; return false }
 	state := newTestState(t, options)
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	for range 3 {
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
@@ -364,6 +370,7 @@ func TestWhereThePlatformCannotFollowAFamilyTheRowIsHiddenOrSaysSo(t *testing.T)
 	}
 	carried := newTestState(t, options)
 	carried.Click(hitSettings)
+	carried.selectSettingsCategory(settingsAppearance)
 	canvas, texts := paintedTexts(carried)
 	hit, ok := hitByID(canvas, hitInterfaceFontChoose)
 	if !ok || !hit.Disabled || !contains(texts, "cannot change the interface font") {
@@ -379,9 +386,14 @@ func TestTheInterfaceFontRowIsSearchableAndFollowsTheLanguage(t *testing.T) {
 	state := newTestState(t, options)
 	state.setInterfaceFont("Segoe UI", 0, 0)
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	typeInto(state, hitSettingsSearch, "interface font")
 	paintedTexts(state)
-	if state.settings.count != 1 || state.settings.results[0].label != state.messages.SettingsInterfaceFont {
+	found := false
+	for _, result := range state.settings.results[:state.settings.count] {
+		found = found || result.label == state.messages.SettingsInterfaceFont
+	}
+	if !found {
 		t.Fatalf("results = %+v", state.settings.results[:state.settings.count])
 	}
 
@@ -402,6 +414,7 @@ func TestTheInterfaceFontRowNamesTheFontBesideTheButton(t *testing.T) {
 	state := newTestState(t, options)
 	state.setInterfaceFont("Segoe UI", 0, 0)
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	canvas, _ := paintedTexts(state)
 
 	button, ok := hitByID(canvas, hitInterfaceFontChoose)

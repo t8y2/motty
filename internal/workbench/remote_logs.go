@@ -12,6 +12,7 @@ import (
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/configstore"
 	"motty/internal/sshconn"
@@ -145,7 +146,8 @@ type remoteLogView struct {
 	pathMenu           bool
 	pathMenuFor        remoteLogPath
 	query              ui.Field
-	name, path         ui.Field
+	name               ui.Field
+	path               text.Editor
 	formMode           remoteLogForm
 	formOriginal       remoteLogPath
 	formError          string

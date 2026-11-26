@@ -322,10 +322,33 @@ func (state *State) ground(color gfx.Color) gfx.Color {
 	return color
 }
 
+// terminalTransparent reports whether this window can show the desktop through
+// the terminal: the host offers it and the platform composited the window.
+func (state *State) terminalTransparent() bool {
+	return state.options.TerminalTransparency && state.windowComposited.Load()
+}
+
+// desktopTransparency is the fraction of the desktop visible through the
+// default terminal background. Auxiliary windows and unsupported hosts stay solid.
+func (state *State) desktopTransparency() float32 {
+	if !state.terminalTransparent() {
+		return 0
+	}
+	return state.terminalTransparency.Value / 100
+}
+
+// terminalGround affects only the default fill of the terminal control. The
+// glyphs, cursor and explicit cell backgrounds are painted separately, above it.
+func (state *State) terminalGround() gfx.Color {
+	color := state.ground(state.termPal.terminal)
+	color.Alpha *= 1 - state.desktopTransparency()
+	return color
+}
+
 // showsBackground reports whether the picture is on screen: only behind the
 // terminals of a workspace, which is the one place it is meant to be.
 func (state *State) showsBackground() bool {
-	return state.backgroundOn() && state.activeSection == sectionTerminal && state.deck.ActiveWorkspace() != 0
+	return state.backgroundOn() && state.terminalPage() && state.desktopTransparency() == 0
 }
 
 // paintBackground puts the picture behind the terminal area, cover-fit below the
@@ -349,7 +372,15 @@ func (state *State) paintBackground(canvas *gfx.Canvas, size gfx.Size) bool {
 		source.Height = float32(bg.width) / windowAspect
 		source.Y = (float32(bg.height) - source.Height) / 2
 	}
-	canvas.DrawBackdrop(gfx.Bitmap{Pix: bg.pix, Width: bg.width, Height: bg.height, Stride: bg.width * 4, ID: bg.id}, source, area)
+	bitmap := gfx.Bitmap{Pix: bg.pix, Width: bg.width, Height: bg.height, Stride: bg.width * 4, ID: bg.id}
+	if state.terminalTransparent() {
+		// A PNG can itself contain clear pixels. At 0% they should reveal the
+		// shell color that used to be the native clear, not the desktop.
+		canvas.Fill(area, state.WindowColor())
+		canvas.DrawBitmapRegion(bitmap, source, area)
+	} else {
+		canvas.DrawBackdrop(bitmap, source, area)
+	}
 	return true
 }
 

@@ -331,8 +331,12 @@ func (state *State) aiRiskColors(level risk.Level) (foreground, fill gfx.Color) 
 // these (aiBuild) and declared with the same numbers (declareAIRow), so the two
 // agree; flex never has to be asked how tall a row is.
 const (
-	aiUserPadY        = float32(8)  // inside a user bubble
-	aiUserPadX        = float32(10) //
+	aiUserPadY = float32(8)  // inside a user bubble
+	aiUserPadX = float32(10) //
+	// aiUserWidth is the most of a row a question's bubble takes, the share a
+	// chat bubble wraps at in Viva (ui.Bubble): the answer beside it keeps the
+	// full row for its tables and code.
+	aiUserWidth       = 0.8
 	aiNoticePadY      = float32(8)  // inside a notice
 	aiNoticePadX      = float32(12) //
 	aiReasonHeader    = float32(24) // the line that opens and closes a reasoning row
@@ -366,7 +370,7 @@ func (state *State) aiBuild(canvas *gfx.Canvas, view *aiRowView, item *aiItem, w
 	}
 	switch item.kind {
 	case aiUser:
-		inner := max(width*0.9-2*aiUserPadX, 40)
+		inner := max(width*aiUserWidth-2*aiUserPadX, 40)
 		view.plain[aiTextPrimary].layoutBody(canvas, item.text, aiSizes.body, aiSizes.bodyLine, inner, aiMaxLines)
 		view.lines = view.plain[aiTextPrimary].appendLines(view.lines)
 		view.height = 2*aiUserPadY + float32(len(view.lines))*aiSizes.bodyLine
@@ -1302,7 +1306,9 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 	view.textSlotSet = [aiTextPartCount]bool{}
 	switch item.kind {
 	case aiUser:
-		root.Items(ui.End).Children(func() {
+		// The question sits at the end of its row, as in every chat, and takes
+		// only the room its words need (Justify: the List row is a Row).
+		root.Justify(ui.End).Children(func() {
 			f.Column().MaxWidth(view.width).PadSides(aiUserPadY, aiUserPadX, aiUserPadY, aiUserPadX).Background(pal.accentSoft).Radius(radius.popup).Children(func() {
 				text := f.Column().Children(func() {
 					aiTextLines(f, view.lines, aiSizes.body, aiSizes.bodyLine, pal.text)

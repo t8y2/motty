@@ -216,7 +216,7 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	view, err := headless.Open(state.WindowConfig(app.Config{
 		Title: "Server logs", Width: 1200, Height: 800, Tree: Tree(),
 		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
-		OnResize: state.Resize, OnWake: state.Wake,
+		OnResize: state.Resize, OnWake: state.Wake, TextInput: remoteLogTestTextInput(state),
 	}), nil, headless.Options{Scale: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -482,6 +482,77 @@ func TestRemoteLogsSavedPathsAndLivePanel(t *testing.T) {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("removing the selected path did not cancel the stream")
+	}
+}
+
+func remoteLogTestTextInput(state *State) func(app.TextInputContext) *app.TextInput {
+	var input app.TextInput
+	return func(context app.TextInputContext) *app.TextInput {
+		if editor := state.EditorFor(context.ID); editor != nil {
+			input = app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
+			return &input
+		}
+		return nil
+	}
+}
+
+func TestRemoteLogPathEditorKeepsTheLongPathEditable(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	path := remoteLogPath{Name: "App log", Path: strings.Repeat("/应用-service", 32) + "/app.log"}
+	if err := state.saveRemoteLogPath(session, remoteLogPath{}, path, false); err != nil {
+		t.Fatal(err)
+	}
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Width: 1200, Height: 800, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize, OnWake: state.Wake,
+		TextInput: remoteLogTestTextInput(state),
+	}), nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	click := func(label string) {
+		t.Helper()
+		if err := view.ClickLabel(label); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Rest(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := state.messages.RemoteLogs
+	click(m.Title)
+	click(fmt.Sprintf(m.PathActionsFmt, path.Name))
+	click(m.Edit)
+	if err := view.Keys("Tab"); err != nil {
+		t.Fatal(err)
+	}
+	if focus := view.Snapshot().Focused; focus != hitRemoteLogPath {
+		t.Fatalf("Tab focused %v, want the remote path field", focus)
+	}
+	if editor := view.Snapshot().Editor; editor == nil || editor.Value != path.Path || editor.HideNativeOverlays {
+		t.Fatalf("the long path is not painted by the scrolling native editor: %+v", editor)
+	}
+	if err := view.Keys("End"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("Shift+Home"); err != nil {
+		t.Fatal(err)
+	}
+	if editor := state.EditorFor(hitRemoteLogPath); editor.Selection().Start != 0 || editor.Selection().End != editor.RuneCount() {
+		t.Fatalf("selection = %+v, want the full path", editor.Selection())
+	}
+	if err := view.Keys("End"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type(".1"); err != nil {
+		t.Fatal(err)
+	}
+	click(m.Edit)
+	path.Path += ".1"
+	if !slices.Equal(session.host.RemoteLogPaths, []remoteLogPath{path}) {
+		t.Fatalf("edited paths = %v, want %v", session.host.RemoteLogPaths, path)
 	}
 }
 

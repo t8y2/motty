@@ -11,7 +11,7 @@ import (
 var sameInEveryLanguage = map[string]bool{
 	"FontPickerSampleSymbols": true, "ProxySOCKS5": true, "ProxyHTTP": true, "ProtocolSSH": true, "ProtocolTelnet": true,
 	"ProtocolMosh":           true,
-	"FieldDevicePlaceholder": true, "FieldLinePlaceholder": true, "FlowHardware": true, "FlowSoftware": true,
+	"FieldDevicePlaceholder": true, "FieldLinePlaceholder": true, "FlowHardware": true, "FlowSoftware": true, "BackspaceDEL": true, "BackspaceCtrlH": true,
 	"AlgoCustomPlaceholder": true, "RemoteColPID": true, "RemoteColCPU": true, "RemoteColID": true, "RemoteTabCompose": true,
 	"CatMCP": true, "SyncConfigure": true, "SyncConfigureS3": true, "SyncConfigureGist": true, "SyncConfigureGitee": true,
 	"GiteeDialogTitle": true, "GeneralUpdateSourceCNB": true,

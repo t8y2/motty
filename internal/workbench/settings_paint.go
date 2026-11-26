@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"strconv"
+
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -355,6 +357,9 @@ func (state *State) paintAppearanceSettings(page *settingsPage) {
 		page.group("", func() {
 			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
+			if state.terminalTransparent() {
+				state.paintTerminalTransparencySetting(page)
+			}
 			settingsChoiceRow(page, messages.SettingsCorners, "", &state.cornerStyle, settingsCornerChoices[:], state.settingsCornerLabel,
 				func() { state.applyMetrics(); state.save() }, nil)
 			state.paintIconColorSetting(page)
@@ -374,6 +379,24 @@ func (state *State) paintAppearanceSettings(page *settingsPage) {
 				page.toggleRow(messages.SettingsTabsAutoHide, messages.SettingsTabsAutoHideDescription, state.verticalTabs.autoHide, hitSettingsVerticalTabsAutoHide)
 				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
 			}
+		})
+	})
+}
+
+func (state *State) paintTerminalTransparencySetting(page *settingsPage) {
+	c, slider := page.c, &state.terminalTransparency
+	label := state.messages.SettingsTransparency
+	page.lineFor(hitTerminalTransparency, label, state.messages.SettingsTransparencyDescription, 182, func() {
+		ui.Row(c).Grow(1).Gap(8).Items(ui.Center).Children(func() {
+			wasDragging := slider.Dragging()
+			control := ui.Slider(c, slider).Range(0, 100).Step(1).Label(label).Hit(hitTerminalTransparency, label).Grow(1).Shrink(1)
+			// The page routes slider keys by the state ID; match the explicit row hit.
+			slider.ID = hitTerminalTransparency
+			changed := control.Changed()
+			if !slider.Dragging() && (wasDragging || changed) {
+				state.save()
+			}
+			ui.Text(c, strconv.Itoa(int(slider.Value))+"%").FontSize(metrics.FontSizeS).Color(state.pal.muted).Width(36).Shrink(0).TextEnd()
 		})
 	})
 }

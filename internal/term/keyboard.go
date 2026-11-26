@@ -79,9 +79,9 @@ func (t *Terminal) kittyPop(count int) {
 
 // EncodeKeyEvent turns one key event into the bytes a program reading the
 // terminal expects. flags is the active screen's kitty keyboard enhancement
-// flags; with no flags it is exactly EncodeKey.
+// flags; with no flags it is exactly EncodeKey with backspace for its key.
 // Application shortcut ownership is decided by the caller, not the encoder.
-func EncodeKeyEvent(event gfx.KeyEvent, flags uint32, appCursorKeys bool) []byte {
+func EncodeKeyEvent(event gfx.KeyEvent, flags uint32, appCursorKeys bool, backspace byte) []byte {
 	flags &= kittySupportedFlags
 	if flags == 0 {
 		if event.Release {
@@ -92,7 +92,7 @@ func EncodeKeyEvent(event gfx.KeyEvent, flags uint32, appCursorKeys bool) []byte
 		if event.Key == gfx.KeyUnknown && event.Typed != "" && event.Modifiers&(gfx.ModifierControl|gfx.ModifierAlt|gfx.ModifierMeta) == 0 {
 			return []byte(event.Typed)
 		}
-		return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys)
+		return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys, backspace)
 	}
 	if event.Key.IsModifier() && flags&8 == 0 {
 		return nil
@@ -121,7 +121,7 @@ func EncodeKeyEvent(event gfx.KeyEvent, flags uint32, appCursorKeys bool) []byte
 		if event.Release {
 			return nil
 		}
-		return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys)
+		return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys, backspace)
 	}
 	csiu := kittyUsesCSI(event, flags, namedOK, exception)
 	eventType, includeEvent := 1, flags&2 != 0
@@ -137,7 +137,7 @@ func EncodeKeyEvent(event gfx.KeyEvent, flags uint32, appCursorKeys bool) []byte
 			return nil
 		}
 		if namedOK {
-			return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys)
+			return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys, backspace)
 		}
 		text := event.Typed
 		if text == "" {
@@ -147,7 +147,7 @@ func EncodeKeyEvent(event gfx.KeyEvent, flags uint32, appCursorKeys bool) []byte
 			return nil
 		}
 		if event.Modifiers&(gfx.ModifierControl|gfx.ModifierAlt) != 0 {
-			return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys)
+			return EncodeKey(event.Key, event.Modifiers, event.Text, appCursorKeys, backspace)
 		}
 		return []byte(text)
 	}
