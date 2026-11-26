@@ -285,11 +285,15 @@ func (w *sftpWindow) rowID(side, index int) gfx.ID {
 	return sftpWindowRows[side].At(index)
 }
 
+func (w *sftpWindow) transferConflictOpen() bool {
+	return w.owner != nil && w.owner.transferConflictShowing(w.view)
+}
+
 // listBlocked reports a layer above the file lists that owns the keyboard or
 // the pointer, so a row key must not reach the folder behind it.
 func (w *sftpWindow) listBlocked() bool {
 	return w.view.worker == nil || w.fileProperties.open || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 ||
-		w.view.dialog != sftpDialogNone || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen()
+		w.view.dialog != sftpDialogNone || w.transferConflictOpen() || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen()
 }
 
 // listTypeahead moves to the row whose name begins with the letters typed. The
@@ -386,7 +390,7 @@ func (w *sftpWindow) dropTargetAny(x, y float32) (local bool, target string, row
 func (w *sftpWindow) dropTargetSide(local bool, x, y float32) (target string, row int, valid bool) {
 	side := sideIndex(local)
 	row = -1
-	if !w.connected() || w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() || !pointInRect(x, y, w.ui.list[side]) {
+	if !w.connected() || w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.transferConflictOpen() || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() || !pointInRect(x, y, w.ui.list[side]) {
 		return
 	}
 	folder := w.folder(local)
@@ -415,7 +419,7 @@ func (w *sftpWindow) sameSideMoveTarget(x, y float32) sftpMoveTarget {
 		return sftpMoveTarget{}
 	}
 	local := w.drag.fromLocal
-	if w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() {
+	if w.navigationBusy() || w.bookmark.open || w.view.dialog != sftpDialogNone || w.closeConfirm || w.externalConflict != 0 || w.transferConflictOpen() || w.view.bookmarksOpen || w.ui.menuOpen || w.headerMenuOpen() {
 		return sftpMoveTarget{}
 	}
 	if local && w.view.localBusy {
@@ -497,7 +501,7 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 		}
 		return handled
 	}
-	if w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
+	if w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone || w.transferConflictOpen() {
 		return gfx.EventResult{}
 	}
 	if w.bookmark.open {
@@ -628,6 +632,9 @@ func (w *sftpWindow) pointer(event gfx.PointerEvent) gfx.EventResult {
 }
 
 func (w *sftpWindow) click(id gfx.ID) {
+	if w.owner.clickTransferConflict(w.view, id) {
+		return
+	}
 	defer w.invalidate()
 	if w.view.worker == nil {
 		return
@@ -924,6 +931,9 @@ func (w *sftpWindow) moveSplitter(event gfx.KeyEvent) (gfx.EventResult, bool) {
 }
 
 func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
+	if result, handled := w.owner.transferConflictKey(w.view, event); handled {
+		return result
+	}
 	if event.Release {
 		return gfx.EventResult{}
 	}
@@ -1077,7 +1087,7 @@ func (w *sftpWindow) key(event gfx.KeyEvent) gfx.EventResult {
 		// The places menu is a page menu; the page owns its keys.
 		return gfx.EventResult{}
 	}
-	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone {
+	if w.fileProperties.open || w.closeConfirm || w.externalConflict != 0 || w.view.dialog != sftpDialogNone || w.transferConflictOpen() {
 		return gfx.EventResult{}
 	}
 	if !event.Repeat && event.Modifiers == 0 && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) {
@@ -1223,7 +1233,7 @@ func (w *sftpWindow) shortcut(event gfx.KeyEvent) gfx.EventResult {
 			return gfx.EventResult{}
 		}
 	}
-	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen() {
+	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 || w.transferConflictOpen() || w.ui.menuOpen || w.view.bookmarksOpen || w.headerMenuOpen() {
 		return gfx.EventResult{}
 	}
 	for _, id := range sftpWindowFilter {
@@ -1313,7 +1323,7 @@ func (w *sftpWindow) scroll(event gfx.ScrollEvent) gfx.EventResult {
 		// The places menu is a page menu; the page owns its wheel.
 		return gfx.EventResult{}
 	}
-	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 {
+	if w.fileProperties.open || w.view.dialog != sftpDialogNone || w.bookmark.open || w.closeConfirm || w.externalConflict != 0 || w.transferConflictOpen() {
 		return gfx.EventResult{Handled: true}
 	}
 	for side, bounds := range w.ui.list {

@@ -76,6 +76,12 @@ func transferFraction(snapshot sftpclient.TransferSnapshot) float32 {
 }
 
 func (state *State) transferCenterKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if view := state.transferConflictView(); view != nil {
+		if result, handled := state.transferConflictKey(view, event); handled {
+			return result, true
+		}
+		return gfx.EventResult{}, false
+	}
 	center := &state.transfers
 	if !center.open || !state.transferCenterAvailable() || event.Release {
 		return gfx.EventResult{}, false

@@ -145,6 +145,8 @@ type savedState struct {
 	SFTPTerminalFollow      bool                `json:"sftp_terminal_follow,omitempty"`
 	SFTPPathInput           bool                `json:"sftp_path_input,omitempty"`
 	SFTPPanelAutoOpen       bool                `json:"sftp_panel_auto_open,omitempty"`
+	SFTPClearUploads        bool                `json:"sftp_clear_uploads,omitempty"`
+	SFTPTransferAutoOpenOff bool                `json:"sftp_transfer_auto_open_off,omitempty"`
 	SFTPDirectoryTree       bool                `json:"sftp_directory_tree,omitempty"`
 	SFTPPanelSide           string              `json:"sftp_panel_side,omitempty"`
 	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
@@ -655,6 +657,8 @@ func (state *State) snapshot() savedState {
 		SFTPTerminalFollow:         state.sftpTerminalFollow,
 		SFTPPathInput:              state.sftpPathInput,
 		SFTPPanelAutoOpen:          state.sftpPanelAutoOpen,
+		SFTPClearUploads:           state.sftpClearUploads,
+		SFTPTransferAutoOpenOff:    state.sftpTransferAutoOpenOff,
 		SFTPDirectoryTree:          state.sftpDirectoryTree,
 		SFTPPanelSide:              sftpPanelSideString(state.sftpPanelSide),
 		SFTPPanelWidth:             state.sftpPanelWidth,

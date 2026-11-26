@@ -27,7 +27,7 @@ var (
 // one entry per keyboard shortcut and what the About page holds. The test keeps
 // a quarter of it free, so adding entries fails loudly here instead of becoming
 // silently unsearchable when the array fills.
-const maxSettingsEntries = 256
+const maxSettingsEntries = 512
 
 // settingsEntry is one thing a user may look for.
 type settingsEntry struct {
@@ -259,24 +259,29 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsConnection, state.messages.SSHSync.NowRow, "")
 	group(settingsConnection, m.HostTags.Group, m.HostTags.Group, "")
 
+	group(settingsFiles, tools.FilesPanelGroup, tools.FilesPanelGroup, "")
 	row(settingsFiles, tools.FilesPanelAutoOpen, tools.FilesPanelAutoOpenDescription)
 	row(settingsFiles, tools.FilesPanelPosition, tools.FilesPanelPositionDescription)
-	row(settingsFiles, tools.FilesPathStyle, tools.FilesPathDescription)
+	row(settingsFiles, tools.FilesTransferAutoOpen, tools.FilesTransferAutoOpenDescription)
+	row(settingsFiles, tools.FilesClearUploads, tools.FilesClearUploadsDescription)
+	row(settingsFiles, tools.FilesFollow, tools.FilesFollowDescription)
+	row(settingsFiles, tools.FilesTerminalFollow, tools.FilesTerminalFollowDescription)
+	row(settingsFiles, tools.FilesFollowSetup, tools.FilesFollowSetupDescription)
+	group(settingsFiles, tools.FilesWindowGroup, tools.FilesWindowGroup, "")
 	row(settingsFiles, tools.FilesWindowOrder, tools.FilesWindowOrderDescription)
 	row(settingsFiles, tools.FilesOpenMode, tools.FilesOpenModeDescription)
 	row(settingsFiles, tools.FilesDirectoryTree, tools.FilesDirectoryTreeDescription)
-	row(settingsFiles, tools.FilesPreviewLimit, tools.FilesPreviewLimitDescription)
-	row(settingsFiles, tools.FilesParallel, "")
+	group(settingsFiles, tools.FilesCommonGroup, tools.FilesCommonGroup, "")
+	row(settingsFiles, tools.FilesPathStyle, tools.FilesPathDescription)
 	row(settingsFiles, tools.FilesColumns, tools.FilesColumnsDescription)
-	row(settingsFiles, tools.FilesDownloadDirectory, tools.FilesDownloadAskDescription)
+	row(settingsFiles, tools.FilesPreviewLimit, tools.FilesPreviewLimitDescription)
 	row(settingsFiles, tools.FilesEditor, tools.FilesEditorDescription)
 	if state.customEditorSettingVisible() {
 		row(settingsFiles, tools.FilesCustomEditor, tools.FilesEditorCustomDescription)
 	}
+	row(settingsFiles, tools.FilesDownloadDirectory, tools.FilesDownloadAskDescription)
+	row(settingsFiles, tools.FilesParallel, "")
 	row(settingsFiles, tools.FilesKeepTimes, tools.FilesKeepTimesDescription)
-	row(settingsFiles, tools.FilesFollow, tools.FilesFollowDescription)
-	row(settingsFiles, tools.FilesTerminalFollow, tools.FilesTerminalFollowDescription)
-	row(settingsFiles, tools.FilesFollowSetup, tools.FilesFollowSetupDescription)
 
 	rowSearch(settingsSecurity, m.AppLock.Protection, m.AppLock.SettingsDescription, "master password lock unlock 锁屏 主密码")
 	row(settingsSecurity, m.AppLock.ChangePassword, "")

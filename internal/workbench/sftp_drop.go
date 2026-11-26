@@ -388,6 +388,9 @@ func (state *State) settleTerminalUploads(view *sftpView) {
 			case sftpclient.TransferCompleted:
 				delete(batch.pending, id)
 			case sftpclient.TransferFailed, sftpclient.TransferCanceled:
+				if snapshot.Retryable && transferSnapshotConflict(snapshot) {
+					continue
+				}
 				delete(batch.pending, id)
 				if batch.failed++; batch.reason == "" {
 					batch.reason = snapshot.Error

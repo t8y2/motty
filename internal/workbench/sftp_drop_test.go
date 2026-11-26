@@ -180,18 +180,24 @@ func TestDroppedFilesOnTheTerminalUploadIntoTheShellsFolder(t *testing.T) {
 	}
 }
 
-func TestDroppedFilesThatCannotBeUploadedAreReportedOnTheTerminal(t *testing.T) {
+func TestDroppedFilesWithConflictsAskBeforeReportingAnOutcome(t *testing.T) {
 	state, session, _, panel, paths := dropFixture(t)
 	x, y := terminalPoint(panel)
 	event := gfx.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
 	event.Phase = gfx.FileDropDrop
 	state.FileDrop(event)
 	waitTransfersDone(t, state, session, 1)
+	notices := len(state.fileNotices.items)
 	state.FileDrop(event) // the same name is already there
+	waitSFTP(t, state, session, func(view *sftpView) bool { return len(view.conflictPrompt.targets) == 1 })
+	if len(state.terminalUploads) != 1 || len(state.fileNotices.items) != notices {
+		t.Fatal("an upload awaiting the overwrite choice was reported as a failure")
+	}
+	state.Click(hitTransferConflictReplace)
 	waitSFTP(t, state, session, func(*sftpView) bool { return len(state.terminalUploads) == 0 })
 	last := state.fileNotices.items[len(state.fileNotices.items)-1]
-	if last.kind != components.ToastError || !strings.Contains(last.detail, "/home/test") {
-		t.Fatalf("notices %+v, want an error naming the folder", state.fileNotices.items)
+	if last.kind != components.ToastSuccess || !strings.Contains(last.detail, "/home/test") {
+		t.Fatalf("notices %+v, want success after confirming the overwrite", state.fileNotices.items)
 	}
 }
 

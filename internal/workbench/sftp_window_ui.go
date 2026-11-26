@@ -330,6 +330,7 @@ func (w *sftpWindow) declarePanes(c ui.C, body gfx.Rect, firstLocal bool, parts 
 // raises. They are page dialogs, so their buttons are the application's identities.
 func (w *sftpWindow) declareConfirmations(c ui.C) {
 	m := w.owner.messages
+	w.owner.declareTransferConflict(c, w.view)
 	if w.closeConfirm {
 		dialog := ui.Dialog(c, ui.DialogSpec{
 			Title: m.SFTPWindow.CloseTitle, Description: w.closeDescription(), Width: 512,

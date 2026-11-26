@@ -104,7 +104,7 @@ func TestTransferCenterHostFilterScopesClearWithIdenticalWorkerIDs(t *testing.T)
 		t.Fatal("fixture must exercise colliding worker-local task IDs")
 	}
 	chooseBulkHost(state, 1)
-	state.Click(hitTransfersFilter.At(3))
+	state.Click(hitTransfersFilter.At(transferFilterPending))
 	var shown int
 	for index := range state.transfers.entries {
 		if state.transfers.shows(&state.transfers.entries[index]) {
@@ -164,7 +164,7 @@ func TestTransferCenterBulkConflictPoliciesAreFiniteAndRequireConfirmation(t *te
 				existing = "hello"
 			}
 			id, target := bulkConflict(t, state, view, remote, "first", existing)
-			state.Click(hitTransfersFilter.At(3))
+			state.Click(hitTransfersFilter.At(transferFilterPending))
 			state.Click(bulkAction(policy + "-visible"))
 			if policy != "skip" {
 				if contents, _ := os.ReadFile(target); string(contents) != existing {
@@ -400,7 +400,7 @@ func TestTransferCenterBulkViewsKeepSteadyPaintAllocationBudget(t *testing.T) {
 	bulkConflict(t, state, view, remote, "first", "mine")
 	state.transfers.open = true
 	chooseBulkHost(state, 1)
-	state.Click(hitTransfersFilter.At(3))
+	state.Click(hitTransfersFilter.At(transferFilterPending))
 	for _, mode := range []string{"filtered", "confirmation"} {
 		t.Run(mode, func(t *testing.T) {
 			if mode == "confirmation" {

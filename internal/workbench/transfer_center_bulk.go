@@ -74,11 +74,14 @@ type transferBatch struct {
 }
 
 func transferFilterShows(filter int, snapshot sftpclient.TransferSnapshot) bool {
-	return filter == transferFilterAll || filter == transferGroupOf(snapshot.State)
+	return filter == transferFilterAll || filter == transferGroupOf(snapshot)
 }
 
-func transferGroupOf(phase sftpclient.TransferState) int {
-	switch phase {
+func transferGroupOf(snapshot sftpclient.TransferSnapshot) int {
+	if snapshot.Retryable && transferSnapshotConflict(snapshot) {
+		return transferFilterPending
+	}
+	switch snapshot.State {
 	case sftpclient.TransferRunning:
 		return transferFilterRunning
 	case sftpclient.TransferQueued, sftpclient.TransferPaused:
@@ -90,27 +93,38 @@ func transferGroupOf(phase sftpclient.TransferState) int {
 	}
 }
 
-// Leave the badge to report progress when a saved status or an explicit
-// search would otherwise open the center with the newly queued job hidden.
+func transferEntryGroup(entry *transferEntry) int {
+	if entry.conflict {
+		return transferFilterPending
+	}
+	switch entry.snapshot.State {
+	case sftpclient.TransferRunning:
+		return transferFilterRunning
+	case sftpclient.TransferQueued, sftpclient.TransferPaused:
+		return transferFilterWaiting
+	case sftpclient.TransferFailed:
+		return transferFilterFailed
+	default:
+		return transferFilterEnded
+	}
+}
+
+// The compact card summarizes all transfers. Saved filters and collapsed groups
+// belong to the full history and must not suppress automatic progress notices.
 func (state *State) openTransferCenterForQueued() {
 	center := &state.transfers
-	if center.open || center.query != "" || center.direction != transferAnyDirection ||
-		center.groups[transferFilterWaiting].collapsed ||
-		!transferFilterShows(center.filter, sftpclient.TransferSnapshot{State: sftpclient.TransferQueued}) {
+	if state.sftpTransferAutoOpenOff || center.open {
 		return
 	}
 	center.open, center.compact, center.scroll = true, true, 0
 }
 
-func (state *State) showTransferConflict() {
+func (state *State) showTransferConflict(view *sftpView) {
 	center := &state.transfers
-	center.filter, center.host, center.direction = transferFilterFailed, nil, transferAnyDirection
-	center.query = ""
-	center.search.SetText("")
 	center.details.dismiss()
-	center.groups[transferFilterFailed].collapsed = false
-	center.open, center.compact, center.scroll = true, false, 0
-	state.describeTransferScope()
+	if !state.pruneTransferConflict(view) {
+		view.conflictPrompt = state.captureViewTransferBatch(view, sftpclient.ExistingReplace)
+	}
 }
 
 func transferRetryEligible(entry *transferEntry, conflict bool) bool {
@@ -141,7 +155,7 @@ func (state *State) describeTransferScope() {
 			continue
 		}
 		matched++
-		group := transferGroupOf(entry.snapshot.State)
+		group := transferEntryGroup(entry)
 		center.groups[group].members = append(center.groups[group].members, index)
 		if center.filter != transferFilterAll && center.filter != group {
 			continue
@@ -311,7 +325,7 @@ func (center *transferCenter) rebuildRows() {
 
 func (state *State) transferFilterLabels() [transferFilterCount]string {
 	m := state.messages.Transfers
-	return [transferFilterCount]string{m.All, m.Active, m.Ended, m.Failed, m.Waiting}
+	return [transferFilterCount]string{m.All, m.Active, m.Ended, m.Failed, m.Waiting, m.Pending}
 }
 
 func (state *State) transferDirectionLabel(direction transferDirection) string {
@@ -383,6 +397,7 @@ func (state *State) dispatchTransferBatch(batch transferBatch) {
 	// Each captured worker is refreshed once before eligibility is checked. A
 	// stale UI failure must never revive a canceled task or another retry attempt.
 	refreshed := make(map[*sftpView]bool)
+	retried := false
 	for _, target := range batch.targets {
 		if state.transfers.capturedEntry(target) == nil || refreshed[target.owner] {
 			continue
@@ -409,12 +424,16 @@ func (state *State) dispatchTransferBatch(batch transferBatch) {
 			policy = transferRetryPolicy(entry.snapshot)
 		}
 		if target.worker.Retry(target.id, policy) {
+			retried = true
 			target.owner.errorText = ""
 			if target.owner.detached != nil && entry.snapshot.Operation == sftpclient.OperationDownload {
 				target.owner.detached.localRefresh = true
 			}
 			target.owner.invalidateDetached()
 		}
+	}
+	if retried && state.transfers.filter == transferFilterPending {
+		state.transfers.filter, state.transfers.scroll = transferFilterAll, 0
 	}
 	for owner := range refreshed {
 		state.refreshSFTPTransfers(owner)

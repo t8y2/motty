@@ -155,6 +155,9 @@ func TestDefaultEditorIsChosenSavedAndRestored(t *testing.T) {
 	}
 	state.openSettings()
 	state.selectSettingsCategory(settingsFiles)
+	// The editor is in the shared settings group, below the initial viewport.
+	state.settings.jump = state.messages.Tools.FilesEditor
+	paintedTexts(state)
 	canvas, texts := paintedTexts(state)
 	if !contains(texts, state.messages.Tools.FilesEditor) || !hasLabel(canvas, state.messages.Tools.FilesEditor, gfx.RoleCombobox) {
 		t.Fatalf("the editor setting is not shown: %v", texts)

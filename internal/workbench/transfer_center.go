@@ -57,10 +57,11 @@ const (
 	transferFilterEnded
 	transferFilterFailed
 	transferFilterWaiting
+	transferFilterPending
 	transferFilterCount
 )
 
-var transferGroups = [...]int{transferFilterRunning, transferFilterWaiting, transferFilterEnded, transferFilterFailed}
+var transferGroups = [...]int{transferFilterPending, transferFilterRunning, transferFilterWaiting, transferFilterEnded, transferFilterFailed}
 
 type transferDirection int
 
@@ -111,6 +112,7 @@ type transferCenter struct {
 	buttonLabel   string
 	active, ended int
 	failed        int
+	pending       int
 	completed     int
 	canceled      int
 	// interrupted counts rows a lost connection stopped, so a view that comes
@@ -406,15 +408,25 @@ func (state *State) syncTransfers(view *sftpView) {
 			delete(center.byTask, transferKey{view, entry.snapshot.ID})
 			entry.owner = nil
 			entry.snapshot.Retryable = false
+			state.describeTransfer(entry)
 			state.releaseRemoteCopySource(view, entry.snapshot.ID)
 			changed = true
+		}
+	}
+	state.settleTerminalUploads(view)
+	if state.sftpClearUploads {
+		for index := len(center.entries) - 1; index >= 0; index-- {
+			entry := &center.entries[index]
+			if !entry.removed && entry.owner == view && entry.snapshot.Operation == sftpclient.OperationUpload && entry.snapshot.State == sftpclient.TransferCompleted {
+				state.removeTransfer(index)
+				changed = true
+			}
 		}
 	}
 	if changed {
 		state.trimTransferHistory()
 		state.describeTransferSummary()
 	}
-	state.settleTerminalUploads(view)
 }
 
 func (state *State) archiveTransfers(view *sftpView) {
@@ -590,7 +602,10 @@ func (state *State) describeTransfer(entry *transferEntry) {
 			}
 		}
 	}
-	entry.conflict = entry.owner != nil && transferSnapshotConflict(snapshot)
+	entry.conflict = entry.owner != nil && snapshot.Retryable && transferSnapshotConflict(snapshot)
+	if entry.conflict {
+		entry.status = m.Pending
+	}
 	started := snapshot.StartedAt
 	if started.IsZero() {
 		started = snapshot.QueuedAt
@@ -633,6 +648,7 @@ func (state *State) describeTransferSummary() {
 	center := &state.transfers
 	center.revision++
 	center.active, center.ended, center.failed, center.completed, center.canceled, center.interrupted = 0, 0, 0, 0, 0, 0
+	center.pending = 0
 	var rate, done, total, runningDone, runningTotal int64
 	running := 0
 	knownSize := true
@@ -654,6 +670,8 @@ func (state *State) describeTransferSummary() {
 			}
 			done += entry.snapshot.BytesDone
 			total += entry.snapshot.BytesTotal
+		} else if entry.conflict {
+			center.pending++
 		} else {
 			center.ended++
 			if entry.snapshot.State == sftpclient.TransferFailed {
@@ -739,6 +757,9 @@ func (center *transferCenter) drop(index int) {
 
 func (state *State) clickTransferCenter(id gfx.ID) bool {
 	center := &state.transfers
+	if view := state.transferConflictView(); view != nil && state.clickTransferConflict(view, id) {
+		return true
+	}
 	if !state.transferCenterAvailable() {
 		return false
 	}
@@ -887,7 +908,8 @@ func (state *State) clickTransferTask(id gfx.ID, view *sftpView) bool {
 		if entry.owner == nil || entry.owner.worker == nil {
 			continue
 		}
-		worker, snapshot := entry.owner.worker, entry.snapshot
+		owner := entry.owner
+		worker, snapshot := owner.worker, entry.snapshot
 		retrying := false
 		switch id.Scope() {
 		case hitTransfersCancel:
@@ -910,20 +932,23 @@ func (state *State) clickTransferTask(id gfx.ID, view *sftpView) bool {
 			continue
 		}
 		if retrying {
-			entry.owner.errorText = ""
-			if entry.owner.detached != nil && snapshot.Operation == sftpclient.OperationDownload {
-				entry.owner.detached.localRefresh = true
+			owner.errorText = ""
+			if center.filter == transferFilterPending {
+				center.filter, center.scroll = transferFilterAll, 0
+			}
+			if owner.detached != nil && snapshot.Operation == sftpclient.OperationDownload {
+				owner.detached.localRefresh = true
 			}
 		}
-		state.refreshSFTPTransfers(entry.owner)
-		entry.owner.invalidateDetached()
+		state.refreshSFTPTransfers(owner)
+		owner.invalidateDetached()
 		return true
 	}
 	return id.Scope() == transferCenterHits
 }
 
 func (center *transferCenter) shows(entry *transferEntry) bool {
-	return center.matches(entry) && transferFilterShows(center.filter, entry.snapshot)
+	return center.matches(entry) && (center.filter == transferFilterAll || center.filter == transferEntryGroup(entry))
 }
 
 func (center *transferCenter) matches(entry *transferEntry) bool {

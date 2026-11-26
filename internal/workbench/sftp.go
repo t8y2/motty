@@ -150,6 +150,8 @@ type sftpFolder struct {
 }
 
 type sftpView struct {
+	conflictPrompt transferBatch
+
 	detached  *sftpWindow // optional native dual-pane owner; transport/navigation stay per view
 	worker    *sftpclient.Worker
 	openFiles func() (sftpclient.Remote, error) // the server's files again, outside the worker's queue; nil when unavailable
@@ -2820,11 +2822,8 @@ func (state *State) pumpSFTP(session *Session) {
 					if errors.Is(result.Err, sftpclient.ErrCanceled) {
 						view.status = state.messages.SFTPCanceled
 					} else if errors.Is(result.Err, sftpclient.ErrDestinationExists) {
-						if view.detached == nil {
-							// Open failures directly so long active or completed
-							// groups cannot push the conflict out of sight.
-							state.showTransferConflict()
-						}
+						state.refreshSFTPTransfers(view)
+						state.showTransferConflict(view)
 					} else {
 						view.errorText = state.formatSFTPError(result.Err)
 					}

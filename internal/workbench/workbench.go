@@ -864,6 +864,9 @@ type State struct {
 	sftpDirectoryTree  bool
 	sftpWindowOrder    sftpWindowOrder
 	sftpOpenMode       sftpOpenMode
+
+	sftpClearUploads        bool
+	sftpTransferAutoOpenOff bool
 	// filePreviewMB bounds what a document window loads, in megabytes. The Files
 	// settings choose it with a stepper that has no upper bound.
 	filePreviewMB   int

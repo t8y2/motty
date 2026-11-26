@@ -64,7 +64,7 @@ func (state *State) declareTransferTaskRow(c ui.C, row ui.Box, rowID gfx.ID, ind
 		}
 		direction := transferDirectionOf(entry.snapshot.Operation)
 		state.declareTransferDirection(c, direction, width < 630)
-		if width >= 690 {
+		if width >= 810 {
 			amount := entry.size
 			if entry.snapshot.State == sftpclient.TransferRunning || entry.snapshot.State == sftpclient.TransferPaused {
 				amount = entry.amount
@@ -117,6 +117,8 @@ func (state *State) transferGroupLook(group int) (gfx.Icon, gfx.Color) {
 		return icons.CircleCheck, pal.success
 	case transferFilterFailed:
 		return icons.CircleAlert, pal.danger
+	case transferFilterPending:
+		return icons.CircleAlert, pal.warning
 	default:
 		return lucideIcons[iconClock], pal.muted
 	}
@@ -167,7 +169,7 @@ func (state *State) declareTransferResult(c ui.C, entry *transferEntry, width fl
 			if snapshot.State == sftpclient.TransferRunning {
 				state.declareTransferProgress(c, transferFraction(snapshot), 7, 12)
 				ui.Text(c, entry.percent).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).Width(32).TextEnd().Shrink(0)
-				if width >= 810 {
+				if width >= 650 {
 					ui.Text(c, entry.speed).FontSize(metrics.FontSizeS).Color(pal.text).Width(88).TextEnd().Shrink(0).Ellipsis()
 				}
 				if width >= 970 {
@@ -179,7 +181,7 @@ func (state *State) declareTransferResult(c ui.C, entry *transferEntry, width fl
 				}
 				return
 			}
-			glyph, tint := state.transferGroupLook(transferGroupOf(snapshot.State))
+			glyph, tint := state.transferGroupLook(transferEntryGroup(entry))
 			if snapshot.State == sftpclient.TransferCanceled {
 				glyph, tint = icons.X, pal.muted
 			}

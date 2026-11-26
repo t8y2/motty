@@ -192,7 +192,7 @@ func (w *sftpWindow) queueDetailsAllowed() bool {
 		(view.queueScroll == nil || !view.queueScroll.Dragging()) &&
 		!view.menuOpen && !w.headerMenuOpen() && !view.profileQuickOpen &&
 		!w.view.bookmarksOpen && !w.bookmark.open && !w.fileProperties.open &&
-		w.view.dialog == sftpDialogNone && !w.closeConfirm && w.externalConflict == 0 &&
+		w.view.dialog == sftpDialogNone && !w.closeConfirm && w.externalConflict == 0 && !w.transferConflictOpen() &&
 		!(w.window == nil && (state.transfers.open || !state.transferCenterAvailable()))
 }
 
