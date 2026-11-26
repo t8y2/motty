@@ -3051,6 +3051,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareMoveHostGroupDialog(c)
 	case modalHostKey:
 		state.declareHostKeyDialog(c)
+	case modalHostKeyDeploy:
+		state.declareHostKeyDeployment(c)
 	case modalPassword:
 		state.declarePasswordDialog(c)
 	case modalCloseTabs:

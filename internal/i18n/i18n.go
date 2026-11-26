@@ -971,6 +971,33 @@ type Messages struct {
 	KeyGenerate                 string
 	KeyCopyPublic               string
 	KeyExport                   string
+	KeyDeploy                   string
+	KeyDeployTitle              string
+	KeyDeployDescription        string
+	KeyDeployDescriptionFmt     string
+	KeyDeploySwitch             string
+	KeyDeploySwitchDescription  string
+	KeyDeploySubmit             string
+	KeyDeployClose              string
+	KeyDeployStop               string
+	KeyDeployRunning            string
+	KeyDeployFinished           string
+	KeyDeployWaiting            string
+	KeyDeployInstalled          string
+	KeyDeploySwitched           string
+	KeyDeployHostUnsupported    string
+	KeyDeployRouteUnsupported   string
+	KeyDeployNotConfirmed       string
+	KeyDeployCertUnsupported    string
+	KeyDeployNotVerified        string
+	KeyDeploySwitchedNotSaved   string
+	KeyDeployChanged            string
+	KeyDeployHostKey            string
+	KeyDeployNoPassword         string
+	KeyDeployAuthFailed         string
+	KeyDeployTimeout            string
+	KeyDeployKeyUnavailable     string
+	KeyDeployNoHosts            string
 	KeyExportTitle              string
 	KeyExportedFmt              string
 	KeyExportReadFailed         string

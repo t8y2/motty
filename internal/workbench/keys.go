@@ -184,6 +184,8 @@ func (state *State) clickKeys(id gfx.ID) {
 		state.exportSelectedKey()
 	case id == hitKeysEdit:
 		state.editSelectedKey()
+	case id == hitKeysDeploy:
+		state.openHostKeyDeployment()
 	case id == hitKeysRemove:
 		state.removeSelectedIdentity()
 	case id == hitKeysPassphrase:

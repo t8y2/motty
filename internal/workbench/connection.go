@@ -616,6 +616,7 @@ const (
 	modalPasteReview
 	modalIconColorPicker
 	modalAgentHosts
+	modalHostKeyDeploy
 	modalAppLock
 	modalRecordingPlayback
 )
@@ -957,6 +958,7 @@ func (state *State) Wake() {
 	state.applyLinkChange()
 	state.advanceReconnects()
 	state.pumpHostTest()
+	state.pollHostKeyDeployment()
 	state.probeLatency()
 	findNow := state.now()
 	for index := range state.sessions {
