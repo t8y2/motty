@@ -565,8 +565,13 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 		if state.modal == modalAppLock && state.appLockBusy() {
 			return gfx.EventResult{Handled: true}
 		}
-		if state.appAccessBlocked() && (!appLockOwns(event.Target)) {
-			return gfx.EventResult{Handled: true}
+		if state.appAccessBlocked() && !appLockOwns(event.Target) {
+			// Viva runs its window buttons after OnPointer. Leave the trailing
+			// titlebar inset unhandled without routing it to the workbench page.
+			buttons := gfx.Rect{
+				X: event.Viewport.Width - state.titlebarTrailing, Width: state.titlebarTrailing, Height: windowBarHeight,
+			}
+			return gfx.EventResult{Handled: !pointInRect(event.X, event.Y, buttons)}
 		}
 		return pointer(event)
 	}

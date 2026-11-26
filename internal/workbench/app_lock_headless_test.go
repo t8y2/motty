@@ -14,6 +14,57 @@ import (
 	"motty/internal/i18n"
 )
 
+func TestAppLockKeepsWindowButtonClicksAvailable(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	if err := finishAppLock(t, state, appLockEnable, "", "fixture password"); err != nil {
+		t.Fatal(err)
+	}
+	state.lockApplication()
+
+	config := state.WindowConfig(app.Config{
+		Title: "Motty", Width: 1200, Height: 840, Tree: Tree(),
+		WindowMode: app.WindowCustomTitlebar, TitlebarHeight: TitlebarHeight,
+		WindowControls: state.WindowControlsStyle, Paint: state.Paint, OnPointer: state.Pointer,
+	})
+	var releaseTarget gfx.ID
+	var releaseHandled bool
+	pointer := config.OnPointer
+	config.OnPointer = func(event gfx.PointerEvent) gfx.EventResult {
+		result := pointer(event)
+		if event.Kind == gfx.PointerUp {
+			releaseTarget, releaseHandled = event.Target, result.Handled
+		}
+		return result
+	}
+	var canvas gfx.Canvas
+	driver, err := app.NewDriver(config, &canvas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer driver.Close()
+	if state.titlebarTrailing == 0 {
+		t.Skip("window controls are drawn by the system")
+	}
+
+	style := state.WindowControlsStyle()
+	for _, label := range []string{style.Minimize, style.Maximize, style.CloseName} {
+		hit, ok := hitByLabelRoleLast(&canvas, label, gfx.RoleButton)
+		if !ok {
+			t.Fatalf("missing window button %q", label)
+		}
+		if err := driver.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if releaseTarget != hit.ID || releaseHandled {
+			t.Errorf("window button %q release target=%v, handled=%t", label, releaseTarget, releaseHandled)
+		}
+	}
+	stale := gfx.PointerEvent{Kind: gfx.PointerUp, X: 20, Y: 20, Viewport: state.viewport, Target: hitWindowSettings}
+	if !pointer(stale).Handled {
+		t.Fatal("lock screen let a stale workbench control handle a release")
+	}
+}
+
 func TestAppLockHeadlessEnableLockAndPasswordUnlock(t *testing.T) {
 	_, options := newWorld(t)
 	options.Group = NewGroup()
