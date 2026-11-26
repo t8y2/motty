@@ -309,19 +309,27 @@ func (t *terminal) accessibleName(format, address string) string {
 // the visible rows, the cursor and which buffer was active. The cells and marks
 // are copies, because the live screen changes in place while the block runs.
 type terminalSync struct {
-	lines                []term.Row
-	cursor               term.Cursor
-	cols, visible, rows  int
-	prefixCut, suffixCut bool
-	alt                  bool
+	lines               []term.Row
+	cursor              term.Cursor
+	cols, visible, rows int
+	alt                 bool
 }
 
 type logicalViewRow struct {
 	first, last int
-	suppressed  bool
 }
 
-const maxLogicalHighlightCells = 1 << 20
+// logicalHighlightContext is how many cells of a soft-wrapped line beyond each
+// edge of the view the highlight rules read. A match that reaches into the view
+// from outside, such as a long URL whose start has scrolled off, is still found
+// whole, while a line wrapped across the entire history costs about a screenful
+// of matching instead of the whole line on every frame that touches it.
+const logicalHighlightContext = 4096
+
+// logicalContextRows is logicalHighlightContext in rows of cols cells.
+func logicalContextRows(cols int) int {
+	return (logicalHighlightContext + max(cols, 1) - 1) / max(cols, 1)
+}
 
 // terminalSyncTimeout ends a block whose program never sent ESU, so a crash
 // cannot leave the display frozen forever.
@@ -350,21 +358,15 @@ func (t *terminal) holdSync(on bool) {
 	cols, rows := t.screen.Size()
 	held := &t.syncBuf
 	held.cols, held.cursor, held.alt = cols, t.screen.Cursor(), t.screen.Modes().AltScreen
+	// The snapshot keeps the context the live view would read around its
+	// edges, so a held frame highlights wrapped lines as the live one does.
 	first, last := t.screen.ViewLine(0), t.screen.ViewLine(rows-1)
-	held.prefixCut, held.suffixCut = false, false
-	if start, end, ok := t.screen.LogicalLineRange(0); ok {
-		if end-start+1 <= maxLogicalHighlightCells/cols {
-			first = start
-		} else {
-			held.prefixCut = start < first
-		}
+	context := logicalContextRows(cols)
+	if start, _, ok := t.screen.LogicalLineRange(0, first-context, last); ok {
+		first = start
 	}
-	if start, end, ok := t.screen.LogicalLineRange(rows - 1); ok {
-		if end-start+1 <= maxLogicalHighlightCells/cols {
-			last = end
-		} else {
-			held.suffixCut = end > last
-		}
+	if _, end, ok := t.screen.LogicalLineRange(rows-1, first, last+context); ok {
+		last = end
 	}
 	held.visible, held.rows = t.screen.ViewLine(0)-first, rows
 	count := last - first + 1
@@ -449,9 +451,11 @@ func (t *terminal) prepareLogicalLines() {
 	}
 	clear(t.logicalRows)
 	t.logicalRows = t.logicalRows[:0]
+	// Each group is the wrapped line clipped to the view and its context; the
+	// held snapshot was taken with that same clip.
+	context := logicalContextRows(cols)
 	for row := 0; row < rows; {
 		first, last, base := 0, 0, 0
-		cut := false
 		if t.sync != nil {
 			base = t.sync.visible
 			first, last = base+row, base+row
@@ -461,11 +465,10 @@ func (t *terminal) prepareLogicalLines() {
 			for last+1 < len(t.sync.lines) && t.sync.lines[last].Wrapped {
 				last++
 			}
-			cut = first == 0 && t.sync.prefixCut || last == len(t.sync.lines)-1 && t.sync.suffixCut
 		} else {
 			base = t.screen.ViewLine(0)
 			var ok bool
-			first, last, ok = t.screen.LogicalLineRange(row)
+			first, last, ok = t.screen.LogicalLineRange(row, base-context, base+rows-1+context)
 			if !ok {
 				row++
 				continue
@@ -476,15 +479,13 @@ func (t *terminal) prepareLogicalLines() {
 			row++
 			continue
 		}
-		if last > first || cut {
-			group := logicalViewRow{first: len(t.logicalRows), suppressed: cut || last-first+1 > maxLogicalHighlightCells/cols}
-			if !group.suppressed {
-				for index := first; index <= last; index++ {
-					if t.sync != nil {
-						t.logicalRows = append(t.logicalRows, t.sync.lines[index])
-					} else if line, ok := t.screen.RetainedRow(index); ok {
-						t.logicalRows = append(t.logicalRows, line)
-					}
+		if last > first {
+			group := logicalViewRow{first: len(t.logicalRows)}
+			for index := first; index <= last; index++ {
+				if t.sync != nil {
+					t.logicalRows = append(t.logicalRows, t.sync.lines[index])
+				} else if line, ok := t.screen.RetainedRow(index); ok {
+					t.logicalRows = append(t.logicalRows, line)
 				}
 			}
 			group.last = len(t.logicalRows)

@@ -537,7 +537,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		}
 		line := t.presentedRow(row)
 		t.rowIDs[row] = line.ID
-		entry := t.cache.rowWithLogical(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row), t.logicalView[row].suppressed)
+		entry := t.cache.rowWithLogical(line, cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row))
 		y := geometry.top + float32(row)*cellHeight
 		for _, span := range entry.spans {
 			from := snap(geometry.left + float32(span.from)*cellWidth)
@@ -562,7 +562,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		if block && row == cursor.Y {
 			column = caretX
 		}
-		entry := t.cache.rowWithLogical(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row), t.logicalView[row].suppressed)
+		entry := t.cache.rowWithLogical(t.presentedRow(row), cols, column, coveredOn(covered, row == cursor.Y), pal, inactive, t.presentedLogicalLine(row))
 		y := geometry.top + float32(row)*cellHeight
 		if from, to, selected := t.selection.span(t.screen.LineNumber(row), t.presentedRow(row), cols); selected {
 			left := snap(geometry.left + float32(from)*cellWidth)

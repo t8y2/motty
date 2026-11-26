@@ -41,7 +41,6 @@ type rowEntry struct {
 	version        uint32
 	logicalVersion uint64
 	logicalID      uint64
-	suppressed     bool
 	cursor         int // the column drawn as the cursor block, or -1
 	covered        cellSpan
 	epoch          uint32
@@ -128,10 +127,13 @@ func (cache *rowCache) end(visible int) {
 // method's composition: they are left out, text and background, because a
 // rectangle painted over a cell does not hide the text already in it.
 func (cache *rowCache) row(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical ...term.Row) *rowEntry {
-	return cache.rowWithLogical(line, cols, cursor, covered, pal, inactive, logical, false)
+	return cache.rowWithLogical(line, cols, cursor, covered, pal, inactive, logical)
 }
 
-func (cache *rowCache) rowWithLogical(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical []term.Row, suppressed bool) *rowEntry {
+// rowWithLogical is row with the soft-wrapped line around it: the rows of
+// logical, which holds line, are matched as one text so a match may cross a
+// wrap.
+func (cache *rowCache) rowWithLogical(line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, logical []term.Row) *rowEntry {
 	epoch := uint32(pal.epoch) << 3
 	if pal.dark {
 		epoch |= 1
@@ -156,13 +158,13 @@ func (cache *rowCache) rowWithLogical(line term.Row, cols, cursor int, covered c
 	entry.used = cache.generation
 	var group *logicalHighlight
 	var logicalID, logicalVersion uint64
-	if len(logical) > 1 && !suppressed {
+	if len(logical) > 1 {
 		group = cache.logicalLine(logical, cols, epoch, pal.highlight)
 		logicalID, logicalVersion = logical[0].ID, group.serial
 	}
-	if entry.version != line.Version || entry.logicalID != logicalID || entry.logicalVersion != logicalVersion || entry.suppressed != suppressed || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
-		cache.build(entry, line, cols, cursor, covered, pal, inactive, group, suppressed)
-		entry.version, entry.logicalID, entry.logicalVersion, entry.suppressed, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, logicalID, logicalVersion, suppressed, cursor, covered, epoch, cols
+	if entry.version != line.Version || entry.logicalID != logicalID || entry.logicalVersion != logicalVersion || entry.cursor != cursor || entry.covered != covered || entry.epoch != epoch {
+		cache.build(entry, line, cols, cursor, covered, pal, inactive, group)
+		entry.version, entry.logicalID, entry.logicalVersion, entry.cursor, entry.covered, entry.epoch, entry.cols = line.Version, logicalID, logicalVersion, cursor, covered, epoch, cols
 	} else if entry.cols != cols {
 		rebuild := entry.usedCols > min(entry.cols, cols) || pal.highlight.PaddingSensitive()
 		if !rebuild && cols > entry.cols {
@@ -177,7 +179,7 @@ func (cache *rowCache) rowWithLogical(line term.Row, cols, cursor int, covered c
 			}
 		}
 		if rebuild {
-			cache.build(entry, line, cols, cursor, covered, pal, inactive, group, suppressed)
+			cache.build(entry, line, cols, cursor, covered, pal, inactive, group)
 			entry.logicalVersion = logicalVersion
 		}
 		entry.cols = cols
@@ -254,7 +256,7 @@ func (pal *palette) termColor(color term.Color, fallback gfx.Color) gfx.Color {
 // costs nothing. Every non-ASCII character is a run of its own, placed at its
 // cell by the renderer, so a wide or fallback-font glyph can never push the
 // text after it off its column.
-func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, group *logicalHighlight, suppressed bool) {
+func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, covered cellSpan, pal *palette, inactive bool, group *logicalHighlight) {
 	cache.builds++
 	entry.runs = entry.runs[:0]
 	entry.spans = entry.spans[:0]
@@ -274,7 +276,7 @@ func (cache *rowCache) build(entry *rowEntry, line term.Row, cols, cursor int, c
 		if index, ok := group.positions[line.ID]; ok && len(group.cells) >= (index+1)*cols {
 			cellSlots = group.cells[index*cols : index*cols+count]
 		}
-	} else if !suppressed {
+	} else {
 		cellSlots = cache.markCells(line, count, pal.highlight)
 	}
 
@@ -613,10 +615,6 @@ func (cache *rowCache) markLogicalCells(group *logicalHighlight, logical []term.
 					}
 				}
 				markIndex++
-			}
-			if len(text) > maxLogicalHighlightCells*4 {
-				cache.hlLogicalText, cache.hlOwnerRow, cache.hlOwnerCol = text, ownerRow, ownerCol
-				return
 			}
 		}
 	}

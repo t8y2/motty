@@ -114,20 +114,24 @@ func (t *Terminal) LogicalLineRows(row int) []Row {
 	return rows
 }
 
-// LogicalLineRange returns the retained-buffer bounds of the logical line at a view row.
-func (t *Terminal) LogicalLineRange(row int) (first, last int, ok bool) {
+// LogicalLineRange returns the retained-buffer bounds of the logical line at a
+// view row, clipped to the retained lines from through to. The walk stops at
+// the clip, so a line soft-wrapped across the whole history costs only the rows
+// the caller asked about.
+func (t *Terminal) LogicalLineRange(row, from, to int) (first, last int, ok bool) {
 	if t == nil {
 		return 0, 0, false
 	}
 	index := t.ViewLine(row)
-	if index < 0 || index >= t.bufferLineCount() {
+	from, to = max(from, 0), min(to, t.bufferLineCount()-1)
+	if index < from || index > to {
 		return 0, 0, false
 	}
 	first, last = index, index
-	for first > 0 && t.bufferLine(first-1).wrapped {
+	for first > from && t.bufferLine(first-1).wrapped {
 		first--
 	}
-	for last+1 < t.bufferLineCount() && t.bufferLine(last).wrapped {
+	for last < to && t.bufferLine(last).wrapped {
 		last++
 	}
 	return first, last, true
