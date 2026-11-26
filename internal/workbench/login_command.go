@@ -367,6 +367,42 @@ func (state *State) loginQuiet(session *Session) time.Duration {
 	return loginCommandQuiet
 }
 
+// loginInteractivePromptReady reports that a command has stopped at a prompt
+// which cannot be completed by shell integration. In a multi-line login
+// sequence, the next configured line is the user's answer to that prompt.
+func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) bool {
+	if t == nil || t.screen == nil || t.promptDirty || !t.login.seen || t.login.quietWait(now, loginCommandGrace) > 0 {
+		return false
+	}
+	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
+	if rowText == "" {
+		return false
+	}
+	if t.promptStarted && !t.promptReady {
+		return true
+	}
+	if cmdhistory.PasswordPrompt(rowText) {
+		return true
+	}
+	if cmdhistory.ProgramPrompt(rowText) {
+		return true
+	}
+	// Interactive SSH and application prompts usually end in punctuation,
+	// unlike command output that is still changing. Let a stable prompt accept
+	// the next configured answer instead of aborting the whole sequence.
+	lower := strings.ToLower(rowText)
+	if strings.Contains(lower, "press enter") || strings.Contains(lower, "press return") ||
+		strings.Contains(lower, "press any key") || strings.Contains(lower, "yes/no") ||
+		strings.Contains(lower, "[y/n]") || strings.Contains(lower, "(y/n)") ||
+		strings.Contains(rowText, "按回车") || strings.Contains(rowText, "按任意键") ||
+		strings.Contains(rowText, "是否继续") || strings.Contains(rowText, "请选择") || strings.Contains(rowText, "请输入") {
+		return true
+	}
+	return strings.HasSuffix(rowText, "?") || strings.HasSuffix(rowText, "？") ||
+		strings.HasSuffix(rowText, ":") || strings.HasSuffix(rowText, "：") ||
+		strings.HasSuffix(rowText, ">") || strings.HasSuffix(rowText, "›")
+}
+
 func (state *State) loginStepFinished(session *Session, now time.Duration) bool {
 	t := session.term
 	if !t.login.running {
@@ -378,9 +414,12 @@ func (state *State) loginStepFinished(session *Session, now time.Duration) bool 
 	if t.login.hasExitCode && ((t.login.exitCode != 0 && t.login.policy == loginFailureStop) || (t.login.line == "" || t.login.isWorkspaceStep)) {
 		return true
 	}
+	if state.loginInteractivePromptReady(t, now) {
+		return true
+	}
 	if !t.folderIntegrationSeen && t.login.seen && t.login.quietWait(now, loginCommandQuiet) == 0 {
 		rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
-		if rowText != "" && !cmdhistory.PasswordPrompt(rowText) {
+		if rowText != "" {
 			return true
 		}
 	}
@@ -579,18 +618,6 @@ func (state *State) runLoginCommand(session *Session) {
 			}
 		} else {
 			if !t.login.isWorkspaceStep {
-				if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-					if t.login.hasRemainingSteps() {
-						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-					} else {
-						t.login = loginCommand{results: t.login.results}
-					}
-					return
-				}
-				if cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 && t.login.hasRemainingSteps() {
-					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-					return
-				}
 				if now-t.login.sentAt >= loginCommandExecTimeout {
 					if t.login.hasRemainingSteps() {
 						state.abortLoginCommands(session, loginAbortTimeout)
@@ -612,27 +639,16 @@ func (state *State) runLoginCommand(session *Session) {
 				return
 			}
 		} else if t.folderIntegrationSeen {
-			if !t.promptIdle() || t.promptDirty || t.promptVersion <= t.login.promptVersion {
-				if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-					if t.login.hasRemainingSteps() {
-						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-					} else {
-						t.login = loginCommand{results: t.login.results}
-					}
+			if !t.promptReady || t.promptDirty || t.promptVersion <= t.login.promptVersion {
+				if !state.loginInteractivePromptReady(t, now) {
+					return
 				}
-				return
 			}
 		} else {
 			if !t.login.seen || t.login.quietWait(now, loginCommandQuiet) > 0 {
 				return
 			}
 			rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
-			if cmdhistory.PasswordPrompt(rowText) {
-				if t.login.quietWait(now, loginCommandGrace) == 0 && t.login.hasRemainingSteps() {
-					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-				}
-				return
-			}
 			if rowText == "" {
 				return
 			}
@@ -643,22 +659,19 @@ func (state *State) runLoginCommand(session *Session) {
 	switch {
 	case t.promptIdle() && !t.promptDirty:
 	case !t.login.seen || t.folderIntegrationSeen:
-		// Once hooks report, only their prompt end authorizes a command.
-		if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() {
-			if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-			} else if !t.login.seen && now-t.login.armedAt >= loginCommandExecTimeout {
+		// Wait for the shell's prompt marker, or a stable interactive prompt
+		// whose next answer is part of this configured sequence.
+		if !t.login.seen {
+			if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && now-t.login.armedAt >= loginCommandExecTimeout {
 				state.abortLoginCommands(session, loginAbortTimeout)
 			}
-		}
-		return
-	case t.login.quietWait(now, state.loginQuiet(session)) > 0:
-		return
-	default:
-		if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
-			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
+		if !state.loginInteractivePromptReady(t, now) {
+			return
+		}
+	case t.login.quietWait(now, state.loginQuiet(session)) > 0:
+		return
 	}
 	state.sendInitializationCommand(t)
 }

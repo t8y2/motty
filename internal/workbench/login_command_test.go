@@ -456,7 +456,7 @@ func TestMultilineLoginCommandContinuesOnFailureWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestMultilineLoginCommandAbortsOnTimeoutDisconnectAndAbnormalPrompt(t *testing.T) {
+func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		state, shell, now := loginCommandSession(t, "sleep 60\necho after")
 		session := &state.sessions[0]
@@ -502,7 +502,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutDisconnectAndAbnormalPrompt(t *test
 		}
 	})
 
-	t.Run("abnormal prompt", func(t *testing.T) {
+	t.Run("interactive prompt", func(t *testing.T) {
 		state, shell, now := loginCommandSession(t, "sudo -i\necho after")
 		session := &state.sessions[0]
 		token := session.term.folderToken
@@ -512,16 +512,17 @@ func TestMultilineLoginCommandAbortsOnTimeoutDisconnectAndAbnormalPrompt(t *test
 		if shell.typed() != "sudo -i\r" {
 			t.Fatalf("typed %q", shell.typed())
 		}
-		// An incomplete prompt (133;A without 133;B) that hangs past grace aborts remaining commands.
+		// An incomplete prompt (133;A without 133;B) that stays quiet past grace
+		// receives the next configured line instead of aborting the sequence.
 		shell.say("\x1b]133;A;motty=" + token + "\x07broken prompt>")
 		state.Wake()
 		*now += loginCommandGrace
 		state.Wake()
-		if session.LoginCommandAborted() == "" {
-			t.Fatal("expected abnormal prompt abort notice")
+		if session.LoginCommandAborted() != "" {
+			t.Fatalf("prompt aborted remaining commands: %q", session.LoginCommandAborted())
 		}
-		if shell.typed() != "sudo -i\r" {
-			t.Fatalf("ran remaining command after abnormal prompt: %q", shell.typed())
+		if shell.typed() != "sudo -i\recho after\r" {
+			t.Fatalf("next prompt answer was not sent: %q", shell.typed())
 		}
 	})
 }
