@@ -372,7 +372,7 @@ func (m *fileWindowManager) configWithClosed(onClosed func()) app.Config {
 		OnClosed:       onClosed,
 	}
 	base.WindowBorderColor = func() app.Color { return windowClearColor(m.ownerTheme()) }
-	config := ui.Configure(m.editPage(m.pageTheme()), base)
+	config := ui.Configure(m.editPage(m.pageTheme(), m.pageEditMenu()), base)
 	config.Paint = base.Paint
 	return config
 }
@@ -457,10 +457,10 @@ func documentTabLayout(available float32, count int) (width, content float32, ov
 // keeps one page for all its documents; a window opened for one document names
 // its own. The root is unique per window, since every window names its controls
 // in the one Tree.
-func (m *fileWindowManager) editPage(theme *gfx.Theme) *ui.Page {
+func (m *fileWindowManager) editPage(theme *gfx.Theme, editMenu *ui.EditMenuLabels) *ui.Page {
 	if m.page == nil {
 		root := fmt.Sprintf("file-window-%d", fileWindowPageSeq.Add(1))
-		m.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: theme, View: m.declareWindow})
+		m.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: theme, EditMenu: editMenu, View: m.declareWindow})
 	}
 	return m.page
 }
@@ -481,23 +481,41 @@ func (m *fileWindowManager) declareWindow(c ui.C) {
 // pageTheme is the theme the shared page paints with: the active document's
 // owner, whose theme the controls follow as the application's appearance changes.
 func (m *fileWindowManager) pageTheme() *gfx.Theme {
-	if d := m.activeDocument(); d != nil && d.owner != nil {
-		return &d.owner.theme
-	}
-	for _, key := range m.order {
-		if d := m.documents[key]; d != nil && d.owner != nil {
-			return &d.owner.theme
-		}
+	if owner := m.pageOwner(); owner != nil {
+		return &owner.theme
 	}
 	theme := gfx.LightTheme()
 	return &theme
+}
+
+// pageEditMenu is the words of the shared page's edit menu: the owner's, as the
+// theme is; English when no document has one.
+func (m *fileWindowManager) pageEditMenu() *ui.EditMenuLabels {
+	if owner := m.pageOwner(); owner != nil {
+		return &owner.editMenu
+	}
+	return nil
+}
+
+// pageOwner is the workbench the shared page follows: the active document's,
+// else the first open one's.
+func (m *fileWindowManager) pageOwner() *State {
+	if d := m.activeDocument(); d != nil && d.owner != nil {
+		return d.owner
+	}
+	for _, key := range m.order {
+		if d := m.documents[key]; d != nil && d.owner != nil {
+			return d.owner
+		}
+	}
+	return nil
 }
 
 // documentPage is editPage for a document painted in a window of its own.
 func (d *fileDocument) documentPage() *ui.Page {
 	if d.ui.page == nil {
 		root := fmt.Sprintf("file-document-%d", fileWindowPageSeq.Add(1))
-		d.ui.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: &d.owner.theme, View: d.declareWindow})
+		d.ui.page = ui.NewPage(ui.PageConfig{Tree: &tree, Root: root, Theme: &d.owner.theme, EditMenu: &d.owner.editMenu, View: d.declareWindow})
 	}
 	return d.ui.page
 }

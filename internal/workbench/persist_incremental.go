@@ -297,7 +297,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.System == right.System &&
 		left.Protocol == right.Protocol && left.Encoding == right.Encoding &&
 		left.Terminal == right.Terminal &&
-		left.Line == right.Line && left.Flow == right.Flow &&
+		left.Line == right.Line && left.Flow == right.Flow && left.Backspace == right.Backspace &&
 		sameSavedProxy(left.Proxy, right.Proxy) &&
 		left.ProxyProfile == right.ProxyProfile && left.ProxyBypass == right.ProxyBypass &&
 		left.Algorithms == right.Algorithms && left.AlgorithmList == right.AlgorithmList &&
@@ -315,6 +315,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.StandardSecurity == right.StandardSecurity && left.LegacyTLS == right.LegacyTLS &&
 		left.Chromeless == right.Chromeless &&
 		left.ColorDepth == right.ColorDepth && left.DesktopEncoding == right.DesktopEncoding &&
+		left.DesktopWidth == right.DesktopWidth && left.DesktopHeight == right.DesktopHeight &&
 		sameSavedEffects(left.Effects, right.Effects)
 }
 

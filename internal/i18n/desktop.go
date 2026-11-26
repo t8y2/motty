@@ -38,6 +38,13 @@ type DesktopMessages struct {
 	ColorDepthField           string
 	ColorDepthFmt             string
 	ColorDepthDefaultFmt      string
+	Resolution                string
+	ResolutionField           string
+	ResolutionAuto            string
+	ResolutionCustom          string
+	ResolutionApply           string
+	ResolutionCustomField     string
+	ErrResolution             string
 	EncodingPreferenceField   string
 	EncodingAuto              string
 	EncodingZRLE              string
@@ -59,6 +66,11 @@ type DesktopMessages struct {
 	ExitFullscreen            string
 	FullscreenBarPin          string
 	FullscreenBarAutoHide     string
+	FullscreenBarDock         string
+	FullscreenBarDockTop      string
+	FullscreenBarDockBottom   string
+	FullscreenBarDockLeft     string
+	FullscreenBarDockRight    string
 	FullscreenUnavailable     string
 	FullscreenFailedFmt       string
 	ShowLatency               string

@@ -13,6 +13,12 @@ In **Settings > MCP**, turn on **Allow external agents (MCP)**. The page
 then shows the endpoint and the access token, with a button to copy the client
 configuration. Resetting the token disconnects every client.
 
+The endpoint defaults to `http://127.0.0.1:17890/mcp`. Once enabled, Motty
+remembers the port it actually took, so restarts, updates and a new
+configuration directory all reach the same address; only another program
+holding that port makes it take a free one, and the page always shows the
+current address.
+
 HTTP and the independent service each have their own client selection, preview
 and copy button. Their client choices are saved separately. HTTP configuration
 contains an endpoint and token; the independent configuration contains a program

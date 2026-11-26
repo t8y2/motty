@@ -253,9 +253,8 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
 		return
 	}
-	// The window is a bar over a body. The terminals show the picture through their
-	// own ground, so with one set only the bar is shell-colored; the shell behind
-	// them must not cover it.
+	// The shell normally paints one opaque root. A terminal can instead show
+	// the desktop or a picture through its own ground; give the bar its own fill.
 	picture := state.paintBackground(canvas, size)
 	terminal := state.terminalPage()
 	fileManager := state.activeSFTPWindow() != nil
@@ -289,7 +288,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	}
 	cardRight += state.toolbarDockSideReserveFor(false, false)
 	chrome.workspaceSlot = ui.Box{}
-	chrome.shellPicture = picture
+	chrome.shellBackdrop = picture || (terminal && state.desktopTransparency() > 0)
 	chrome.shellHeight = size.Height
 	chrome.shellGeometry = geometry
 	chrome.shellScroll = scroll
@@ -494,7 +493,7 @@ func (state *State) windowPage() *ui.Page {
 	chrome := &state.chrome
 	if chrome.windowPage == nil {
 		chrome.windowPage = ui.NewPage(ui.PageConfig{
-			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, View: state.declareWorkbenchPage,
+			Tree: &tree, Root: shellPageRoot, Theme: &state.theme, EditMenu: &state.editMenu, View: state.declareWorkbenchPage,
 			ScrollbarSize: catalogBarGutter, Styles: &ui.Styles{Switch: state.switchLook},
 		})
 	}
@@ -509,6 +508,18 @@ func (state *State) windowPage() *ui.Page {
 func (state *State) WindowConfig(base app.Config) app.Config {
 	config := ui.Configure(state.windowPage(), base)
 	config.Paint = base.Paint
+	if state.options.TerminalTransparency {
+		// The terminal's default fill is translucent over the desktop, so the
+		// window itself must composite: nothing under the shell is opaque.
+		config.Transparent = true
+		config.ClearColor = app.Color{}
+		config.OnTransparentChange = func(active bool) {
+			state.windowComposited.Store(active)
+			if state.options.Invalidate != nil {
+				state.options.Invalidate()
+			}
+		}
+	}
 	// The assistant owns the wheel over its own panel: its lists keep their
 	// offsets in the page, but a modal dialog must still keep them still, which
 	// the page's generic scroll-area routing does not know. Everything else the
@@ -554,8 +565,13 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 		if state.modal == modalAppLock && state.appLockBusy() {
 			return gfx.EventResult{Handled: true}
 		}
-		if state.appAccessBlocked() && (!appLockOwns(event.Target)) {
-			return gfx.EventResult{Handled: true}
+		if state.appAccessBlocked() && !appLockOwns(event.Target) {
+			// Viva runs its window buttons after OnPointer. Leave the trailing
+			// titlebar inset unhandled without routing it to the workbench page.
+			buttons := gfx.Rect{
+				X: event.Viewport.Width - state.titlebarTrailing, Width: state.titlebarTrailing, Height: windowBarHeight,
+			}
+			return gfx.EventResult{Handled: !pointInRect(event.X, event.Y, buttons)}
 		}
 		return pointer(event)
 	}
@@ -676,11 +692,11 @@ func (state *State) declareShell(c ui.C) {
 	}
 	chrome, pal := &state.chrome, state.pal
 	root := ui.Column(c).Fill()
-	if !chrome.shellPicture {
+	if !chrome.shellBackdrop {
 		root.Background(state.windowFrameColor())
 	}
 	root.Children(func() {
-		state.declareWindowBar(c, &chrome.bar, false, chrome.shellPicture, chrome.shellGeometry, chrome.shellScroll)
+		state.declareWindowBar(c, &chrome.bar, false, chrome.shellBackdrop, chrome.shellGeometry, chrome.shellScroll)
 		if chrome.shellFullPage {
 			return
 		}
@@ -825,7 +841,7 @@ func (state *State) declareProbeBar(c ui.C) {
 // the buttons; when even the narrowest do not fit they scroll under a clip, and the
 // new-tab button stays at the end of that room instead of being pushed out of the
 // window. With probe set only the places are declared, for windowBarGeometry.
-func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool, geometry barGeometry, scroll float32) {
+func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, backdrop bool, geometry barGeometry, scroll float32) {
 	m, pal, chrome := state.messages, state.pal, &state.chrome
 	leading, _ := state.windowTitlebarInsets()
 	visibleFileTabs := 0
@@ -849,7 +865,7 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 		// after it, take their own presses.
 		row.MovesWindow()
 	}
-	if picture {
+	if backdrop {
 		row.Background(state.windowFrameColor())
 	}
 	row.Children(func() {
@@ -1021,6 +1037,11 @@ func (state *State) declareWindowBar(c ui.C, bar *windowBar, probe, picture bool
 				})
 				state.barButton(c, probe, hitNewTab, iconPlus, m.LabelNewTab)
 			})
+			if !probe {
+				// Over the tab row, as the stack's later child: the arrows take no
+				// width from it, and their margin leaves the new-tab button clear.
+				state.declareWindowBarTabArrows(c)
+			}
 			if probe {
 				chrome.probeArea = area
 			}
@@ -1180,6 +1201,12 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 	if probe {
 		return ui.Slot(c).Size(barButtonSize, barButtonSize)
 	}
+	return state.barIconButton(c, id, icon, label, label)
+}
+
+// barIconButton is a window-bar button drawn now, with its tooltip given apart:
+// hint is what the tooltip shows, and empty when the icon's meaning needs none.
+func (state *State) barIconButton(c ui.C, id gfx.ID, icon uint8, label, hint string) ui.Box {
 	pal, canvas := state.pal, c.Canvas()
 	foreground := pal.muted
 	var fill gfx.Color
@@ -1190,7 +1217,7 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 		fill, foreground = pal.tabHover, pal.text
 	}
 	return ui.Row(c).Size(barButtonSize, barButtonSize).Shrink(0).Center().Radius(radius.item).Background(fill).
-		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: label}).Children(func() {
+		HitWith(id, label, gfx.HitOptions{Role: gfx.RoleButton, SkipFocus: true, Hint: hint}).Children(func() {
 		ui.Icon(c, lucideIcons[icon]).Color(foreground)
 	})
 }
@@ -1200,7 +1227,7 @@ func (state *State) barButton(c ui.C, probe bool, id gfx.ID, icon uint8, label s
 // the layout kept for them, and the session's name.
 func (state *State) paintWindowBarParts(canvas *gfx.Canvas, strip gfx.Rect) {
 	bar := &state.chrome.bar
-	state.paintWorkspaceTabParts(canvas, strip, bar.tabs)
+	state.paintWorkspaceTabParts(canvas, state.windowBarTabsRoom(canvas, strip), bar.tabs)
 	state.paintWindowBarTitle(canvas)
 	state.paintToolbarDockTop(canvas)
 }
@@ -1306,7 +1333,7 @@ type chromeLayout struct {
 	// the tabs come out; probeInput is what its cached view reads.
 	windowPage     *ui.Page
 	workspaceSlot  ui.Box
-	shellPicture   bool
+	shellBackdrop  bool
 	shellHeight    float32
 	shellGeometry  barGeometry
 	shellScroll    float32
@@ -2962,6 +2989,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareTabRenameDialog(c)
 	case modalLocalStartupCommand:
 		state.declareLocalStartupCommandDialog(c)
+	case modalDesktopResolution:
+		state.declareDesktopResolutionDialog(c)
 	case modalAIRename:
 		state.declareAIRenameDialog(c)
 	case modalHostImportResult:
@@ -3285,12 +3314,30 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				// delivers a click lays out what it did before it, the choice writes
 				// its value at the end, and the next frame draws it.
 				if editor.protocol == protocolSerial {
-					// The device and line rows are the page's fields; the flow control
-					// takes the row under them.
+					// The device and line rows are the page's fields; the flow
+					// control and the Backspace key share the row under them.
 					endpoint := b.endpoint
 					endpoint.Children(func() {
-						ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Height(rowHeight).Children(func() {
-							b.flow = state.declareHostFlowChoice(c)
+						ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Children(func() {
+							ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+								// A zero basis: with Grow alone the wider choice starts ahead and
+								// takes more than half the row.
+								ui.Column(c).Basis(0).Grow(1).Children(func() {
+									b.flow = state.declareHostFlowChoice(c)
+								})
+								ui.Column(c).Basis(0).Grow(1).Children(func() {
+									b.backspace = state.declareHostBackspaceChoice(c)
+								})
+							})
+						})
+					})
+				}
+				if editor.protocol == protocolTelnet {
+					// Telnet has the Backspace key alone, under its address.
+					endpoint := b.endpoint
+					endpoint.Children(func() {
+						ui.Column(c).Absolute().Left(0).Right(0).Top(rowHeight).Height(rowHeight).Children(func() {
+							b.backspace = state.declareHostBackspaceChoice(c)
 						})
 					})
 				}
@@ -3409,6 +3456,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	if b.flow.Valid() {
 		state.rememberHostChoice(canvas, b.flow.Rect(), &editor.form.choiceIDs.flow, state.hostFlowChoiceLabel(editor.flow))
 	}
+	if b.backspace.Valid() {
+		state.rememberHostChoice(canvas, b.backspace.Rect(), &editor.form.choiceIDs.backspace, state.hostBackspaceChoiceLabel(editor.backspace))
+	}
 	if b.transfer.Valid() {
 		state.rememberHostChoice(canvas, b.transfer.Rect(), &editor.form.choiceIDs.transfer, state.hostTransferChoiceLabel(editor.transfer))
 	}
@@ -3417,6 +3467,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	}
 	if editor.form.algoBody.loginPolicy.Valid() {
 		state.rememberHostChoice(canvas, editor.form.algoBody.loginPolicy.Rect(), &editor.form.choiceIDs.loginPolicy, state.hostLoginPolicyChoiceLabel(editor.loginFailurePolicy))
+	}
+	if editor.form.algoBody.backspace.Valid() {
+		state.rememberHostChoice(canvas, editor.form.algoBody.backspace.Rect(), &editor.form.choiceIDs.backspace, state.hostBackspaceChoiceLabel(editor.backspace))
 	}
 	editor.form.clipped = false
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,7 +18,11 @@ import (
 	layoutcore "motty/internal/workspace"
 )
 
-type remoteWindowHost struct{ windows []*remoteNativeWindow }
+type remoteWindowHost struct {
+	windows []*remoteNativeWindow
+	mu      sync.Mutex
+	posted  []func()
+}
 type remoteNativeWindow struct {
 	config app.Config
 	closed func()
@@ -59,6 +64,7 @@ func (h *remoteWindowHost) until(t *testing.T, done func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
+		h.drain()
 		for _, w := range h.windows {
 			if !w.done && w.config.OnWake != nil {
 				w.config.OnWake()
@@ -222,6 +228,12 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		formSize := gfx.Size{Width: 1100, Height: 780}
 		w.paint(&formCanvas, formSize)
 		clickPageControl(t, w, &formCanvas, w.owner.messages.Tools.RemotePull, gfx.RoleButton, formSize)
+		// The command is built for the server's engine off the window thread.
+		host.until(t, func() bool {
+			shell.mu.Lock()
+			defer shell.mu.Unlock()
+			return strings.Contains(string(shell.input), "docker pull alpine:latest\r")
+		})
 		shell.mu.Lock()
 		actual := string(shell.input)
 		shell.mu.Unlock()
@@ -243,6 +255,7 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		w.ui.remote.auto.enabled = true
 		w.ui.remote.auto.restart()
 		w.act(hitRemoteLogs)
+		host.until(t, func() bool { return strings.Contains(shell.typed(), "docker logs") })
 		if !strings.Contains(shell.typed(), "docker logs") || strings.Contains(peerShell.typed(), "docker logs") ||
 			!w.ui.remote.auto.enabled || w.ui.modal != modalRemoteTools {
 			t.Fatal("tool command was broadcast into another pane or disabled the tool surface")
@@ -1268,8 +1281,27 @@ func TestRemoteNativeWindowDialogsArePageControls(t *testing.T) {
 	})
 }
 
+// Post queues the work for the test's goroutine, as the application runs it on
+// the loop after the handler that asked for it: work run at once, from the
+// goroutine that built it, can land before that handler has returned.
 func (h *remoteWindowHost) Post(fn func()) {
 	if fn != nil {
+		h.mu.Lock()
+		h.posted = append(h.posted, fn)
+		h.mu.Unlock()
+	}
+}
+
+func (h *remoteWindowHost) drain() {
+	for {
+		h.mu.Lock()
+		if len(h.posted) == 0 {
+			h.mu.Unlock()
+			return
+		}
+		fn := h.posted[0]
+		h.posted = h.posted[1:]
+		h.mu.Unlock()
 		fn()
 	}
 }

@@ -35,6 +35,7 @@ type hostFormScroll struct {
 	fieldLabel, fieldAddress, fieldUser, fieldPassphrase, fieldPort dialogField
 	fieldIdleInterval, fieldIdleCustomInput                         dialogField
 	fieldAlgoCustom, fieldLoginCommand, fieldOTP                    dialogField
+	fieldResolution                                                 dialogField
 	// authField and portsField are the page form fields of the authentication
 	// choice and the detected serial ports; authBox is the choice itself, kept
 	// for the form's tab ring.
@@ -99,6 +100,8 @@ type hostFormScroll struct {
 	idleBody hostIdleKeepAliveRowsBody
 	// qualityBody is the quality section of a desktop host.
 	qualityBody hostQualityBody
+	// resolutionBody is the resolution rows of an RDP host.
+	resolutionBody hostResolutionBody
 	// idleLayout and idleInputLayout are the probe values this frame's rows were
 	// laid out for, before a click writes the values the next frame shows.
 	idleLayout      idleKeepAlivePreset
@@ -107,7 +110,7 @@ type hostFormScroll struct {
 
 // hostFormChoiceIDs is the chosen option hit of each Choice of the host form.
 type hostFormChoiceIDs struct {
-	protocol, flow, algo, transfer, loginPolicy gfx.ID
+	protocol, flow, backspace, algo, transfer, loginPolicy gfx.ID
 }
 
 // hostFormBody is where the host form's body put each control: the slots it
@@ -117,6 +120,7 @@ type hostFormBody struct {
 	iconField, colorField, transfer, proxy, jump, advanced ui.Box
 	vncRows                                                ui.Box
 	flow, algo                                             ui.Box
+	backspace                                              ui.Box
 	// proxyRow and jumpRow are the controls the proxy and jump fields place,
 	// and proxyAction and jumpAction the slots their buttons are painted in.
 	proxyRow, jumpRow       ui.Box
@@ -239,7 +243,7 @@ func (state *State) scrollHostForm(event gfx.ScrollEvent) gfx.EventResult {
 // its list open: the open list owns the wheel wherever the pointer is.
 func (state *State) hostFormPageListOpen() bool {
 	f := &state.editor.form
-	for _, box := range [...]ui.Box{f.iconBox, f.authBox, f.portsBox, f.idleIntervalBox, f.idleUnitBox, f.idleInputBox, f.qualityBody.depthBox, f.qualityBody.encodingBox} {
+	for _, box := range [...]ui.Box{f.iconBox, f.authBox, f.portsBox, f.idleIntervalBox, f.idleUnitBox, f.idleInputBox, f.qualityBody.depthBox, f.qualityBody.encodingBox, f.resolutionBody.box} {
 		if !box.Valid() {
 			continue
 		}

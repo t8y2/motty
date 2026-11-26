@@ -19,6 +19,7 @@ func TestInterfaceTextSizeStepsTheWholeWindow(t *testing.T) {
 	}
 	titleSize := barTitleSize
 	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAppearance)
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	for _, id := range []gfx.ID{hitSettingsTextSizeDown, hitSettingsTextSizeReset, hitSettingsTextSizeUp} {

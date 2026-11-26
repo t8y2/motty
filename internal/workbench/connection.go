@@ -178,6 +178,8 @@ type DragPreview interface {
 }
 
 type Options struct {
+	// TerminalTransparency enables per-pixel desktop compositing for the main window.
+	TerminalTransparency bool
 	// DevelopmentSource offers a one-way import into an unused development
 	// profile. Nil disables discovery, including for explicit test profiles.
 	DevelopmentSource *DevelopmentSource
@@ -347,9 +349,9 @@ type Options struct {
 	// ClipboardText reads the system clipboard for an explicit paste shortcut.
 	// Nil uses app.ClipboardText.
 	ClipboardText func() (string, error)
-	// ClipboardFiles reads the paths of the files the system clipboard holds,
-	// which a desktop session offers to the remote system. Nil uses
-	// app.ClipboardFiles.
+	// ClipboardFiles reads the paths of the files the system clipboard holds: a
+	// desktop session offers them to the remote system, and a paste in the
+	// assistant's message box attaches them. Nil uses app.ClipboardFiles.
 	ClipboardFiles func() ([]string, error)
 	// SetClipboardFiles puts files on the system clipboard, as a file manager
 	// does after a copy. Nil uses app.SetClipboardFiles.
@@ -567,6 +569,7 @@ const (
 	modalOpenLink
 	modalRenameTab
 	modalLocalStartupCommand
+	modalDesktopResolution
 	modalAIRename
 	modalCloseTabs
 	modalQuitKeepWindows

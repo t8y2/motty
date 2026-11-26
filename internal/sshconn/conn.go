@@ -354,6 +354,10 @@ type Conn struct {
 	closersClosed bool
 	// disconnectErr records why an established connection was force-closed.
 	disconnectErr error
+	// disconnectLocal is true when the client itself closed the transport
+	// (such as a keepalive timeout or link change), so an aborted auxiliary
+	// probe must not be attributed to server refusal.
+	disconnectLocal bool
 	// tcpKeepAlive reports that the target transport is probed by the operating
 	// system's TCP keepalive instead of keepalive@openssh.com requests. It is
 	// written by the target handshake and read by the keepalive worker and the
@@ -685,14 +689,16 @@ func (conn *Conn) run() {
 		// A gateway that permits only an interactive login answers the client's
 		// own probes by ending the transport. Whether a probe reports the refusal
 		// or the connection's own end is woken first is a race, so the reports
-		// get a bounded moment to name the cause.
-		probeRefused := closedErr != nil && conn.probeState().settle(auxiliaryProbeSettle)
+		// get a bounded moment to name the cause. A client-initiated close
+		// (keepalive timeout or link change) aborts in-flight probes too, so it
+		// must not be mistaken for a server refusal.
+		probeRefused := closedErr != nil && !conn.isLocalDisconnect() && conn.probeState().settle(auxiliaryProbeSettle)
 		conn.update(func(status *Status) {
 			status.Phase = PhaseClosed
 			status.Err = closedErr
 			status.ProbeRefused = probeRefused
 		})
-		conn.endShares(closedErr)
+		conn.endShares(closedErr, probeRefused)
 		return
 	}
 	if conn.ctx.Err() != nil && !errors.Is(err, ErrHostKeyChanged) {
@@ -804,6 +810,13 @@ func (conn *Conn) detectSystem(client *ssh.Client, serverVersion string) {
 	conn.notify()
 }
 
+// tcpDialer leaves keepalive policy to the SSH transport. A zero KeepAlive
+// enables Go's implicit operating-system keepalive, which can time out before
+// the configured SSH probes and bypass the application's keepalive settings.
+func tcpDialer(timeout time.Duration) net.Dialer {
+	return net.Dialer{Timeout: timeout, KeepAlive: -1}
+}
+
 // dialTCP opens the first connection of a route: straight to the endpoint, or
 // through the outbound proxy when one is set for it.
 func (conn *Conn) dialTCP(endpoint Endpoint) (net.Conn, error) {
@@ -811,7 +824,7 @@ func (conn *Conn) dialTCP(endpoint Endpoint) (net.Conn, error) {
 	if conn.config.Proxy.Uses(address) {
 		return conn.config.Proxy.DialAs(conn.ctx, conn.config.DialTimeout, address, endpoint.User)
 	}
-	dialer := net.Dialer{Timeout: conn.config.DialTimeout}
+	dialer := tcpDialer(conn.config.DialTimeout)
 	return dialer.DialContext(conn.ctx, "tcp", address)
 }
 

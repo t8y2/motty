@@ -7,20 +7,31 @@ import (
 	"github.com/vivaui/viva/gfx"
 )
 
+// The bytes the Backspace key can stand for. DEL is the erase character of
+// every modern Unix, which an sshd also tells the pty when Motty names it
+// (sshconn), and is what the key sends unless a host chooses otherwise. A
+// device console with a line editor of its own may erase on BS alone, which no
+// handshake can tell the terminal, so a serial or Telnet host can choose it.
+const (
+	DeleteByte byte = 0x7f
+	CtrlHByte  byte = 0x08
+)
+
 // EncodeKey turns a raw key event into the bytes a program reading a terminal
 // expects, following xterm. Named keys encode by Key; a chord such as Control+C
-// arrives with Key unknown and its character in text. It returns nil for keys
-// that mean nothing to the program (a Command chord that is not one of the
+// arrives with Key unknown and its character in text. backspace is the byte the
+// Backspace key stands for (DeleteByte or CtrlHByte; zero is DeleteByte). It
+// returns nil for keys that mean nothing to the program (a Command chord that is not one of the
 // line edits below belongs to the application, which is why this path sends
 // nothing for it; EncodeKeyEvent decides who owns the chord when the program
 // reports kitty keys).
-func EncodeKey(key gfx.Key, modifiers gfx.Modifiers, text string, appCursorKeys bool) []byte {
+func EncodeKey(key gfx.Key, modifiers gfx.Modifiers, text string, appCursorKeys bool, backspace byte) []byte {
 	if modifiers&gfx.ModifierMeta != 0 {
 		letter, ok := CommandLineEdit(key, modifiers)
 		if !ok {
 			return nil
 		}
-		return EncodeKey(gfx.KeyUnknown, gfx.ModifierControl, letter, appCursorKeys)
+		return EncodeKey(gfx.KeyUnknown, gfx.ModifierControl, letter, appCursorKeys, backspace)
 	}
 	shift := modifiers&gfx.ModifierShift != 0
 	alt := modifiers&gfx.ModifierAlt != 0
@@ -37,6 +48,9 @@ func EncodeKey(key gfx.Key, modifiers gfx.Modifiers, text string, appCursorKeys 
 		parameter += 4
 	}
 
+	if backspace == 0 {
+		backspace = DeleteByte
+	}
 	prefix := func(b []byte) []byte { // Alt sends Escape first
 		if alt {
 			return append([]byte{0x1b}, b...)
@@ -82,7 +96,7 @@ func EncodeKey(key gfx.Key, modifiers gfx.Modifiers, text string, appCursorKeys 
 		if control {
 			return prefix([]byte{0x17})
 		}
-		return prefix([]byte{0x7f})
+		return prefix([]byte{backspace})
 	case gfx.KeySpace:
 		if control {
 			return prefix([]byte{0})

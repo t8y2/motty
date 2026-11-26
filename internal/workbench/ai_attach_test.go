@@ -382,6 +382,50 @@ func TestAPictureTooLargeToPasteIsNamedInTheNotice(t *testing.T) {
 	}
 }
 
+func TestPastingCopiedFilesAttachesAndLeavesTheirNamesOut(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
+	state.ai.input.Insert("what is wrong here? ")
+	notes := writeTestFile(t, "notes.md", []byte("deploy plan\n"))
+	shot := writeTestFile(t, "shot.png", redSquarePNG(t))
+	// What a file manager's copy leaves: the paths, and their names as text.
+	copied := true
+	state.options.ClipboardFiles = func() ([]string, error) {
+		if !copied {
+			return nil, app.ErrNoFiles
+		}
+		return []string{notes, shot}, nil
+	}
+	if result := pasteText(t, state, "notes.md\nshot.png"); !result.Redraw || result.Value != "what is wrong here? " {
+		t.Fatalf("the names were pasted into the message box: %+v", result)
+	}
+	attached(t, state, 2)
+	pasteNoText(t, state)
+	attached(t, state, 2) // the same files twice
+	if first, second := state.ai.attachments[0].file, state.ai.attachments[1].file; first.Name != "notes.md" || first.Kind != attach.KindText ||
+		second.Name != "shot.png" || second.Kind != attach.KindImage {
+		t.Fatalf("attachments = %q %q", first.Name, second.Name)
+	}
+	// Text copied after them is pasted as text again.
+	copied = false
+	pasteText(t, state, "look at the log too")
+	if state.ai.input.String() != "what is wrong here? look at the log too" {
+		t.Fatalf("the text became %q", state.ai.input.String())
+	}
+}
+
+func TestAClipboardThatCannotBeAskedForFilesStillPastesItsText(t *testing.T) {
+	state := openedPanel(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("x") }})
+	state.options.ClipboardFiles = func() ([]string, error) { return nil, app.ErrUnsupported }
+	pasteText(t, state, "tail -n 20 app.log")
+	if state.ai.attaching != 0 || state.ai.input.String() != "tail -n 20 app.log" {
+		t.Fatalf("attaching %d, input %q", state.ai.attaching, state.ai.input.String())
+	}
+	pasteNoText(t, state)
+	if state.ai.attaching != 0 || len(state.ai.attachments) != 0 || state.ai.notice != "" {
+		t.Fatalf("attaching %d, attachments %d, notice %q", state.ai.attaching, len(state.ai.attachments), state.ai.notice)
+	}
+}
+
 func pasteText(t *testing.T, state *State, text string) app.TextState {
 	t.Helper()
 	input := state.AIPanelInput(app.TextInputContext{ID: hitAIInput})

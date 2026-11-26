@@ -20,7 +20,7 @@ const (
 	MaxPaneRatio        = float32(0.85)
 	DefaultContextWidth = float32(340)
 	MinContextWidth     = float32(280)
-	MaxContextWidth     = float32(480)
+	MaxContextWidth     = float32(640)
 	DefaultMonitorWidth = float32(320)
 	MinMonitorWidth     = float32(280)
 	MaxMonitorWidth     = float32(640)

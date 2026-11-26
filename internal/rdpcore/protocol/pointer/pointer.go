@@ -1,5 +1,6 @@
 // Package pointer decodes RDP pointer (cursor) update PDUs and converts
-// AND/XOR mask data into top-down RGBA pixel buffers.
+// AND/XOR mask data into top-down RGBA pixel buffers, with the pixels that
+// invert the screen kept apart: such a pixel has no color of its own.
 //
 // Supports fast-path update codes (0x5–0xC) and slow-path pointer message
 // types (MS-RDPBCGR 2.2.9.1.1.4).
@@ -46,6 +47,12 @@ type PointerUpdate struct {
 	Width      uint16
 	Height     uint16
 	Data       []byte // top-down RGBA, Width*Height*4 bytes
+	// Invert marks the pixels that show the inverse of what is behind them
+	// instead of a color of their own: the remote's monochrome inverting
+	// pointer. It is top-down, one entry per pixel, and nil when no pixel
+	// inverts; Data's pixel there is transparent (all zero), because a color
+	// would be a guess at the picture the remote means to invert.
+	Invert []bool
 }
 
 // DecodeSystem decodes a TS_SYSTEMPOINTERATTRIBUTE (4 bytes → system pointer type).
@@ -136,37 +143,44 @@ func decodeColorFields(log *slog.Logger, buf, data []byte, xorBpp int, large boo
 	xorMask := data[off : off+xorLen]
 	andMask := data[off+xorLen : off+xorLen+andLen]
 
-	rgba, buf := convertMasksToRGBA(buf, int(pu.Width), int(pu.Height), xorBpp, xorMask, andMask)
-	pu.Data = rgba
+	rgba, invert, buf := convertMasksToRGBA(buf, int(pu.Width), int(pu.Height), xorBpp, xorMask, andMask)
+	pu.Data, pu.Invert = rgba, invert
 	log.LogAttrs(context.Background(), slog.LevelDebug, "pointer decoded", slog.Int("width", int(pu.Width)), slog.Int("height", int(pu.Height)), slog.Int("hotX", int(pu.HotSpotX)), slog.Int("hotY", int(pu.HotSpotY)), slog.Int("cacheIdx", int(pu.CacheIndex)))
 	return pu, buf, nil
 }
 
-// convertMasksToRGBA converts AND/XOR cursor masks to top-down RGBA.
+// convertMasksToRGBA converts AND/XOR cursor masks to top-down RGBA and the
+// pixels that invert the screen.
 //
 // AND mask: 1bpp, MSB-first, rows 2-byte aligned.
 // XOR mask: variable bpp, rows 2-byte aligned.
 // bpp>=8: bottom-up (flip Y). bpp==1: top-down (no flip).
 //
-// AND=0 → opaque (alpha 0xFF).
+// AND=0 → the XOR color, opaque (alpha 0xFF).
 // AND=1 + XOR=black → transparent (alpha 0x00).
-// AND=1 + XOR=non-black → XOR-invert pixel. CSS cursors can't XOR with the
-// screen, so we render these as opaque black and then paint a 1-pixel white
-// halo into surrounding transparent pixels. This keeps cursors like the
-// Windows I-beam visible on both light and dark backgrounds.
+// AND=1 + XOR=non-black → an inverting pixel, marked in the returned mask and
+// transparent in RGBA. Windows sends its inverting pointer schemes (the
+// "Windows Inverted" cursors, whose body shows the inverse of whatever is
+// behind it) this way, at 1bpp and at 24bpp alike: the AND mask keeps the
+// screen and the XOR bit asks to invert it.
 // 32bpp special: when the XOR mask carries an alpha channel it is the
 // authority on transparency, with the AND mask able only to hide a pixel; a
 // server that sends 32bpp with no alpha channel at all falls back to the masks.
-func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgba []byte, outBuf []byte) {
+func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgba []byte, invert []bool, outBuf []byte) {
 	needed := w * h * 4
 	if cap(buf) < needed {
 		buf = make([]byte, needed)
 	}
 	rgba = buf[:needed]
 
-	// Track XOR-invert pixel positions so the halo pass can distinguish them
-	// from legitimate opaque-black cursor pixels (e.g. the arrow outline).
-	invertMask := make([]bool, w*h)
+	// markInvert records a pixel that shows the inverse of the screen, making
+	// the mask on the first one: most cursors have no such pixel at all.
+	markInvert := func(index int) {
+		if invert == nil {
+			invert = make([]bool, w*h)
+		}
+		invert[index] = true
+	}
 
 	// xrdp sends an X cursor at 32bpp with per-pixel alpha and an all-zero AND
 	// mask; reading alpha only where it is nonzero turns the transparent
@@ -248,27 +262,29 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 				b = xorRow[x*4]
 				g = xorRow[x*4+1]
 				r = xorRow[x*4+2]
-				if andBit == 0 {
+				switch {
+				case andBit == 0:
 					a = 0xFF
-				} else if r == 0 && g == 0 && b == 0 {
+				case r == 0 && g == 0 && b == 0:
 					a = 0
-				} else {
-					// XOR-invert pixel → opaque black, halo pass adds the white outline
-					r, g, b, a = 0, 0, 0, 0xFF
-					invertMask[y*w+x] = true
+				default:
+					// An inverting pixel carries no color of its own.
+					r, g, b, a = 0, 0, 0, 0
+					markInvert(y*w + x)
 				}
 			case bpp == 24 && xorRow != nil && x*3+2 < len(xorRow):
 				b = xorRow[x*3]
 				g = xorRow[x*3+1]
 				r = xorRow[x*3+2]
-				if andBit == 0 {
+				switch {
+				case andBit == 0:
 					a = 0xFF
-				} else if r == 0 && g == 0 && b == 0 {
+				case r == 0 && g == 0 && b == 0:
 					a = 0
-				} else {
-					// XOR-invert pixel → opaque black, halo pass adds the white outline
-					r, g, b, a = 0, 0, 0, 0xFF
-					invertMask[y*w+x] = true
+				default:
+					// An inverting pixel carries no color of its own.
+					r, g, b, a = 0, 0, 0, 0
+					markInvert(y*w + x)
 				}
 			case bpp == 16 && xorRow != nil && x*2+1 < len(xorRow):
 				pixel := uint16(xorRow[x*2]) | uint16(xorRow[x*2+1])<<8
@@ -283,9 +299,9 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 				} else if pixel == 0 {
 					a = 0
 				} else {
-					// XOR-invert pixel → opaque black, halo pass adds the white outline
-					r, g, b, a = 0, 0, 0, 0xFF
-					invertMask[y*w+x] = true
+					// An inverting pixel carries no color of its own.
+					r, g, b, a = 0, 0, 0, 0
+					markInvert(y*w + x)
 				}
 			case bpp == 1:
 				// Monochrome: XOR is 1bpp
@@ -303,9 +319,9 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 					if xorBit == 0 {
 						a = 0 // transparent
 					} else {
-						// XOR-invert pixel → opaque black, halo pass adds the white outline
-						r, g, b, a = 0, 0, 0, 0xFF
-						invertMask[y*w+x] = true
+						// An inverting pixel carries no color of its own.
+						r, g, b, a = 0, 0, 0, 0
+						markInvert(y*w + x)
 					}
 				}
 			default:
@@ -320,52 +336,7 @@ func convertMasksToRGBA(buf []byte, w, h, bpp int, xorMask, andMask []byte) (rgb
 		}
 	}
 
-	// Halo pass: paint a 1-pixel opaque-white outline into transparent pixels
-	// adjacent to any XOR-invert pixel. This makes the cursor visible on both
-	// light and dark backgrounds (real XOR-with-screen isn't possible for a
-	// static CSS cursor image).
-	hasInvert := false
-	for _, v := range invertMask {
-		if v {
-			hasInvert = true
-			break
-		}
-	}
-	if hasInvert {
-		for y := 0; y < h; y++ {
-			for x := 0; x < w; x++ {
-				di := (y*w + x) * 4
-				if rgba[di+3] != 0 {
-					continue // already opaque — don't overwrite cursor content
-				}
-				neighbor := false
-			neighbors:
-				for dy := -1; dy <= 1; dy++ {
-					for dx := -1; dx <= 1; dx++ {
-						if dx == 0 && dy == 0 {
-							continue
-						}
-						ny, nx := y+dy, x+dx
-						if ny < 0 || ny >= h || nx < 0 || nx >= w {
-							continue
-						}
-						if invertMask[ny*w+nx] {
-							neighbor = true
-							break neighbors
-						}
-					}
-				}
-				if neighbor {
-					rgba[di] = 0xFF
-					rgba[di+1] = 0xFF
-					rgba[di+2] = 0xFF
-					rgba[di+3] = 0xFF
-				}
-			}
-		}
-	}
-
-	return rgba, buf
+	return rgba, invert, buf
 }
 
 type shortErr string

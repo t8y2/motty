@@ -213,6 +213,7 @@ var (
 
 // Settings: its explicit choices.
 var (
+	hitTerminalTransparency    = tree.ID(settingsHits, "terminal-transparency")
 	hitSettingsTextSizeDown    = tree.ID(settingsHits, "settings-text-size-down")
 	hitSettingsTextSizeReset   = tree.ID(settingsHits, "settings-text-size-reset")
 	hitSettingsTextSizeUp      = tree.ID(settingsHits, "settings-text-size-up")
@@ -620,8 +621,8 @@ type State struct {
 	systemKeys    systemKeyCapture
 	winChrome     windowChrome
 	// desktopBar is a fullscreen remote desktop's floating bar: whether its pin
-	// keeps it visible, and where the pointer is in the band at the top edge
-	// that reveals it. See desktop_fullscreen.go.
+	// keeps it visible, the edge it is docked to, and where the pointer is in the
+	// strip and the bar that reveal it. See desktop_fullscreen.go.
 	desktopBar desktopFullscreenBar
 	// desktopAwake says this window already holds the sleep request for a visible
 	// remote desktop; see keepAwakeForDesktop.
@@ -721,6 +722,7 @@ type State struct {
 	language           i18n.Language
 	languageChosen     bool // the user picked it; until then it follows the system
 	messages           i18n.Messages
+	editMenu           ui.EditMenuLabels // the words of every text field's edit menu, which each window's page points at
 	modal              modalKind
 	modalSession       uint32
 	dialogError        string
@@ -734,14 +736,18 @@ type State struct {
 	post func(func())
 	// setMenuBar installs the macOS menu bar; menuBarSig is the state it was
 	// built for, so Wake rebuilds it only when enablement or language changed.
-	setMenuBar      func([]app.Menu) error
-	menuBarSig      string
-	appearance      appearance
-	appearanceMode  appearanceMode
-	cornerStyle     cornerStyle
-	iconColor       iconColor
-	iconColorChoice iconColor // the unconfirmed selection in the icon picker
-	networkProxy    networkProxyMode
+	setMenuBar           func([]app.Menu) error
+	menuBarSig           string
+	appearance           appearance
+	appearanceMode       appearanceMode
+	cornerStyle          cornerStyle
+	terminalTransparency ui.SliderState
+	// windowComposited is whether the desktop really shows through the window,
+	// as the platform reported when it opened: the setting means nothing without it.
+	windowComposited atomic.Bool
+	iconColor        iconColor
+	iconColorChoice  iconColor // the unconfirmed selection in the icon picker
+	networkProxy     networkProxyMode
 	// sshBrowser is the Chromium-family browser the SSH tab's browser opens.
 	// Automatic takes the first one installed.
 	sshBrowser          sshbrowser.Family
@@ -766,6 +772,9 @@ type State struct {
 	localStartupCommands map[string]string
 	// localStartupDialog is the popup that edits one shell's startup command.
 	localStartupDialog localStartupDialog
+	// desktopResolution is the popup that types a custom remote resolution for
+	// an open RDP session.
+	desktopResolution  desktopResolutionDialog
 	localStart         localStartPolicy
 	lastLocalDirectory string // where a local shell last was; a new local terminal starts there when no local tab is in front
 	localShellMenu     localShellSelect
@@ -1302,6 +1311,7 @@ func New(options Options) *State {
 		update:                updateState{firstDelay: updateFirstDelayDefault, every: updateIntervalDefault},
 		winChrome:             windowChrome{remember: options.RememberWindowFrame},
 	}
+	state.refreshEditMenu()
 	// The command drawer shows by default; a saved state may close it.
 	// The reference cell stands in until the first paint measures the font on the
 	// window's canvas (measureTerminalCell).
@@ -1545,6 +1555,13 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if editor := state.sftpEditor(hit); editor != nil {
 			return editor
 		}
+		if hit == hitRemoteLogPath && state.terminalPage() {
+			if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+				if view := session.remoteLogs; view != nil && (view.formMode == remoteLogFormAdd || view.formMode == remoteLogFormEdit) {
+					return &view.path
+				}
+			}
+		}
 		if hit == hitSearch && state.activeSection == sectionHosts && !state.hostSort.enabled {
 			return &state.search
 		}
@@ -1601,6 +1618,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 	case modalRenameTab:
 		if hit == hitTabRenameField {
 			return &state.tabRename.editor
+		}
+	case modalDesktopResolution:
+		if hit == hitDesktopResolutionField {
+			return &state.desktopResolution.editor
 		}
 	case modalLocalStartupCommand:
 		if hit == hitLocalStartupField {
@@ -1888,6 +1909,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalLocalStartupCommand:
 		state.clickLocalStartupCommandDialog(id)
 		return
+	case modalDesktopResolution:
+		state.clickDesktopResolutionDialog(id)
+		return
 	case modalAIRename:
 		state.clickAIRenameDialog(id)
 		return
@@ -2131,6 +2155,10 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.save()
 	case id == hitNewTab || id == hitVerticalTabsNew:
 		state.openConnectPicker()
+	case id == hitWindowBarTabsPrevious:
+		state.scrollWindowBarTabs(-1)
+	case id == hitWindowBarTabsNext:
+		state.scrollWindowBarTabs(1)
 	case id == hitVerticalTabsPin:
 		state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 		state.save()
@@ -2736,9 +2764,14 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		defer func() { outcome.Repaint = true }()
 	}
 	// A fullscreen desktop's unpinned bar appears while the pointer reaches the
-	// top edge, before the pointer's press can land on the picture there.
+	// edge it is docked to, before the pointer's press can land on the picture
+	// there.
 	if state.trackDesktopFullscreenBar(event) {
 		defer func() { outcome.Repaint = true }()
+	}
+	// A press on the bar itself moves it, before the picture can take the press.
+	if result, handled := state.desktopBarPointer(event); handled {
+		return result
 	}
 	if event.Kind == gfx.PointerDown && !workspaceInlineOwns(event.Target) {
 		state.workspaceCommandEdit = workspaceCommandInline{}
@@ -3041,7 +3074,7 @@ func isHostTagsTarget(id gfx.ID) bool {
 func isDialogField(id gfx.ID) bool {
 	switch id {
 	case hitDialogLabel, hitDialogAddress, hitDialogUser, hitDialogPassword, hitDialogPassphrase, hitDialogGroup, hitDialogPort, hitDialogTags,
-		hitDialogIdleInterval, hitDialogIdleCustomInput:
+		hitDialogIdleInterval, hitDialogIdleCustomInput, hitDialogResolution:
 		return true
 	}
 	return false
@@ -3068,6 +3101,8 @@ func fieldForDialogHit(id gfx.ID) hostField {
 		return fieldIdleInterval
 	case hitDialogIdleCustomInput:
 		return fieldIdleInputCustom
+	case hitDialogResolution:
+		return fieldResolution
 	default:
 		return fieldPort
 	}
@@ -3334,6 +3369,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.localStartupCommandKey(event); handled {
+		return result
+	}
+	if result, handled := state.desktopResolutionKey(event); handled {
 		return result
 	}
 	if result, handled := state.tabRenameKey(event); handled {

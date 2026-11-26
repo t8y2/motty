@@ -23,6 +23,7 @@ var (
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
 	hitDialogLegacyTLS            = tree.ID(hostProtocolUiHits, "dialog-legacy-tls")
 	hitDialogLegacyTLSHelp        = tree.ID(hostProtocolUiHits, "dialog-legacy-tls-help")
+	hitDialogResolution           = tree.ID(hostProtocolUiHits, "dialog-resolution")
 	hitDialogEffectWallpaper      = tree.ID(hostProtocolUiHits, "dialog-effect-wallpaper")
 	hitDialogEffectFontSmoothing  = tree.ID(hostProtocolUiHits, "dialog-effect-font-smoothing")
 	hitDialogEffectComposition    = tree.ID(hostProtocolUiHits, "dialog-effect-composition")
@@ -117,6 +118,7 @@ func (editor *hostEditor) connectionType() hostConnectionType {
 var (
 	hostConnectionChoices  = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh}
 	hostFlowChoices        = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
+	hostBackspaceChoices   = [...]backspaceKey{backspaceDEL, backspaceCtrlH}
 	hostAlgoChoices        = [...]algoMode{algoDefault, algoCompatible, algoCustom}
 	hostLoginPolicyChoices = [...]loginFailurePolicy{loginFailureStop, loginFailureContinue}
 )
@@ -156,6 +158,15 @@ func (state *State) hostFlowChoiceLabel(flow serial.Flow) string {
 	default:
 		return state.messages.Tools.FlowNone
 	}
+}
+
+// hostBackspaceChoiceLabel names one byte the Backspace key sends as the form's
+// choice shows it.
+func (state *State) hostBackspaceChoiceLabel(key backspaceKey) string {
+	if key == backspaceCtrlH {
+		return state.messages.Tools.BackspaceCtrlH
+	}
+	return state.messages.Tools.BackspaceDEL
 }
 
 // hostAlgoChoiceLabel names one algorithm mode as the form's choice shows it.
@@ -201,6 +212,16 @@ func (state *State) declareHostProtocolChoice(c ui.C) ui.Box {
 // clear.
 func (state *State) declareHostFlowChoice(c ui.C) ui.Box {
 	choice := hostFormChoice(c, state.messages.Tools.FieldFlow, hostFormRowHeight, &state.editor.flow, hostFlowChoices[:], state.hostFlowChoiceLabel)
+	if choice.Changed() {
+		state.dialogError = ""
+	}
+	return choice
+}
+
+// declareHostBackspaceChoice declares the Backspace key choice of a serial or
+// Telnet host in the form's page, like the flow control.
+func (state *State) declareHostBackspaceChoice(c ui.C) ui.Box {
+	choice := hostFormChoice(c, state.messages.Tools.FieldBackspace, hostFormRowHeight, &state.editor.backspace, hostBackspaceChoices[:], state.hostBackspaceChoiceLabel)
 	if choice.Changed() {
 		state.dialogError = ""
 	}
@@ -536,14 +557,15 @@ const hostPortWidth = 84
 
 // hostEndpointRows is how many labelled rows the endpoint block of the form
 // takes: the address with the port and, under it, the credentials. A serial
-// port takes three (its device, its line, and the flow control) and Telnet one
-// (Telnet has no credentials in the form).
+// port takes three (its device, its line, and the flow control beside the
+// Backspace key) and Telnet two: it has no credentials in the form, only the
+// Backspace key under its address.
 func (state *State) hostEndpointRows() int {
 	switch state.editor.protocol {
 	case protocolSerial:
 		return 3
 	case protocolTelnet:
-		return 1
+		return 2
 	case protocolSSH:
 		if state.hostAsksKeyPassphrase() {
 			return 3
@@ -653,6 +675,9 @@ func (state *State) sshAdvancedRowsHeight() float32 {
 	if state.editor.algoMode == algoCustom {
 		rows++
 	}
+	if !state.editor.moshTerminal() {
+		rows++
+	}
 	return rows*hostFormRowHeight + loginCommandAreaHeight + hostFormRowHeight + otpFieldHeight + otpButtonsRow + state.sshSwitchRowsHeight()
 }
 
@@ -749,8 +774,8 @@ type hostVNCRowsBody struct {
 
 // hostAlgoRowsBody is where the SSH algorithm rows put each control.
 type hostAlgoRowsBody struct {
-	algo, custom, login, loginPolicy, otp, scan, paste, remove ui.Box
-	identitiesOnlyHelp, agentHelp                              ui.Box
+	algo, custom, login, loginPolicy, backspace, otp, scan, paste, remove ui.Box
+	identitiesOnlyHelp, agentHelp                                         ui.Box
 }
 
 // paintAlgorithmRows draws the SSH algorithm choice and, for a custom one, the
@@ -822,6 +847,12 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 			})
 		}
 		heading(m.AdvancedSession)
+		if !editor.moshTerminal() {
+			b.backspace = hostFormChoice(c, m.FieldBackspace, rowHeight, &editor.backspace, hostBackspaceChoices[:], state.hostBackspaceChoiceLabel)
+			if b.backspace.Changed() {
+				state.dialogError = ""
+			}
+		}
 		state.declareDialogCheck(c, hitDialogForwardX11, m.X11Forward, editor.forwardX11, 4, 0)
 		state.declareDialogCheck(c, hitDialogAgentForward, m.AgentForward, editor.agentForward, 12, 0)
 		state.declareDialogCheck(c, hitDialogNoHistory, state.messages.History.HostNoRecord, editor.noHistory, 12, 0)
@@ -849,9 +880,9 @@ const rdpRowsHeight = vncRowsHeight + 4*(12+20)
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
 	if state.editor.protocol == protocolRDP {
-		return rdpRowsHeight + desktopQualityRowsHeight(protocolRDP)
+		return rdpRowsHeight + desktopQualityRowsHeight(protocolRDP, state.editor.resolution == customDesktopSize)
 	}
-	return vncRowsHeight + desktopQualityRowsHeight(protocolVNC)
+	return vncRowsHeight + desktopQualityRowsHeight(protocolVNC, false)
 }
 
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host

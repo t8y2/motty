@@ -130,6 +130,7 @@ type PointerUpdate struct {
 	Width      uint16 // Cursor width
 	Height     uint16 // Cursor height
 	Data       []byte // Top-down RGBA pixel data (only for PointerShape)
+	Invert     []bool // Pixels that show the inverse of the screen, if any
 }
 
 // Client is an RDP client connection
@@ -4525,6 +4526,10 @@ func (c *Client) cacheAndNotifyPointer(pu *pointer.PointerUpdate) {
 		Data:       make([]byte, len(pu.Data)),
 	}
 	copy(update.Data, pu.Data)
+	if len(pu.Invert) > 0 {
+		update.Invert = make([]bool, len(pu.Invert))
+		copy(update.Invert, pu.Invert)
+	}
 
 	if int(pu.CacheIndex) < len(c.pointerCache) {
 		c.pointerCache[pu.CacheIndex] = update

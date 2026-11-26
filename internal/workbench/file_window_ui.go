@@ -128,7 +128,7 @@ func (d *fileDocument) paint(canvas *gfx.Canvas, size gfx.Size) {
 // one page while the manager paints, else the document's own.
 func (d *fileDocument) windowPage() *ui.Page {
 	if d.owner.fileWindows.painting {
-		return d.owner.fileWindows.editPage(&d.owner.theme)
+		return d.owner.fileWindows.editPage(&d.owner.theme, &d.owner.editMenu)
 	}
 	return d.documentPage()
 }
@@ -369,7 +369,7 @@ func (d *fileDocument) comparisonPage() *ui.Page {
 	if uiState.page == nil {
 		uiState.compareView = d.declareComparisonWindow
 		uiState.page = ui.NewPage(ui.PageConfig{
-			Tree: &tree, Root: fmt.Sprintf("file-comparison-%d", fileWindowPageSeq.Add(1)), Theme: &d.owner.theme, View: uiState.compareView,
+			Tree: &tree, Root: fmt.Sprintf("file-comparison-%d", fileWindowPageSeq.Add(1)), Theme: &d.owner.theme, EditMenu: &d.owner.editMenu, View: uiState.compareView,
 		})
 	}
 	return uiState.page

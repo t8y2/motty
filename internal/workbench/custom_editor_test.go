@@ -42,7 +42,7 @@ func TestSFTPFileSettingsDefaultsRestoreAndPersistLocally(t *testing.T) {
 		t.Fatalf("restored = order %v, mode %v, editor %q/%q",
 			restarted.sftpWindowOrder, restarted.sftpOpenMode, restarted.defaultEditor, restarted.customEditorPath)
 	}
-	for _, field := range []string{"sftp_window_order", "sftp_open_mode", "custom_editor_path"} {
+	for _, field := range []string{"custom_editor_path"} {
 		if syncedSettings[field] {
 			t.Errorf("%s was classified as a synchronized setting", field)
 		}

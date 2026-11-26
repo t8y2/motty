@@ -143,6 +143,10 @@ type savedTransport struct {
 	Encoding string `json:"encoding,omitempty"`
 	Line     string `json:"line,omitempty"` // serial: "115200 8N1"
 	Flow     string `json:"flow,omitempty"` // serial: "rtscts" or "xonxoff"
+	// Backspace is "ctrl-h" for a serial, Telnet or SSH host whose Backspace
+	// key sends BS instead of DEL; empty (or missing) sends DEL, as a host that
+	// never chose one always did.
+	Backspace string `json:"backspace,omitempty"`
 	// Proxy is nil when this host inherits the global outbound proxy. An entry
 	// whose kind is "direct" explicitly bypasses it.
 	Proxy *savedOutboundProxy `json:"proxy,omitempty"`
@@ -215,6 +219,9 @@ type savedTransport struct {
 	ColorDepth      int              `json:"color_depth,omitempty"`
 	DesktopEncoding desktop.Encoding `json:"desktop_encoding,omitempty"`
 	Effects         *desktop.Effects `json:"effects,omitempty"`
+	// DesktopWidth and DesktopHeight are an RDP host's fixed remote resolution.
+	DesktopWidth  int `json:"desktop_width,omitempty"`
+	DesktopHeight int `json:"desktop_height,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -237,6 +244,9 @@ func (host Host) transport() savedTransport {
 	switch host.Protocol {
 	case protocolTelnet:
 		transport.Protocol = "telnet"
+		if host.Backspace == backspaceCtrlH {
+			transport.Backspace = "ctrl-h"
+		}
 		return transport
 	case protocolVNC:
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "vnc", host.ViaSSH, host.Clipboard, host.Chromeless
@@ -250,9 +260,13 @@ func (host Host) transport() savedTransport {
 		transport.LegacyTLS = host.LegacyTLS
 		transport.ColorDepth = host.ColorDepth
 		transport.Effects = host.Effects
+		transport.DesktopWidth, transport.DesktopHeight = savedDesktopSize(host.DesktopWidth, host.DesktopHeight)
 		return transport
 	case protocolSerial:
 		transport.Proxy, transport.Protocol, transport.Line = nil, "serial", host.Line.String()
+		if host.Backspace == backspaceCtrlH {
+			transport.Backspace = "ctrl-h"
+		}
 		switch host.Line.Flow {
 		case serial.FlowHardware:
 			transport.Flow = "rtscts"
@@ -264,6 +278,8 @@ func (host Host) transport() savedTransport {
 	mode, list := host.savedAlgo()
 	if host.mosh() {
 		transport.Terminal = "mosh"
+	} else if host.Backspace == backspaceCtrlH {
+		transport.Backspace = "ctrl-h"
 	}
 	transport.Algorithms, transport.AlgorithmList = mode, list
 	transport.Authentication, transport.Identity = host.Auth.saved(), host.Identity
@@ -341,9 +357,14 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		default:
 			return false
 		}
+		host.Backspace = backspaceDEL
+		if !host.mosh() {
+			host.Backspace = restoredBackspace(transport.Backspace)
+		}
 		return host.applyTransfer(transport.Transfer) && host.applyAlgo(transport.Algorithms, transport.AlgorithmList)
 	case "telnet":
 		host.Protocol, host.Credential = protocolTelnet, ""
+		host.Backspace = restoredBackspace(transport.Backspace)
 	case "vnc":
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolVNC, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.ColorDepth, host.PreferredEncoding = vncColorDepth(transport.ColorDepth), transport.DesktopEncoding
@@ -358,6 +379,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.LegacyTLS = transport.LegacyTLS
 		host.ColorDepth = rdpColorDepth(transport.ColorDepth)
 		host.Effects = transport.Effects
+		host.DesktopWidth, host.DesktopHeight = savedDesktopSize(transport.DesktopWidth, transport.DesktopHeight)
 	case "serial":
 		host.Proxy, host.Credential = nil, ""
 		flow := serial.FlowNone
@@ -372,10 +394,20 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 			return false
 		}
 		host.Protocol, host.Line = protocolSerial, line
+		host.Backspace = restoredBackspace(transport.Backspace)
 	default:
 		return false
 	}
 	return true
+}
+
+// restoredBackspace reads the saved Backspace key. A missing value, or one
+// that names no choice, opens on the default, as the flow control does.
+func restoredBackspace(saved string) backspaceKey {
+	if saved == "ctrl-h" {
+		return backspaceCtrlH
+	}
+	return backspaceDEL
 }
 
 // validEndpoint reports whether address can name a destination of the protocol:

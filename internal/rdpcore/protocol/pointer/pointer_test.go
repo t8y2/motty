@@ -3,6 +3,7 @@ package pointer
 import (
 	"encoding/binary"
 	"log/slog"
+	"os"
 	"testing"
 )
 
@@ -210,8 +211,8 @@ func TestNewPointerWithoutAlphaUsesMasks(t *testing.T) {
 }
 
 func TestTransparency(t *testing.T) {
-	// 2x1 24bpp: AND=1+XOR=black → transparent, AND=1+XOR=white → XOR-invert
-	// (rendered as opaque black with white halo painted into transparent neighbors).
+	// 2x1 24bpp: AND=1+XOR=black → transparent, AND=1+XOR=white → an inverting
+	// pixel, which has no color and is left to whoever can show the inverse.
 	w, h := 2, 1
 
 	andMask := []byte{0xC0, 0x00} // bits: 11000000 → both pixels AND=1
@@ -238,16 +239,22 @@ func TestTransparency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Pixel 0: originally transparent, but adjacent to the XOR-invert pixel →
-	// painted opaque white by the halo pass.
+	// Pixel 0: AND=1, XOR=black → transparent, no color to show.
 	r, g, b, a := pu.Data[0], pu.Data[1], pu.Data[2], pu.Data[3]
-	if r != 0xFF || g != 0xFF || b != 0xFF || a != 0xFF {
-		t.Fatalf("pixel 0 (halo): got RGBA(%d,%d,%d,%d), want (255,255,255,255)", r, g, b, a)
+	if r != 0 || g != 0 || b != 0 || a != 0 {
+		t.Fatalf("pixel 0: got RGBA(%d,%d,%d,%d), want transparent", r, g, b, a)
 	}
-	// Pixel 1: AND=1, XOR=white → opaque black (XOR-invert)
+	if pu.Invert[0] {
+		t.Fatal("pixel 0 is not an inverting pixel")
+	}
+	// Pixel 1: AND=1, XOR=white → inverts the picture behind it, so it has no
+	// color of its own and must not paint anything by itself.
 	r, g, b, a = pu.Data[4], pu.Data[5], pu.Data[6], pu.Data[7]
-	if r != 0 || g != 0 || b != 0 || a != 0xFF {
-		t.Fatalf("pixel 1 (XOR-invert): got RGBA(%d,%d,%d,%d), want (0,0,0,255)", r, g, b, a)
+	if r != 0 || g != 0 || b != 0 || a != 0 {
+		t.Fatalf("pixel 1: got RGBA(%d,%d,%d,%d), want transparent", r, g, b, a)
+	}
+	if len(pu.Invert) != w*h || !pu.Invert[1] {
+		t.Fatalf("invert mask = %v, want only pixel 1", pu.Invert)
 	}
 }
 
@@ -315,20 +322,25 @@ func TestMonochrome(t *testing.T) {
 		t.Fatalf("data len: got %d, want %d", len(pu.Data), w*h*4)
 	}
 
-	// AND=1, XOR=1: XOR-invert → opaque black for bits 0,2,4,6
+	// AND=1, XOR=1: inverting pixels for bits 0,2,4,6
 	// AND=0, XOR=1: opaque white for bits 1,3,5,7
-	// (No transparent pixels here, so the halo pass has nothing to paint.)
 	for x := range w {
 		r, g, b, a := pu.Data[x*4], pu.Data[x*4+1], pu.Data[x*4+2], pu.Data[x*4+3]
 		if x%2 == 0 {
-			// AND=1 (bit pattern 10101010), XOR=1 → opaque black
-			if r != 0 || g != 0 || b != 0 || a != 0xFF {
-				t.Fatalf("pixel %d (XOR-invert): got RGBA(%d,%d,%d,%d), want (0,0,0,255)", x, r, g, b, a)
+			// AND=1 (bit pattern 10101010), XOR=1 → inverts the picture
+			if r != 0 || g != 0 || b != 0 || a != 0 {
+				t.Fatalf("pixel %d (inverting): got RGBA(%d,%d,%d,%d), want transparent", x, r, g, b, a)
+			}
+			if len(pu.Invert) != w*h || !pu.Invert[x] {
+				t.Fatalf("pixel %d is not marked as inverting", x)
 			}
 		} else {
 			// AND=0, XOR=1 → opaque white
 			if r != 0xFF || g != 0xFF || b != 0xFF || a != 0xFF {
 				t.Fatalf("pixel %d: got RGBA(%d,%d,%d,%d), want (255,255,255,255)", x, r, g, b, a)
+			}
+			if pu.Invert[x] {
+				t.Fatalf("pixel %d is marked as inverting", x)
 			}
 		}
 	}
@@ -358,11 +370,66 @@ func TestBufferReuse(t *testing.T) {
 // GNOME sends 32bpp cursors with an alpha channel and no AND mask.
 func TestGNOMEAlphaPointerWithoutANDMask(t *testing.T) {
 	xor := []byte{30, 20, 10, 255, 0, 0, 0, 0, 60, 50, 40, 128}
-	rgba, _ := convertMasksToRGBA(nil, 3, 1, 32, xor, nil)
+	rgba, invert, _ := convertMasksToRGBA(nil, 3, 1, 32, xor, nil)
 	want := []byte{10, 20, 30, 255, 0, 0, 0, 0, 40, 50, 60, 128}
 	for i := range want {
 		if rgba[i] != want[i] {
 			t.Fatalf("byte %d: got %d, want %d", i, rgba[i], want[i])
 		}
+	}
+	if invert != nil {
+		t.Fatalf("alpha pixels marked as inverting: %v", invert)
+	}
+}
+
+// The Windows "Inverted" pointer scheme's arrow, captured from a Windows 11 RDP
+// server at its 32x32 size. The server sends the monochrome inverting cursor as
+// a 24bpp pointer: its 1px outline is black (AND=0, XOR=black) and its body is
+// AND=1 with a white XOR mask, which means "invert the picture here". Treating
+// that body as an opaque color is the reported bug: a black arrow with a white
+// edge, which disappears on a dark picture.
+func TestTheWindowsInvertedArrowKeepsItsInvertingBody(t *testing.T) {
+	data, err := os.ReadFile("testdata/inverted-arrow.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pu, _, err := DecodeNewPointer(slog.Default(), nil, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pu.Width != 32 || pu.Height != 32 || pu.HotSpotX != 0 || pu.HotSpotY != 0 {
+		t.Fatalf("pointer %dx%d hotspot %d,%d", pu.Width, pu.Height, pu.HotSpotX, pu.HotSpotY)
+	}
+	if len(pu.Invert) != 32*32 {
+		t.Fatalf("invert mask has %d entries", len(pu.Invert))
+	}
+	var inverting, opaqueBlack, opaqueWhite int
+	for index := range 32 * 32 {
+		red, green, blue, alpha := pu.Data[index*4], pu.Data[index*4+1], pu.Data[index*4+2], pu.Data[index*4+3]
+		if pu.Invert[index] {
+			inverting++
+			if alpha != 0 {
+				t.Fatalf("inverting pixel %d has RGBA(%d,%d,%d,%d), want no color", index, red, green, blue, alpha)
+			}
+			continue
+		}
+		if alpha == 0 {
+			continue
+		}
+		if red == 0 && green == 0 && blue == 0 {
+			opaqueBlack++
+			continue
+		}
+		opaqueWhite++
+	}
+	if inverting != 58 || opaqueBlack != 47 {
+		t.Fatalf("body %d inverting, outline %d opaque black; want 58 and 47", inverting, opaqueBlack)
+	}
+	// The old halo painted white into the transparent pixels around the body.
+	if opaqueWhite != 0 {
+		t.Fatalf("%d opaque pixels are not black; a halo was painted", opaqueWhite)
+	}
+	if red, green, blue, alpha := pu.Data[0], pu.Data[1], pu.Data[2], pu.Data[3]; red != 0 || green != 0 || blue != 0 || alpha != 0xFF {
+		t.Fatalf("outline pixel 0,0 = RGBA(%d,%d,%d,%d), want opaque black", red, green, blue, alpha)
 	}
 }

@@ -1419,6 +1419,15 @@ func (state *State) AIPanelInput(context app.TextInputContext) *app.TextInput {
 
 func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 	ai := &state.ai
+	if event.Kind == app.TextPasteNoText || event.Kind == app.TextPaste {
+		// What a file manager copied is attached before anything else is done
+		// with the paste: it also puts the files' names there as text.
+		if state.aiPasteFiles() {
+			result := app.TextStateOf(&ai.input)
+			result.Redraw = true // the chips changed, not the editor
+			return result
+		}
+	}
 	if event.Kind == app.TextPasteNoText {
 		// Nothing to insert: a picture on the clipboard is attached instead.
 		state.aiPasteImage()

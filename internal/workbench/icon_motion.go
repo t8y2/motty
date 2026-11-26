@@ -515,7 +515,7 @@ func eyeBlink(contour int, start float32) iconPartMotion {
 // contour from the icon itself.
 func iconMotionFor(icon uint8) (iconMotion, bool) {
 	switch icon {
-	case iconSettings:
+	case iconSettings, iconSun:
 		return iconMotionTurn, true
 	case iconTerminal:
 		return iconMotionCursor, true

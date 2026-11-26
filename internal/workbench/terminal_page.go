@@ -319,7 +319,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			case showingInputNotice:
 				state.declareTerminalInputNotice(c, session, bounds.Width)
 			case noticeReserved:
-				ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0).Background(state.ground(state.termPal.terminal))
+				ui.Slot(c).Height(inputNoticeHeight).FillWidth().Shrink(0).Background(state.terminalGround())
 			}
 			c.Part(terminalControlPart)
 			label := t.accessibleName(state.messages.LabelTerminalFmt, session.Address)
@@ -327,7 +327,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			if session.ID == state.activeSessionID && !t.find.open {
 				terminal.AutoFocus()
 			}
-			terminal.Grow(1).FillWidth().Background(state.ground(state.termPal.terminal)).Draw(t.controlDraw)
+			terminal.Grow(1).FillWidth().Background(state.terminalGround()).Draw(t.controlDraw)
 		})
 	})
 	state.declareCompletionList(c, session, bounds, geometry)

@@ -25,10 +25,12 @@ func TestPointerShapeSwitchesKinds(t *testing.T) {
 		t.Fatalf("null: kind %v, version %d", kind, version)
 	}
 
-	// A 2x1 shape, red then green in RGBA, hotspot on the green pixel.
+	// A 2x1 shape, red then green in RGBA, hotspot on the green pixel, whose
+	// second pixel shows the inverse of the picture behind it.
 	session.onPointer(&rdpcore.PointerUpdate{
 		Type: rdpcore.PointerShape, Width: 2, Height: 1, HotSpotX: 1,
-		Data: []byte{255, 0, 0, 255, 0, 255, 0, 128},
+		Data:   []byte{255, 0, 0, 255, 0, 0, 0, 0},
+		Invert: []bool{false, true},
 	})
 	kind, shape, version := session.PointerShape()
 	if kind != desktop.PointerBitmap || version != 3 {
@@ -38,9 +40,13 @@ func TestPointerShapeSwitchesKinds(t *testing.T) {
 		t.Fatalf("shape geometry: %+v", shape)
 	}
 	// The presenter takes BGRA rows.
-	want := []byte{0, 0, 255, 255, 0, 255, 0, 128}
+	want := []byte{0, 0, 255, 255, 0, 0, 0, 0}
 	if string(shape.BGRA) != string(want) {
 		t.Fatalf("BGRA = %v, want %v", shape.BGRA, want)
+	}
+	// An inverting pixel reaches the workbench still marked as one.
+	if len(shape.Invert) != 2 || shape.Invert[0] || !shape.Invert[1] {
+		t.Fatalf("invert mask = %v, want only the second pixel", shape.Invert)
 	}
 
 	// A shape that decoded to nothing hides rather than painting garbage.

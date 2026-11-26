@@ -9,6 +9,7 @@ import (
 	"motty/internal/sshbrowser"
 	"motty/internal/sshconfig"
 	"motty/internal/sshconn"
+	"motty/internal/term"
 )
 
 // Host is one saved destination: an SSH server unless Protocol says otherwise. CatalogID is stable across restarts and
@@ -33,6 +34,11 @@ type Host struct {
 	// carries the terminal over UDP. It is meaningful only for protocolSSH.
 	Terminal hostTerminal
 	Line     serial.Settings
+	// Backspace is the byte the Backspace key sends: DEL, or Ctrl+H for a
+	// console whose line editor erases on BS alone, or an SSH server that
+	// expects BS. It is also the pty's erase character for an SSH host.
+	// Meaningful only where hostAsksBackspace says the host has the choice.
+	Backspace backspaceKey
 	// Algo, when set, replaces the default SSH algorithms for this host. Nil is
 	// the default, so a host that never asked costs one pointer.
 	Algo *hostAlgo
@@ -128,6 +134,9 @@ type Host struct {
 	ColorDepth        int
 	PreferredEncoding desktop.Encoding
 	Effects           *desktop.Effects
+	// DesktopWidth and DesktopHeight are the remote resolution an RDP host asks
+	// for; zero lets the desktop follow the pane.
+	DesktopWidth, DesktopHeight int
 
 	// localShell is the shell a local terminal was opened with: a program path,
 	// or a WSL distribution as localshell.WSLShell names it. Empty starts the
@@ -142,6 +151,7 @@ type Host struct {
 
 type reuseHostPolicy struct {
 	line             serial.Settings
+	backspace        backspaceKey
 	encoding         string
 	user             string
 	localShell       string
@@ -155,14 +165,46 @@ type reuseHostPolicy struct {
 	colorDepth       int
 	desktopEncoding  desktop.Encoding
 	effects          desktop.Effects
+	desktopWidth     int
+	desktopHeight    int
 }
 
 func reusePolicyFor(host Host) reuseHostPolicy {
-	return reuseHostPolicy{line: host.Line, encoding: host.Encoding, user: host.User,
+	return reuseHostPolicy{line: host.Line, backspace: host.Backspace, encoding: host.Encoding, user: host.User,
 		localShell: host.localShell, viaSSH: host.ViaSSH, clipboard: host.Clipboard,
 		console: host.Console, noAudio: host.NoAudio, standardSecurity: host.StandardSecurity,
 		legacyTLS: host.LegacyTLS, interactiveOnly: host.InteractiveOnly,
-		colorDepth: host.ColorDepth, desktopEncoding: host.PreferredEncoding, effects: host.desktopEffects()}
+		colorDepth: host.ColorDepth, desktopEncoding: host.PreferredEncoding, effects: host.desktopEffects(),
+		desktopWidth: host.DesktopWidth, desktopHeight: host.DesktopHeight}
+}
+
+// hostAsksBackspace reports whether the form lets a host of the protocol and
+// terminal choose its Backspace key. A serial line and Telnet have no handshake
+// for the erase character, so a console whose line editor erases on BS alone
+// needs the choice made per host. An SSH host has the choice too, for a server
+// whose terminals erase with Ctrl+H; a mosh terminal runs on mosh-server, not on
+// the SSH pty, so it has none.
+func hostAsksBackspace(protocol hostProtocol, terminal hostTerminal) bool {
+	if protocol == protocolSSH {
+		return terminal != terminalMosh
+	}
+	return protocol == protocolSerial || protocol == protocolTelnet
+}
+
+// backspaceKey is the byte such a host's Backspace key sends: DEL, the
+// terminal's own, or Ctrl+H.
+type backspaceKey uint8
+
+const (
+	backspaceDEL backspaceKey = iota
+	backspaceCtrlH
+)
+
+func (key backspaceKey) byte() byte {
+	if key == backspaceCtrlH {
+		return term.CtrlHByte
+	}
+	return term.DeleteByte
 }
 
 // desktopEffects is the effects an RDP host asks for: its own, or the defaults.

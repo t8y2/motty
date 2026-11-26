@@ -112,11 +112,9 @@ func (state *State) whyNoInstall() string {
 
 // askInstall starts the installation, after asking when sessions would be lost.
 func (state *State) askInstall() {
-	count := 0
+	count := state.liveSessionCount()
 	if state.options.Group != nil {
-		count = state.options.Group.sessionCount()
-	} else {
-		count = len(state.sessions)
+		count = state.options.Group.liveSessionCount()
 	}
 	if count == 0 {
 		state.startInstall()
