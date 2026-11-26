@@ -89,6 +89,10 @@ type terminal struct {
 	// the next read completes it. It is nil for a UTF-8 shell.
 	encoding string
 	decoder  *charset.Decoder
+	// backspace is the byte the Backspace key sends: DEL unless the session's
+	// host chose Ctrl+H. Zero is that default, which a terminal with no session
+	// of its own (the AI CLI sign-in) sends.
+	backspace backspaceKey
 	// pumpBudget is the window-thread time a Wake may spend parsing this
 	// terminal's output; see pumpBudget.
 	pumpBudget time.Duration
@@ -1231,6 +1235,7 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	// A new shell is a new byte stream: choose its charset and drop any partial
 	// character a previous shell left in the decoder.
 	t.setEncoding(session.host.Encoding)
+	t.backspace = session.host.Backspace
 	if t.decoder != nil {
 		t.decoder.Reset()
 	}
@@ -2204,7 +2209,7 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		}
 	}
 	if len(bytes) == 0 {
-		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys)
+		bytes = term.EncodeKeyEvent(event, t.screen.KeyboardFlags(), modes.AppCursorKeys, t.backspace.byte())
 	}
 	if len(bytes) > 0 {
 		if event.Release || event.Key.IsModifier() {
@@ -2557,7 +2562,7 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 			key, lines = gfx.KeyUp, -lines
 		}
 		for range min(lines, 5) {
-			t.send(term.EncodeKey(key, 0, "", modes.AppCursorKeys))
+			t.send(term.EncodeKey(key, 0, "", modes.AppCursorKeys, term.DeleteByte))
 		}
 		return gfx.EventResult{Handled: true}
 	}

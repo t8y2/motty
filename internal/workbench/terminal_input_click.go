@@ -45,7 +45,7 @@ func (state *State) moveInputCursor(session *Session, position term.Position) bo
 	if moves < 0 {
 		key, moves = gfx.KeyLeft, -moves
 	}
-	press := term.EncodeKey(key, 0, "", terminal.screen.Modes().AppCursorKeys)
+	press := term.EncodeKey(key, 0, "", terminal.screen.Modes().AppCursorKeys, term.DeleteByte)
 	terminal.send(bytes.Repeat(press, moves))
 	return true
 }

@@ -3300,12 +3300,30 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 				// delivers a click lays out what it did before it, the choice writes
 				// its value at the end, and the next frame draws it.
 				if editor.protocol == protocolSerial {
-					// The device and line rows are the page's fields; the flow control
-					// takes the row under them.
+					// The device and line rows are the page's fields; the flow
+					// control and the Backspace key share the row under them.
 					endpoint := b.endpoint
 					endpoint.Children(func() {
-						ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Height(rowHeight).Children(func() {
-							b.flow = state.declareHostFlowChoice(c)
+						ui.Column(c).Absolute().Left(0).Right(0).Top(2 * rowHeight).Children(func() {
+							ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+								// A zero basis: with Grow alone the wider choice starts ahead and
+								// takes more than half the row.
+								ui.Column(c).Basis(0).Grow(1).Children(func() {
+									b.flow = state.declareHostFlowChoice(c)
+								})
+								ui.Column(c).Basis(0).Grow(1).Children(func() {
+									b.backspace = state.declareHostBackspaceChoice(c)
+								})
+							})
+						})
+					})
+				}
+				if editor.protocol == protocolTelnet {
+					// Telnet has the Backspace key alone, under its address.
+					endpoint := b.endpoint
+					endpoint.Children(func() {
+						ui.Column(c).Absolute().Left(0).Right(0).Top(rowHeight).Height(rowHeight).Children(func() {
+							b.backspace = state.declareHostBackspaceChoice(c)
 						})
 					})
 				}
@@ -3423,6 +3441,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	state.rememberHostChoice(canvas, b.protocol.Rect(), &editor.form.choiceIDs.protocol, state.hostProtocolChoiceLabel(editor.protocol))
 	if b.flow.Valid() {
 		state.rememberHostChoice(canvas, b.flow.Rect(), &editor.form.choiceIDs.flow, state.hostFlowChoiceLabel(editor.flow))
+	}
+	if b.backspace.Valid() {
+		state.rememberHostChoice(canvas, b.backspace.Rect(), &editor.form.choiceIDs.backspace, state.hostBackspaceChoiceLabel(editor.backspace))
 	}
 	if b.transfer.Valid() {
 		state.rememberHostChoice(canvas, b.transfer.Rect(), &editor.form.choiceIDs.transfer, state.hostTransferChoiceLabel(editor.transfer))

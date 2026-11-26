@@ -118,6 +118,7 @@ func (editor *hostEditor) connectionType() hostConnectionType {
 var (
 	hostConnectionChoices  = [...]hostConnectionType{connectionSSH, connectionTelnet, connectionSerial, connectionVNC, connectionRDP, connectionMosh}
 	hostFlowChoices        = [...]serial.Flow{serial.FlowNone, serial.FlowHardware, serial.FlowSoftware}
+	hostBackspaceChoices   = [...]backspaceKey{backspaceDEL, backspaceCtrlH}
 	hostAlgoChoices        = [...]algoMode{algoDefault, algoCompatible, algoCustom}
 	hostLoginPolicyChoices = [...]loginFailurePolicy{loginFailureStop, loginFailureContinue}
 )
@@ -157,6 +158,15 @@ func (state *State) hostFlowChoiceLabel(flow serial.Flow) string {
 	default:
 		return state.messages.Tools.FlowNone
 	}
+}
+
+// hostBackspaceChoiceLabel names one byte the Backspace key sends as the form's
+// choice shows it.
+func (state *State) hostBackspaceChoiceLabel(key backspaceKey) string {
+	if key == backspaceCtrlH {
+		return state.messages.Tools.BackspaceCtrlH
+	}
+	return state.messages.Tools.BackspaceDEL
 }
 
 // hostAlgoChoiceLabel names one algorithm mode as the form's choice shows it.
@@ -202,6 +212,16 @@ func (state *State) declareHostProtocolChoice(c ui.C) ui.Box {
 // clear.
 func (state *State) declareHostFlowChoice(c ui.C) ui.Box {
 	choice := hostFormChoice(c, state.messages.Tools.FieldFlow, hostFormRowHeight, &state.editor.flow, hostFlowChoices[:], state.hostFlowChoiceLabel)
+	if choice.Changed() {
+		state.dialogError = ""
+	}
+	return choice
+}
+
+// declareHostBackspaceChoice declares the Backspace key choice of a serial or
+// Telnet host in the form's page, like the flow control.
+func (state *State) declareHostBackspaceChoice(c ui.C) ui.Box {
+	choice := hostFormChoice(c, state.messages.Tools.FieldBackspace, hostFormRowHeight, &state.editor.backspace, hostBackspaceChoices[:], state.hostBackspaceChoiceLabel)
 	if choice.Changed() {
 		state.dialogError = ""
 	}
@@ -537,14 +557,15 @@ const hostPortWidth = 84
 
 // hostEndpointRows is how many labelled rows the endpoint block of the form
 // takes: the address with the port and, under it, the credentials. A serial
-// port takes three (its device, its line, and the flow control) and Telnet one
-// (Telnet has no credentials in the form).
+// port takes three (its device, its line, and the flow control beside the
+// Backspace key) and Telnet two: it has no credentials in the form, only the
+// Backspace key under its address.
 func (state *State) hostEndpointRows() int {
 	switch state.editor.protocol {
 	case protocolSerial:
 		return 3
 	case protocolTelnet:
-		return 1
+		return 2
 	case protocolSSH:
 		if state.hostAsksKeyPassphrase() {
 			return 3

@@ -131,6 +131,8 @@ type hostEditor struct {
 	connection       hostConnectionType
 	connectionBefore hostConnectionType
 	flow             serial.Flow
+	// backspace is the byte the serial or Telnet host's Backspace key sends.
+	backspace backspaceKey
 	// viaSSH, clipboard and chromeless are the switches of a VNC or RDP host;
 	// console, noAudio, standardSecurity and legacyTLS are RDP's own: the
 	// server's console (administrative) session, muting remote sound, Standard
@@ -390,6 +392,10 @@ func (editor *hostEditor) load(host Host) {
 	editor.tags.Insert(formatHostTags(host))
 	editor.icon, editor.iconChosen, editor.system = host.Icon, true, host.System
 	editor.protocol, editor.flow = host.Protocol, host.Line.Flow
+	editor.backspace = backspaceDEL
+	if hostAsksBackspace(host.Protocol) {
+		editor.backspace = host.Backspace
+	}
 	editor.terminal = host.Terminal
 	editor.viaSSH, editor.clipboard, editor.chromeless = host.ViaSSH, host.Clipboard, host.Chromeless
 	editor.console = host.Protocol == protocolRDP && host.Console
@@ -437,6 +443,9 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.Line, _ = serial.ParseLine(editor.value(fieldPort), editor.flow)
 	} else {
 		host.Port, _ = editor.portNumber()
+	}
+	if hostAsksBackspace(editor.protocol) {
+		host.Backspace = editor.backspace
 	}
 	if editor.protocol == protocolVNC || editor.protocol == protocolRDP {
 		host.ViaSSH, host.Clipboard, host.Chromeless = editor.viaSSH, editor.clipboard, editor.chromeless
@@ -536,6 +545,7 @@ func (editor *hostEditor) reset() {
 	editor.advancedOpen = false
 	editor.port.Insert(strconv.Itoa(defaultPort))
 	editor.protocol, editor.terminal, editor.flow = protocolSSH, terminalSSH, serial.FlowNone
+	editor.backspace = backspaceDEL
 	editor.viaSSH, editor.clipboard, editor.console, editor.noAudio, editor.standardSecurity, editor.legacyTLS, editor.chromeless = false, false, false, false, false, false, false
 	editor.colorDepth, editor.desktopEncoding, editor.effects = 0, desktop.EncodingAuto, desktop.DefaultEffects()
 }

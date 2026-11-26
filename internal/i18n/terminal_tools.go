@@ -458,6 +458,9 @@ type ToolsMessages struct {
 	FlowNone               string
 	FlowHardware           string
 	FlowSoftware           string
+	FieldBackspace         string
+	BackspaceDEL           string
+	BackspaceCtrlH         string
 	PortsPicker            string
 	PortsNone              string
 	ErrSerialLine          string

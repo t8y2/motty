@@ -279,7 +279,7 @@ func (s *State) aiCLILoginKey(event gfx.KeyEvent) gfx.EventResult {
 		if event.Modifiers&gfx.ModifierMeta != 0 {
 			return gfx.EventResult{}
 		}
-		input := term.EncodeKeyEvent(event, login.term.screen.KeyboardFlags(), login.term.screen.Modes().AppCursorKeys)
+		input := term.EncodeKeyEvent(event, login.term.screen.KeyboardFlags(), login.term.screen.Modes().AppCursorKeys, login.term.backspace.byte())
 		login.term.shell.Write(input)
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}

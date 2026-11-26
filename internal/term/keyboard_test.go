@@ -128,7 +128,7 @@ func TestEncodeKeyEventFollowsKittyProtocol(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := string(EncodeKeyEvent(test.event, test.flags, false)); got != test.want {
+			if got := string(EncodeKeyEvent(test.event, test.flags, false, DeleteByte)); got != test.want {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
 		})
@@ -144,7 +144,7 @@ func TestKittyQueryRoundTripsWithoutBreakingLegacyKeys(t *testing.T) {
 	if strings.Join(replies, "|") != "\x1b[?1u" {
 		t.Fatalf("replies = %q", replies)
 	}
-	if got := string(EncodeKeyEvent(gfx.KeyEvent{Key: gfx.KeyEscape}, term.KeyboardFlags(), false)); got != "\x1b[27u" {
+	if got := string(EncodeKeyEvent(gfx.KeyEvent{Key: gfx.KeyEscape}, term.KeyboardFlags(), false, DeleteByte)); got != "\x1b[27u" {
 		t.Fatalf("escape with flags = %q", got)
 	}
 }
@@ -165,6 +165,24 @@ func BenchmarkEncodeKittyKey(b *testing.B) {
 	event := gfx.KeyEvent{Modifiers: gfx.ModifierControl | gfx.ModifierShift, Text: "c", Typed: "C"}
 	b.ReportAllocs()
 	for b.Loop() {
-		_ = EncodeKeyEvent(event, 1|2|8|16, false)
+		_ = EncodeKeyEvent(event, 1|2|8|16, false, DeleteByte)
+	}
+}
+
+// The byte a host chose for Backspace is the key's legacy form, so it is kept
+// by every keyboard mode that still sends legacy bytes.
+func TestKittyModesKeepTheHostsBackspaceByte(t *testing.T) {
+	press := gfx.KeyEvent{Key: gfx.KeyBackspace}
+	for _, test := range []struct {
+		flags uint32
+		want  string
+	}{
+		{0, "\b"},
+		{1 | 2 | 4, "\b"},
+		{8, "\x1b[127u"},
+	} {
+		if got := string(EncodeKeyEvent(press, test.flags, false, CtrlHByte)); got != test.want {
+			t.Errorf("flags %d: got %q, want %q", test.flags, got, test.want)
+		}
 	}
 }

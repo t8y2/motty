@@ -110,7 +110,7 @@ func Win32LogicalKey(event gfx.KeyEvent) []byte {
 		seq = "\x1b"
 	}
 	if seq == "" {
-		seq = string(EncodeKeyEvent(event, 0, false))
+		seq = string(EncodeKeyEvent(event, 0, false, DeleteByte))
 	}
 	if seq != "" {
 		for i := 0; i < rc; i++ {
