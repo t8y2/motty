@@ -245,6 +245,9 @@ func writePrivateAtomic(path string, data []byte) (err error) {
 	if err = file.Chmod(0o600); err != nil {
 		return err
 	}
+	if err = restrictToOwner(temporary); err != nil {
+		return err
+	}
 	if _, err = file.Write(data); err != nil {
 		return err
 	}
