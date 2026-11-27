@@ -1966,6 +1966,7 @@ var traditionalTools = ToolsMessages{
 	StatusSnippetRemovedFmt:   "已刪除「%s」。",
 	SnippetAdd:                "新增指令",
 	SnippetEdit:               "編輯",
+	SnippetCopyContent:        "複製命令內容",
 	SnippetSend:               "傳送到終端機",
 	SnippetSendCurrent:        "目前",
 	SnippetDelete:             "刪除",

@@ -1966,6 +1966,7 @@ var chineseTools = ToolsMessages{
 	StatusSnippetRemovedFmt:   "已删除“%s”。",
 	SnippetAdd:                "添加命令",
 	SnippetEdit:               "编辑",
+	SnippetCopyContent:        "复制命令内容",
 	SnippetSend:               "发送到终端",
 	SnippetSendCurrent:        "当前",
 	SnippetDelete:             "删除",

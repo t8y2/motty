@@ -10,6 +10,7 @@ var (
 	hitSnippetMenuDismiss = tree.ID(snippetsHits, "snippet-menu-dismiss")
 	hitSnippetMenuSend    = tree.ID(snippetsHits, "snippet-menu-send")
 	hitSnippetMenuEdit    = tree.ID(snippetsHits, "snippet-menu-edit")
+	hitSnippetMenuCopy    = tree.ID(snippetsHits, "snippet-menu-copy")
 	hitSnippetMenuDelete  = tree.ID(snippetsHits, "snippet-menu-delete")
 	hitSnippetMenuUp      = tree.ID(snippetsHits, "snippet-menu-up")
 	hitSnippetMenuDown    = tree.ID(snippetsHits, "snippet-menu-down")
@@ -109,6 +110,9 @@ func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 	if !moves || state.snippetMenu.fromPicker {
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
 	}
+	if state.snippetMenu.fromPicker {
+		rows.add(components.ContextMenuItem{ID: hitSnippetMenuCopy, Label: m.SnippetCopyContent, Icon: icon(iconCopy)})
+	}
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 }
 
@@ -136,6 +140,12 @@ func (state *State) chooseSnippetMenu(id gfx.ID) {
 			state.closeCommandPalette()
 		}
 		state.focusInlineSnippet(index)
+	case hitSnippetMenuCopy:
+		if index >= 0 && index < len(state.snippets.list) && state.options.SetClipboardText != nil {
+			if err := state.options.SetClipboardText(state.snippets.list[index].Command); err != nil {
+				state.showActionFailure(state.messages.Tools.SnippetCopyContent, err, state.messages.ActionFeedback.ClipboardFailed)
+			}
+		}
 	case hitSnippetMenuUp:
 		if menu.fromPicker {
 			state.moveSnippetPicker(index, -1)

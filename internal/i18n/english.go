@@ -1966,6 +1966,7 @@ var englishTools = ToolsMessages{
 	StatusSnippetRemovedFmt:   "Removed “%s”.",
 	SnippetAdd:                "Add snippet",
 	SnippetEdit:               "Edit",
+	SnippetCopyContent:        "Copy command content",
 	SnippetSend:               "Send to terminal",
 	SnippetSendCurrent:        "Current",
 	SnippetDelete:             "Delete",

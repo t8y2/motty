@@ -116,6 +116,7 @@ type ToolsMessages struct {
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
 	SnippetEdit               string
+	SnippetCopyContent        string
 	SnippetSend               string
 	SnippetSendCurrent        string
 	SnippetDelete             string
