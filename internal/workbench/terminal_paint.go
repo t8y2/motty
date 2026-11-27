@@ -343,7 +343,7 @@ func (state *State) scrollTerminalToolbar(session *Session, event gfx.ScrollEven
 	t := session.term
 	viewportExtent := t.railViewport.Height
 	metrics := state.terminalToolbarMetrics()
-	delta := event.StepY(metrics.toolSize + metrics.gap)
+	delta := event.StepYIn(metrics.toolSize+metrics.gap, viewportExtent)
 	maxScroll := max(t.railContentExtent-viewportExtent, 0)
 	next := min(max(t.railScroll+delta, 0), maxScroll)
 	if next == t.railScroll {

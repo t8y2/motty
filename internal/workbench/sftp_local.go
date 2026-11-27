@@ -797,7 +797,7 @@ func scrollFolder(folder *sftpFolder, event gfx.ScrollEvent) gfx.EventResult {
 	if folder.visibleRows <= 0 || rows <= folder.visibleRows {
 		return gfx.EventResult{Handled: true}
 	}
-	folder.wheel += event.StepY(sftpRowHeight) / sftpRowHeight
+	folder.wheel += event.StepYIn(sftpRowHeight, float32(folder.visibleRows)*sftpRowHeight) / sftpRowHeight
 	lines := int(folder.wheel)
 	if lines == 0 {
 		return gfx.EventResult{Handled: true}

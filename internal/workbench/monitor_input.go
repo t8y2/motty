@@ -69,7 +69,12 @@ func (state *State) scrollMonitor(e gfx.ScrollEvent) (gfx.EventResult, bool) {
 		return gfx.EventResult{Handled: true}, true
 	}
 	p := &s.stats.panel
-	next := min(max(p.scroll+e.DeltaY, 0), state.monitorScrollArea(p).Geometry().MaxOffsetY)
+	geometry := state.monitorScrollArea(p).Geometry()
+	step := e.DeltaY
+	if e.Pages != 0 {
+		step = e.StepYIn(1, geometry.Viewport.Height)
+	}
+	next := min(max(p.scroll+step, 0), geometry.MaxOffsetY)
 	changed := next != p.scroll
 	p.scroll = next
 	return gfx.EventResult{Handled: true, Repaint: changed}, true

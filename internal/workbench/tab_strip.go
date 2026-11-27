@@ -74,15 +74,26 @@ func (strip *tabStrip) scroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	if strip.max <= 0 || !pointInRect(event.X, event.Y, strip.area) {
 		return gfx.EventResult{}, false
 	}
+	extent := strip.area.Width
+	if strip.vertical {
+		extent = strip.area.Height
+	}
 	delta := event.DeltaX
 	if strip.vertical {
 		delta = event.DeltaY
 	}
+	if event.Pages != 0 {
+		if strip.vertical {
+			delta = event.StepYIn(1, extent)
+		} else {
+			delta = event.StepXIn(1, extent)
+		}
+	}
 	if delta == 0 {
 		if strip.vertical {
-			delta = event.DeltaX
+			delta = event.StepXIn(1, extent)
 		} else {
-			delta = event.DeltaY
+			delta = event.StepYIn(1, extent)
 		}
 	}
 	if !strip.scrollBy(delta) {

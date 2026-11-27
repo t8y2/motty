@@ -1125,13 +1125,17 @@ func (state *State) aiPanelScrollGesture(event gfx.ScrollEvent) (gfx.EventResult
 		return approval.scroll.Wheel(event), true
 	}
 	if pointInRect(event.X, event.Y, panel.composer) {
-		panel.inputLayout.ScrollBy(event.DeltaY)
+		step := event.DeltaY
+		if event.Pages != 0 {
+			step = event.StepYIn(1, panel.inputLayout.Content.Height)
+		}
+		panel.inputLayout.ScrollBy(step)
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	if !pointInRect(event.X, event.Y, panel.list) {
 		return gfx.EventResult{Handled: true}, true
 	}
-	return state.aiPanelScrollBy(event.StepY(24)), true
+	return state.aiPanelScrollBy(event.StepYIn(24, panel.list.Height)), true
 }
 
 // aiActiveScroll is the scroll state of the list the panel is showing, or nil

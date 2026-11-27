@@ -157,13 +157,21 @@ func (s *State) notesScroll(e gfx.ScrollEvent) gfx.EventResult {
 		return gfx.EventResult{Handled: true}
 	}
 	if pointInRect(e.X, e.Y, n.sourceBounds) {
-		n.code.ScrollBy(e.DeltaX, e.DeltaY)
+		dx, dy := e.DeltaX, e.DeltaY
+		if e.Pages != 0 {
+			dx, dy = e.StepXIn(1, n.sourceBounds.Width), e.StepYIn(1, n.sourceBounds.Height)
+		}
+		n.code.ScrollBy(dx, dy)
 		s.noteScrollDriver(false)
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if pointInRect(e.X, e.Y, n.previewBounds) {
 		s.noteScrollDriver(true)
-		n.setPreviewScroll(min(max(0, n.previewScroll+e.DeltaY), max(0, n.previewHeight-n.previewBounds.Height)))
+		step := e.DeltaY
+		if e.Pages != 0 {
+			step = e.StepYIn(1, n.previewBounds.Height)
+		}
+		n.setPreviewScroll(min(max(0, n.previewScroll+step), max(0, n.previewHeight-n.previewBounds.Height)))
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	return gfx.EventResult{}

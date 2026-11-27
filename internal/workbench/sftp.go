@@ -3300,7 +3300,11 @@ func (state *State) scrollSFTP(view *sftpView, event gfx.ScrollEvent) gfx.EventR
 		return gfx.EventResult{Handled: true}
 	}
 	if view.editPath != "" && pointInRect(event.X, event.Y, view.editRect) {
-		view.editLayout.ScrollBy(event.DeltaY)
+		step := event.DeltaY
+		if event.Pages != 0 {
+			step = event.StepYIn(1, view.editLayout.Content.Height)
+		}
+		view.editLayout.ScrollBy(step)
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	folder := view.active()

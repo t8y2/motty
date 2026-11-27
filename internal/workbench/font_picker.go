@@ -495,7 +495,7 @@ func (state *State) scrollFontPicker(event gfx.ScrollEvent) gfx.EventResult {
 	state.refreshFontPicker()
 	fonts := &state.fonts
 	before := fonts.scroll
-	fonts.scroll = min(max(before+event.StepY(fontPickerRowStep), 0), fonts.maxScroll())
+	fonts.scroll = min(max(before+event.StepYIn(fontPickerRowStep, fontPickerListHeight), 0), fonts.maxScroll())
 	return gfx.EventResult{Handled: true, Repaint: fonts.scroll != before}
 }
 

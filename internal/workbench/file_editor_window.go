@@ -749,8 +749,11 @@ func (m *fileWindowManager) scrollTabs(event gfx.ScrollEvent) (gfx.EventResult, 
 		return gfx.EventResult{Handled: true}, true
 	}
 	delta := event.DeltaX
+	if event.Pages != 0 {
+		delta = event.StepXIn(1, m.tabStrip.area.Width)
+	}
 	if delta == 0 {
-		delta = event.DeltaY
+		delta = event.StepYIn(1, m.tabStrip.area.Width)
 	}
 	previous := m.tabStrip.offset
 	m.tabStrip.offset = min(max(m.tabStrip.offset+delta, 0), m.tabStrip.max)

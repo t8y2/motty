@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -682,5 +683,35 @@ func TestSettingsScrollDoesNotOverlapWorkspaceBorder(t *testing.T) {
 	}
 	if !foundSettingsRect {
 		t.Fatal("did not find any settings surface rectangles")
+	}
+}
+
+// The system's "one screen at a time" wheel setting moves the page by the room
+// it shows, not by the window: the page under the window bar is shorter than
+// the window, and a notch that moved the window's screen would skip content.
+func TestSettingsWheelPageMovesOneScreenOfThePage(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsAssistant)
+	size := gfx.Size{Width: 1000, Height: 380}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	page := state.settings.pageView
+	if page <= 0 || page >= float32(size.Height) {
+		t.Fatalf("the page shows %v of a %v window, so a page notch cannot tell them apart", page, size.Height)
+	}
+	if state.settingsContent <= page*2 {
+		t.Fatalf("page content %v is too short to scroll a page of %v", state.settingsContent, page)
+	}
+	state.Scroll(gfx.ScrollEvent{DeltaY: float32(size.Height), Pages: 1, Viewport: size})
+	if math.Abs(float64(state.settingsScroll-page)) > 1 {
+		t.Fatalf("one page notch moved the page to %v, want its own screen of %v", state.settingsScroll, page)
+	}
+	if state.settingsScroll >= float32(size.Height) {
+		t.Fatalf("the notch moved the window's screen %v", state.settingsScroll)
+	}
+	state.Scroll(gfx.ScrollEvent{DeltaY: -float32(size.Height), Pages: -1, Viewport: size})
+	if state.settingsScroll != 0 {
+		t.Fatalf("a page notch up left the page at %v, want the top", state.settingsScroll)
 	}
 }

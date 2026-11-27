@@ -345,7 +345,11 @@ func (state *State) scrollCommandPalette(event gfx.ScrollEvent) gfx.EventResult 
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
 	before, selected := palette.scroll, palette.selected
-	palette.scroll = min(max(palette.scroll+event.StepY(commandPaletteRowStep), 0), palette.maxScroll())
+	step := event.StepY(commandPaletteRowStep)
+	if event.Pages != 0 {
+		step = event.StepYIn(commandPaletteRowStep, palette.listRect.Height)
+	}
+	palette.scroll = min(max(palette.scroll+step, 0), palette.maxScroll())
 	if palette.scrollState != nil {
 		palette.scrollState.ScrollTo(palette.scroll)
 	}

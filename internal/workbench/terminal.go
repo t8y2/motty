@@ -2600,7 +2600,8 @@ func (state *State) terminalScroll(session *Session, event gfx.ScrollEvent) gfx.
 			return gfx.EventResult{Handled: true}
 		}
 	}
-	t.wheelY += event.StepY(state.cellHeight) / state.cellHeight
+	_, rows := t.screen.Size()
+	t.wheelY += event.StepYIn(state.cellHeight, float32(rows)*state.cellHeight) / state.cellHeight
 	lines := int(t.wheelY)
 	if lines == 0 {
 		return gfx.EventResult{Handled: true}
@@ -2661,7 +2662,8 @@ func (state *State) terminalMouseScroll(session *Session, event gfx.ScrollEvent)
 	terminal := session.term
 	position := state.terminalPositionAt(session, event.X, event.Y)
 	repaint := false
-	terminal.wheelY += event.StepY(state.cellHeight) / state.cellHeight
+	_, rows := terminal.screen.Size()
+	terminal.wheelY += event.StepYIn(state.cellHeight, float32(rows)*state.cellHeight) / state.cellHeight
 	vertical := int(terminal.wheelY)
 	terminal.wheelY -= float32(vertical)
 	button := term.MouseWheelDown
@@ -2675,7 +2677,8 @@ func (state *State) terminalMouseScroll(session *Session, event gfx.ScrollEvent)
 		}) || repaint
 	}
 
-	terminal.wheelX += event.StepX(state.cellWidth) / state.cellWidth
+	columns, _ := terminal.screen.Size()
+	terminal.wheelX += event.StepXIn(state.cellWidth, float32(columns)*state.cellWidth) / state.cellWidth
 	horizontal := int(terminal.wheelX)
 	terminal.wheelX -= float32(horizontal)
 	button = term.MouseWheelRight

@@ -825,3 +825,39 @@ func TestEscapeOutsideThePanelStillClosesIt(t *testing.T) {
 		t.Fatal("Escape outside the panel did not close it")
 	}
 }
+
+// The system's "one screen at a time" wheel setting asks for a screen of what
+// the wheel is over. A terminal shows its own rows, not the window's: one notch
+// replaces the visible screen and leaves the rows above it for the next.
+func TestTheWheelPageScrollsOneScreenOfTheTerminal(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	var output strings.Builder
+	for line := 1; line <= 300; line++ {
+		output.WriteString("line ")
+		output.WriteString(strings.Repeat("x", line%7))
+		output.WriteString("\r\n")
+	}
+	shell.say(output.String())
+	state.Wake()
+	t0 := state.sessions[0].term
+	size := gfx.Size{Width: 1000, Height: 700}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	_, rows := t0.screen.Size()
+	if t0.screen.Scrollback() < rows*2 {
+		t.Fatalf("scrollback = %d, need two screens of %d", t0.screen.Scrollback(), rows)
+	}
+	// The platform reports a page as a screen of the window; the terminal moves a
+	// screen of its own rows, which is what a user sees in the pane.
+	result := state.terminalScroll(&state.sessions[0], gfx.ScrollEvent{DeltaY: -float32(size.Height), Pages: -1, Viewport: size})
+	if !result.Handled || !result.Repaint {
+		t.Fatalf("page scroll: %+v", result)
+	}
+	if got := t0.screen.ViewOffset(); got != rows {
+		t.Fatalf("one page notch showed offset %d, want one screen of %d rows", got, rows)
+	}
+	state.terminalScroll(&state.sessions[0], gfx.ScrollEvent{DeltaY: float32(size.Height), Pages: 1, Viewport: size})
+	if got := t0.screen.ViewOffset(); got != 0 {
+		t.Fatalf("a page notch down left offset %d, want the bottom", got)
+	}
+}

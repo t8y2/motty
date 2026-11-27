@@ -297,6 +297,9 @@ func (state *State) drawUpdateNotes(d *ui.DrawContext) {
 func (state *State) scrollUpdateNotes(event gfx.ScrollEvent) gfx.EventResult {
 	notes := &state.update.notes
 	step := event.StepY(updateNotesLine)
+	if event.Pages != 0 {
+		step = event.StepYIn(1, notes.viewHeight)
+	}
 	before := notes.scroll
 	notes.scroll = min(max(before+step, 0), notes.max)
 	return gfx.EventResult{Handled: true, Repaint: notes.scroll != before}

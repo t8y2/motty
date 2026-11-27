@@ -533,3 +533,34 @@ func TestSFTPWindowExternalEditorSendsEverySaveBack(t *testing.T) {
 		return remoteText(remote, "/home/test/notes.txt") == "window save content\n" && !state.edits.list[0].saving
 	})
 }
+
+// The system's "one screen at a time" wheel setting moves the file list by the
+// rows it shows. The window is taller than the list, so a notch that moved the
+// window's screen would skip files without ever showing them.
+func TestSFTPWindowWheelPageMovesOneScreenOfRows(t *testing.T) {
+	_, w, _, host, _ := dualSFTPFixture(t, 1.5)
+	entries := make([]sftpclient.Entry, 1000)
+	for i := range entries {
+		entries[i].Name = fmt.Sprintf("file-%04d.yml", i)
+	}
+	w.view.lfolder.rows = prepareSFTPRows(nil, entries)
+	w.window.Invalidate()
+	host.windows[0].view.Driver().Pump()
+	list := w.ui.list[0]
+	visible := w.folder(true).visibleRows
+	if visible < 3 || len(entries) < visible*3 {
+		t.Fatalf("visible rows %d of %d files cannot show a page and more", visible, len(entries))
+	}
+	window := gfx.Size{Width: 1400, Height: 900}
+	w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: float32(window.Height), Pages: 1, Viewport: window})
+	if got := w.folder(true).first; got != visible {
+		t.Fatalf("one page notch moved the list to row %d, want one screen of %d", got, visible)
+	}
+	if int(window.Height)/int(sftpRowHeight) <= visible {
+		t.Fatalf("the window's screen (%d rows) is not taller than the list's (%d), so the page cannot tell them apart", int(window.Height)/int(sftpRowHeight), visible)
+	}
+	w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: -float32(window.Height), Pages: -1, Viewport: window})
+	if got := w.folder(true).first; got != 0 {
+		t.Fatalf("a page notch up left the list at row %d, want the top", got)
+	}
+}

@@ -1016,12 +1016,16 @@ func (state *State) scrollCommandsBar(event gfx.ScrollEvent) (gfx.EventResult, b
 		!pointInRect(event.X, event.Y, state.commands.bar) {
 		return gfx.EventResult{}, false
 	}
-	delta := event.StepY(commandsScrollStep)
+	extent := state.commands.bar.Height
+	if state.commands.placement == commandsPlacementBottom {
+		extent = state.commands.bar.Width
+	}
+	delta := event.StepYIn(commandsScrollStep, extent)
 	if state.commands.placement == commandsPlacementBottom {
 		// A horizontal delta is the user's own sideways gesture; a plain wheel
 		// turns its vertical notches into the same sideways move, the way a tab
 		// strip does.
-		if horizontal := event.StepX(commandsScrollStep); horizontal != 0 {
+		if horizontal := event.StepXIn(commandsScrollStep, extent); horizontal != 0 {
 			delta = horizontal
 		}
 	}

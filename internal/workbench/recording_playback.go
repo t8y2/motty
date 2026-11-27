@@ -379,6 +379,7 @@ func (state *State) scrollRecordingPlayback(event gfx.ScrollEvent) gfx.EventResu
 	if play == nil || play.term == nil {
 		return gfx.EventResult{Handled: true}
 	}
-	lines := int(event.StepY(state.cellHeight) / max(state.cellHeight, 1))
+	_, rows := play.term.screen.Size()
+	lines := int(event.StepYIn(state.cellHeight, float32(rows)*state.cellHeight) / max(state.cellHeight, 1))
 	return gfx.EventResult{Handled: true, Repaint: play.term.screen.Scroll(lines)}
 }

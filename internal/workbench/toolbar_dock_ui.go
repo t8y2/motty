@@ -1075,8 +1075,11 @@ func (state *State) toolbarDockScroll(event gfx.ScrollEvent) gfx.EventResult {
 			continue
 		}
 		delta := event.DeltaX
+		if event.Pages != 0 {
+			delta = event.StepXIn(metrics.toolSize+metrics.gap, dock.bottomViewports[i].Width)
+		}
 		if delta == 0 {
-			delta = event.StepY(metrics.toolSize + metrics.gap)
+			delta = event.StepYIn(metrics.toolSize+metrics.gap, dock.bottomViewports[i].Width)
 		}
 		before := dock.bottomScroll[i]
 		dock.bottomScroll[i] = min(max(before+delta, 0), dock.bottomMax[i])
@@ -1099,7 +1102,7 @@ func (state *State) toolbarDockScroll(event gfx.ScrollEvent) gfx.EventResult {
 			}
 		}
 		before := *scroll
-		*scroll = min(max(before+event.StepY(metrics.toolSize+metrics.gap), 0), dock.sideMax[i])
+		*scroll = min(max(before+event.StepYIn(metrics.toolSize+metrics.gap, viewport.Height), 0), dock.sideMax[i])
 		return gfx.EventResult{Handled: true, Repaint: *scroll != before}
 	}
 	return gfx.EventResult{}

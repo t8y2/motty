@@ -2646,6 +2646,9 @@ func (state *State) scrollHosts(event gfx.ScrollEvent) gfx.EventResult {
 	step := event.StepY(24)
 	before := state.hostsScroll
 	visible := state.chrome.hostList.Height
+	if event.Pages != 0 {
+		step = event.StepYIn(1, visible)
+	}
 	state.hostsScroll = min(max(before+step, 0), max(state.hostsContent-visible, 0))
 	return gfx.EventResult{Handled: true, Repaint: state.hostsScroll != before}
 }

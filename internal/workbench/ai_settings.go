@@ -700,7 +700,8 @@ func (state *State) aiSettingsPointer(event gfx.PointerEvent) (gfx.EventResult, 
 
 func (state *State) aiSettingsScroll(event gfx.ScrollEvent) (gfx.EventResult, bool) {
 	if state.ai.login != nil && state.ai.cfg.dialog == aiDialogCLILogin {
-		state.ai.login.term.screen.Scroll(int(event.StepY(state.cellHeight) / max(state.cellHeight, 1)))
+		_, rows := state.ai.login.term.screen.Size()
+		state.ai.login.term.screen.Scroll(int(event.StepYIn(state.cellHeight, float32(rows)*state.cellHeight) / max(state.cellHeight, 1)))
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
 	return gfx.EventResult{}, false

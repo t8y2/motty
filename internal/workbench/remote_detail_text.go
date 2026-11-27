@@ -654,7 +654,11 @@ func (state *State) remoteDetailWheel(event gfx.ScrollEvent, text *remoteDetailT
 			return gfx.EventResult{}, false
 		}
 		before := area.Offset
-		area.ScrollTo(min(max(before+event.StepY(32), 0), area.Max()))
+		step := event.StepY(32)
+		if event.Pages != 0 {
+			step = event.StepYIn(1, area.Viewport)
+		}
+		area.ScrollTo(min(max(before+step, 0), area.Max()))
 		text.scroll = area.Offset
 		return gfx.EventResult{Handled: true, Repaint: area.Offset != before}, true
 	}
@@ -668,7 +672,11 @@ func (state *State) remoteDetailWheel(event gfx.ScrollEvent, text *remoteDetailT
 		return gfx.EventResult{}, false
 	}
 	before := text.scroll
-	text.scroll = min(max(text.scroll+event.StepY(32), 0), text.scrollBar.MaxOffsetY)
+	step := event.StepY(32)
+	if event.Pages != 0 {
+		step = event.StepYIn(1, text.scrollBounds.Height)
+	}
+	text.scroll = min(max(text.scroll+step, 0), text.scrollBar.MaxOffsetY)
 	return gfx.EventResult{Handled: true, Repaint: before != text.scroll}, true
 }
 

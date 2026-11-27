@@ -1119,8 +1119,9 @@ func (state *State) desktopScroll(session *Session, event gfx.ScrollEvent) gfx.E
 	if view.ended {
 		return gfx.EventResult{Handled: true}
 	}
-	view.wheel.X += event.StepX(desktopWheelStep)
-	view.wheel.Y += event.StepY(desktopWheelStep)
+	area := state.desktopGeometryAtSize(session, event.Viewport).area
+	view.wheel.X += event.StepXIn(desktopWheelStep, area.Width)
+	view.wheel.Y += event.StepYIn(desktopWheelStep, area.Height)
 	notches := func(accumulated *float32) int {
 		whole := int(*accumulated / desktopWheelStep)
 		*accumulated -= float32(whole) * desktopWheelStep

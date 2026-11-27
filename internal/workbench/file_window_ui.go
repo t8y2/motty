@@ -951,8 +951,12 @@ func (d *fileDocument) scroll(event gfx.ScrollEvent) gfx.EventResult {
 		if event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) != 0 {
 			d.zoom(float32(math.Pow(1.0015, float64(-event.DeltaY))))
 		} else {
-			d.ui.pan.X -= event.DeltaX
-			d.ui.pan.Y -= event.DeltaY
+			dx, dy := event.DeltaX, event.DeltaY
+			if event.Pages != 0 {
+				dx, dy = event.StepXIn(1, d.ui.imageBounds.Width), event.StepYIn(1, d.ui.imageBounds.Height)
+			}
+			d.ui.pan.X -= dx
+			d.ui.pan.Y -= dy
 			width := float32(d.image.Width) * d.ui.imageGeometry.Scale
 			height := float32(d.image.Height) * d.ui.imageGeometry.Scale
 			x, y := max((width-d.ui.imageBounds.Width)/2, 0), max((height-d.ui.imageBounds.Height)/2, 0)

@@ -538,12 +538,18 @@ func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	view := &state.settings
 	nav := view.navRect
 	if nav.Width > 0 && event.X >= nav.X && event.X < nav.X+nav.Width && event.Y >= nav.Y && event.Y < nav.Y+nav.Height {
+		if event.Pages != 0 {
+			step = event.StepYIn(1, nav.Height)
+		}
 		before := view.navScroll
 		view.navScroll = min(max(before+step, 0), max(view.navContent-nav.Height, 0))
 		if view.navScroll != before {
 			view.navMotion = motion
 		}
 		return gfx.EventResult{Handled: true, Repaint: view.navScroll != before}
+	}
+	if event.Pages != 0 {
+		step = event.StepYIn(1, view.pageView)
 	}
 	before := state.settingsScroll
 	state.settingsScroll = min(max(before+step, 0), max(state.settingsContent-view.pageView, 0))

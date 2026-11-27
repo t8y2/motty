@@ -169,7 +169,11 @@ func (s *State) noteSidebarWheel(event gfx.ScrollEvent) (gfx.EventResult, bool) 
 		return gfx.EventResult{}, false
 	}
 	maximum := max(0, n.previewHeight-n.previewBounds.Height)
-	next := min(max(0, n.previewScroll+event.DeltaY), maximum)
+	step := event.DeltaY
+	if event.Pages != 0 {
+		step = event.StepYIn(1, n.previewBounds.Height)
+	}
+	next := min(max(0, n.previewScroll+step), maximum)
 	if next != n.previewScroll {
 		n.setPreviewScroll(next)
 		return gfx.EventResult{Handled: true, Repaint: true}, true
