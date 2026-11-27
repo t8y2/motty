@@ -168,6 +168,16 @@ func (route proxyRecord) relayCommand() string {
 	return defaultRelayCommand
 }
 
+// proxyHostRole is which end of the route a host created from the route
+// dialog fills.
+type proxyHostRole uint8
+
+const (
+	proxyRoleNone proxyHostRole = iota
+	proxyRoleTarget
+	proxyRoleJump
+)
+
 type proxyEditor struct {
 	targetID uint32
 	jumpID   uint32
@@ -189,6 +199,11 @@ type proxyEditor struct {
 	// fromHostForm remembers that the host form opened this route dialog, so
 	// closing it returns to the form instead of to the page.
 	fromHostForm bool
+	// newHostRole and newHostID track the host form opened from this dialog to
+	// create the target or jump host: newHostID is the ID the host takes if it is
+	// saved, and the dialog adopts it into the role when the form closes.
+	newHostRole proxyHostRole
+	newHostID   uint32
 	// dialogBody is where the dialog body laid out the controls painted by hand.
 	dialogBody proxyDialogBody
 	// The target and jump hosts are page comboboxes in labelled rows.
@@ -315,42 +330,67 @@ func (state *State) hostJumpRouteUsable(host Host) bool {
 	return state.sshHostCount() >= 1
 }
 
-// canAddJumpRoute reports whether any host could take a route now.
-func (state *State) canAddJumpRoute() bool {
-	for _, host := range state.hosts {
-		if state.hostJumpRouteUsable(host) {
-			return true
-		}
-	}
-	return false
-}
-
 // canBatchAssociateProxies reports whether the batch dialog has a jump host and
 // at least one other host to associate with it.
 func (state *State) canBatchAssociateProxies() bool {
 	return state.sshHostCount() >= 1 && state.routeTargetCount() >= 2
 }
 
+// openProxyDialog opens the route dialog from the routes page. Hosts missing
+// for either end are created from the dialog itself, so it opens whatever is
+// saved.
 func (state *State) openProxyDialog() {
-	if !state.canAddJumpRoute() {
-		state.showActionWarning(state.messages.ProxyDialogTitle, state.messages.ErrProxyHostsRequired)
-		return
-	}
 	targetID := state.selectedHostID
-	if host, ok := state.hostByID(targetID); !ok || !state.hostJumpRouteUsable(host) {
+	if host, ok := state.hostByID(targetID); !ok || !state.proxyTargetSelectable(host.ID) {
 		targetID = 0
 		for _, host := range state.hosts {
-			if state.hostJumpRouteUsable(host) {
+			if state.proxyTargetSelectable(host.ID) {
 				targetID = host.ID
 				break
 			}
 		}
 	}
-	if targetID == 0 {
-		state.showActionWarning(state.messages.ProxyDialogTitle, state.messages.ErrProxyTargetTaken)
-		return
+	jumpID := uint32(0)
+	for _, host := range state.hosts {
+		if host.ID != targetID && host.isSSH() {
+			jumpID = host.ID
+			break
+		}
 	}
-	state.openProxyDialogForHost(targetID, false)
+	state.proxyEditor.reset(targetID, jumpID)
+	state.proxyDialogError = ""
+	state.modal = modalNewProxy
+}
+
+// openHostFromProxyDialog opens the new-host form over the route dialog to
+// create the host for one end of the route. Closing the form returns to the
+// dialog, which adopts the host if it was saved.
+func (state *State) openHostFromProxyDialog(role proxyHostRole) {
+	editor := &state.proxyEditor
+	editor.newHostRole, editor.newHostID = role, state.nextHostID
+	state.openHostDialog()
+}
+
+// adoptNewProxyHost returns from the host form to the route dialog and puts the
+// host the form saved, if it did, into the end it was opened for.
+func (state *State) adoptNewProxyHost() bool {
+	editor := &state.proxyEditor
+	role, id := editor.newHostRole, editor.newHostID
+	if role == proxyRoleNone {
+		return false
+	}
+	editor.newHostRole, editor.newHostID = proxyRoleNone, 0
+	if _, saved := state.hostByID(id); saved {
+		switch role {
+		case proxyRoleTarget:
+			state.chooseProxyTarget(id)
+		case proxyRoleJump:
+			state.chooseProxyJump(id)
+		}
+		editor.syncChoices()
+	}
+	state.modal = modalNewProxy
+	return true
 }
 
 // openProxyDialogForHost opens the route dialog on a chosen target. The host
@@ -428,6 +468,10 @@ func (state *State) clickProxyDialog(id gfx.ID) {
 	case hitProxyDialogClose, hitProxyDialogCancel:
 		state.closeProxyDialog()
 		state.status = state.messages.StatusEditCanceled
+	case hitProxyDialogNewTarget:
+		state.openHostFromProxyDialog(proxyRoleTarget)
+	case hitProxyDialogNewJump:
+		state.openHostFromProxyDialog(proxyRoleJump)
 	case hitProxyDialogViaShell:
 		state.proxyEditor.viaShell = !state.proxyEditor.viaShell
 	case hitProxyDialogSubmit:

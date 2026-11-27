@@ -249,6 +249,8 @@ var (
 	hitProxyDialogCancel             = tree.ID(proxiesHits, "proxy-dialog-cancel")
 	hitProxyDialogSubmit             = tree.ID(proxiesHits, "proxy-dialog-submit")
 	hitProxyDialogViaShell           = tree.ID(proxiesHits, "proxy-dialog-via-shell")
+	hitProxyDialogNewTarget          = tree.ID(proxiesHits, "proxy-dialog-new-target")
+	hitProxyDialogNewJump            = tree.ID(proxiesHits, "proxy-dialog-new-jump")
 	hitProxyDialogViaHelp            = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
 	hitProxyDialogRelay              = tree.ID(proxiesHits, "proxy-dialog-relay")
 	hitProxyRowList                  = tree.Sub(proxiesHits, tree.Name("proxy-row"))

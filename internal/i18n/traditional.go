@@ -1105,7 +1105,7 @@ var TraditionalMessages = Messages{
 	ProxyCreate:                      "新增路由",
 	ProxyRouteSave:                   "儲存",
 	ProxyUpdated:                     "已修改跳板路由 · ",
-	ErrProxyHostsRequired:            "請先新增可作跳板的 SSH 主機，再建立跳板路由。",
+	ErrProxyHostsRequired:            "跳板路由需要一台 SSH 主機作跳板，目標是另一台 SSH 主機或遠端桌面。請先新增主機。",
 	ErrProxyTargetRequired:           "請選擇目標主機",
 	ErrProxyJumpRequired:             "請選擇跳板主機",
 	ErrProxySameHost:                 "目標主機和跳板主機必須不同",

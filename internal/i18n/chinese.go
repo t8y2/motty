@@ -1105,7 +1105,7 @@ var ChineseMessages = Messages{
 	ProxyCreate:                      "添加路由",
 	ProxyRouteSave:                   "保存",
 	ProxyUpdated:                     "已修改跳板路由 · ",
-	ErrProxyHostsRequired:            "请先添加可作跳板的 SSH 主机，再创建跳板路由。",
+	ErrProxyHostsRequired:            "跳板路由需要一台 SSH 主机作跳板，目标是另一台 SSH 主机或远程桌面。请先添加主机。",
 	ErrProxyTargetRequired:           "请选择目标主机",
 	ErrProxyJumpRequired:             "请选择跳板主机",
 	ErrProxySameHost:                 "目标主机和跳板主机必须不同",

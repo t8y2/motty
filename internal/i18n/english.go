@@ -1105,7 +1105,7 @@ var EnglishMessages = Messages{
 	ProxyCreate:                      "Add Route",
 	ProxyRouteSave:                   "Save",
 	ProxyUpdated:                     "Updated jump route · ",
-	ErrProxyHostsRequired:            "Add an SSH host to act as the jump, then create a route.",
+	ErrProxyHostsRequired:            "A route needs one SSH host as the jump and another SSH host or remote desktop as the target. Add hosts first.",
 	ErrProxyTargetRequired:           "Choose a target host",
 	ErrProxyJumpRequired:             "Choose a jump host",
 	ErrProxySameHost:                 "The target and jump host must be different",
