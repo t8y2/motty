@@ -84,10 +84,12 @@ type Session interface {
   layout. The floating bar holds the pin, the exit button, the keyboard switch,
   the RTT badge and a menu that docks it to the top, bottom, left or right edge;
   it can also be dragged anywhere over the picture, snapping to an edge when let
-  go near one. Its placement, edge or spot, is remembered on this computer.
-  Pinned (the default), the bar stays visible; unpinned, it hides and returns
-  only while the pointer reaches a thin strip along the docked edge, or the place
-  a free bar was left, so content near the picture's edge keeps its clicks. The
+  go near one, and it keeps the spot along that edge where it was let go. Its
+  placement, edge or spot, is remembered on this computer. Pinned (the
+  default), the bar stays visible; unpinned, it slides under its edge (a free
+  bar fades into the middle of where it was) and leaves a small translucent
+  tab with the connection light where it sits. Only that tab brings the bar
+  out; the rest of the picture, the edge included, keeps its clicks. The
   same chord restores the window.
   `Ctrl+Alt+G` still releases the keyboard. Fullscreen exits if the connection
   ends, another page is activated, or a Motty dialog needs attention. The

@@ -577,8 +577,8 @@ func (state *State) snapshot() savedState {
 		VerticalTabsGrouping:       state.verticalTabs.grouping,
 		FullscreenBarAutoHide:      state.desktopBar.autoHide,
 		FullscreenBarDock:          state.desktopBar.dock.String(),
-		FullscreenBarX:             float64(state.desktopBar.free.X),
-		FullscreenBarY:             float64(state.desktopBar.free.Y),
+		FullscreenBarX:             float64(state.desktopBar.at.X),
+		FullscreenBarY:             float64(state.desktopBar.at.Y),
 		NetworkProxy:               state.networkProxy.String(),
 		SSHBrowser:                 string(state.sshBrowser),
 		TerminalOption:             state.terminalOption.String(),
@@ -1293,7 +1293,9 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalShowLatency = saved.TerminalShowLatency
 	state.desktopBar.autoHide = saved.FullscreenBarAutoHide
 	state.desktopBar.dock = desktopBarDockFromString(saved.FullscreenBarDock)
-	state.desktopBar.free = gfx.Point{
+	// The spot along an edge the bar was placed at; a file from before the bar
+	// could be placed has none, which reads as the middle of the edge.
+	state.desktopBar.at = gfx.Point{
 		X: min(max(float32(saved.FullscreenBarX), 0), 1),
 		Y: min(max(float32(saved.FullscreenBarY), 0), 1),
 	}

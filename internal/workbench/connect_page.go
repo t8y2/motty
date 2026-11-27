@@ -353,6 +353,8 @@ type sessionPaneUI struct {
 	fullscreenColor         gfx.Color
 	fullscreenHint          string
 	fullscreenBarDraw       func(*ui.DrawContext)
+	fullscreenMarkerDraw    func(*ui.DrawContext)
+	fullscreenMarkerOpacity float32
 }
 
 // declareSessionPane declares a session the terminal control does not show: its

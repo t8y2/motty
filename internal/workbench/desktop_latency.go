@@ -66,11 +66,14 @@ func (state *State) paintDesktopLatency(canvas *gfx.Canvas, bounds gfx.Rect, bad
 }
 
 // declareDesktopFullscreenControls declares the fullscreen view's bar over the
-// top of the picture, centred like the platform remote desktop client's
-// connection bar: the pin, the exit button, the keyboard switch and the room the
-// latency badge takes. A bar set to auto-hide is declared only while the pointer
-// reaches the top edge or the keyboard is on one of its controls; otherwise a
-// press there belongs to the remote picture, as it does in the platform client.
+// picture: the pin, the exit button, the keyboard switch and the room the
+// latency badge takes, at the spot along its edge, or the free place, it was
+// left at. A bar set to auto-hide that the pointer is not on slides under its
+// edge and leaves a translucent marker holding the connection light where it
+// sits; only that marker, not the rest of the edge, brings the bar out, so
+// content along the edge keeps its clicks. The platform client reveals its
+// hidden bar from anywhere along the top edge; the marker trades that for
+// knowing where the bar is and what it will cover before it comes out.
 func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, session *Session) {
 	m := state.messages.Desktop
 	canvas := c.Canvas()
@@ -91,84 +94,64 @@ func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, 
 		width += barToolGap + latencyWidth
 	}
 	area := view.area
-	bar := gfx.Rect{Width: width, Height: barHeight}
-	switch {
-	case state.desktopBar.drag.active:
+	bar := state.desktopBar.rect(area, width, barHeight)
+	if state.desktopBar.drag.active {
+		// While it is dragged the bar is where the pointer has it.
 		bar.X, bar.Y = state.desktopBar.drag.rect.X, state.desktopBar.drag.rect.Y
-	case state.desktopBar.dock == desktopBarDockFree:
-		centreX := area.X + state.desktopBar.free.X*area.Width
-		centreY := area.Y + state.desktopBar.free.Y*area.Height
-		bar.X = min(max(centreX-width/2, area.X), max(area.X+area.Width-width, area.X))
-		bar.Y = min(max(centreY-barHeight/2, area.Y), max(area.Y+area.Height-barHeight, area.Y))
-	default:
-		switch state.desktopBar.dock {
-		case desktopBarDockBottom:
-			bar.X = area.X + max((area.Width-width)/2, desktopBarEdgeMargin)
-			bar.Y = area.Y + area.Height - barHeight - desktopBarEdgeMargin
-		case desktopBarDockLeft:
-			bar.X = area.X + desktopBarEdgeMargin
-			bar.Y = area.Y + max((area.Height-barHeight)/2, desktopBarEdgeMargin)
-		case desktopBarDockRight:
-			bar.X = max(area.X+area.Width-width-desktopBarEdgeMargin, area.X+desktopBarEdgeMargin)
-			bar.Y = area.Y + max((area.Height-barHeight)/2, desktopBarEdgeMargin)
-		default:
-			bar.X = area.X + max((area.Width-width)/2, desktopBarEdgeMargin)
-			bar.Y = area.Y + desktopBarEdgeMargin
-		}
 	}
+	// The bar's own rect keeps it out once it is out, and the marker with slack
+	// around it is what brings it out: both follow the bar, laid out every paint
+	// whether hidden or not, and read by the pointer tracking on its next event.
+	marker := state.desktopBar.markerRect(bar, area)
+	state.desktopBar.bar, state.desktopBar.marker = bar, marker
+	state.desktopBar.zone = inflateRect(marker, fullscreenBarRevealSlack)
 	s := state.paneBody(session)
 	s.fullscreenText, s.fullscreenColor, s.fullscreenHint = "", gfx.Color{}, ""
 	s.fullscreenLatency = gfx.Rect{}
-	// The strip that reveals an unpinned bar and the bar's own rect, for the
-	// pointer tracking to read on the next event. Both follow the bar even while
-	// the bar is hidden, so the paint after the pointer arrives can show it.
-	state.desktopBar.bar = bar
-	switch state.desktopBar.dock {
-	case desktopBarDockBottom:
-		state.desktopBar.zone = gfx.Rect{
-			X: area.X, Y: area.Y + area.Height - desktopBarRevealDepth,
-			Width: area.Width, Height: desktopBarRevealDepth,
-		}
-	case desktopBarDockLeft:
-		state.desktopBar.zone = gfx.Rect{
-			X: area.X, Y: area.Y, Width: desktopBarRevealDepth, Height: area.Height,
-		}
-	case desktopBarDockRight:
-		state.desktopBar.zone = gfx.Rect{
-			X: area.X + area.Width - desktopBarRevealDepth, Y: area.Y,
-			Width: desktopBarRevealDepth, Height: area.Height,
-		}
-	case desktopBarDockFree:
-		// A free bar has no edge to reach for: it comes back where it was left.
-		state.desktopBar.zone = inflateRect(bar, fullscreenBarRevealSlack)
-	default:
-		state.desktopBar.zone = gfx.Rect{
-			X: area.X, Y: area.Y, Width: area.Width, Height: desktopBarRevealDepth,
-		}
-	}
 	ids := [4]gfx.ID{
 		state.paneIdentity(session, hitDesktopBarPin),
 		state.paneIdentity(session, hitDesktopFullscreen),
 		state.paneIdentity(session, hitDesktopCapture),
 		state.paneIdentity(session, hitDesktopBarDock),
 	}
+	dragID := state.paneIdentity(session, hitDesktopBarDrag)
+	// How far out the bar is animates on its drag surface's identity. The
+	// fullscreen page lays the bar out every frame, hidden or not, so a slide
+	// starts from where the last one stopped.
+	target := float32(1)
 	if state.desktopBar.autoHide && !state.desktopBar.over && !view.dockMenu && !state.desktopBar.drag.active && !desktopBarFocused(canvas, ids) {
+		target = 0
+	}
+	shown := canvas.Animate(dragID, desktopBarRevealSlot, target, desktopBarSlideMotion)
+	if state.desktopBar.autoHide && shown < 1 {
+		state.paintDesktopFullscreenMarker(c, session, marker, 1-shown)
+	}
+	if shown <= 0 {
 		state.desktopBar.dragHit, state.desktopBar.labelHit = gfx.ID{}, gfx.ID{}
 		return
 	}
+	slide := state.desktopBar.slide(bar, area)
+	bar.X += slide.X * (1 - shown)
+	bar.Y += slide.Y * (1 - shown)
+	// An edge-docked bar goes whole under its edge; a free one has nowhere to
+	// go and gives way to its marker by fading over a short drop.
+	fade := float32(1)
+	if state.desktopBar.dock == desktopBarDockFree {
+		fade = shown
+	}
 	if latency != "" {
-		s.fullscreenText, s.fullscreenColor, s.fullscreenHint = latency, color, hint
+		s.fullscreenText, s.fullscreenColor, s.fullscreenHint = latency, withAlpha(color, color.Alpha*fade), hint
 	}
 	if s.fullscreenBarDraw == nil {
 		s.fullscreenBarDraw = state.paintDesktopFullscreenBar
 	}
-	dragID := state.paneIdentity(session, hitDesktopBarDrag)
 	state.desktopBar.dragHit, state.desktopBar.labelHit = dragID, ids[1]
 	cursor := gfx.PointerCursorHand
 	if state.desktopBar.drag.active {
 		cursor = gfx.PointerCursorGrabbing
 	}
 	ui.Slot(c).Absolute().Left(bar.X).Top(bar.Y).Width(bar.Width).Height(bar.Height).
+		Opacity(fade).
 		HitWith(dragID, "", gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Cursor: cursor}).
 		Draw(s.fullscreenBarDraw)
 	at := bar.X + pad
@@ -179,7 +162,7 @@ func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, 
 	state.declareIconButton(c, ids[0], pinIcon, pinHint, false, iconButtonQuiet).
 		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize)
 	at += barToolSize + barToolGap
-	ui.Row(c).Absolute().Left(at).Top(bar.Y + pad).Width(labelWidth).Height(barToolSize).Items(ui.Center).Justify(ui.End).Children(func() {
+	ui.Row(c).Absolute().Left(at).Top(bar.Y + pad).Width(labelWidth).Height(barToolSize).Items(ui.Center).Justify(ui.End).Opacity(fade).Children(func() {
 		ui.Button(c, label).XSmall().Ghost().Hit(ids[1], label)
 	})
 	at += labelWidth + barToolGap
@@ -188,15 +171,40 @@ func (state *State) declareDesktopFullscreenControls(c ui.C, view *desktopView, 
 		captureHint, style = fmt.Sprintf(m.TipRelease, desktopEscapeChord), iconButtonQuiet
 	}
 	state.declareIconButton(c, ids[2], iconKeyboard, captureHint, view.ended, style).
-		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize)
+		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize).Opacity(fade)
 	at += barToolSize + barToolGap
 	if latency != "" {
 		s.fullscreenLatency = gfx.Rect{X: at, Y: bar.Y + pad, Width: latencyWidth, Height: barToolSize}
 		at += latencyWidth + barToolGap
 	}
 	dockButton := state.declareIconButton(c, ids[3], iconEllipsis, m.FullscreenBarDock, false, iconButtonQuiet).
-		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize)
+		Absolute().Left(at).Top(bar.Y+pad).Size(barToolSize, barToolSize).Opacity(fade)
 	state.declareDesktopBarDockMenu(c, view, dockButton)
+}
+
+// paintDesktopFullscreenMarker declares the tab a hidden bar leaves at its
+// place: the bar's translucent surface, with the session's connection light in
+// its middle. Its painter is bound to the session once, like the picture's.
+func (state *State) paintDesktopFullscreenMarker(c ui.C, session *Session, marker gfx.Rect, opacity float32) {
+	s := state.paneBody(session)
+	s.fullscreenMarkerOpacity = opacity
+	if s.fullscreenMarkerDraw == nil {
+		id := session.ID
+		s.fullscreenMarkerDraw = func(d *ui.DrawContext) {
+			if session, ok := state.sessionByIDPointer(id); ok && session.desk != nil {
+				state.paintDesktopFullscreenMarkerSurface(d, session, state.paneBody(session).fullscreenMarkerOpacity)
+			}
+		}
+	}
+	ui.Slot(c).Absolute().Left(marker.X).Top(marker.Y).Width(marker.Width).Height(marker.Height).Draw(s.fullscreenMarkerDraw)
+}
+
+func (state *State) paintDesktopFullscreenMarkerSurface(d *ui.DrawContext, session *Session, opacity float32) {
+	pal := state.pal
+	d.Canvas.RoundedBorder(d.Rect, desktopBarMarkerDepth/2, 1, withAlpha(pal.line, pal.line.Alpha*opacity), withAlpha(pal.shell, 0.7*opacity))
+	kind, light := state.sessionLight(session)
+	behind := withAlpha(pal.shell, 0.7*opacity)
+	paintLight(d.Canvas, d.Rect.X+d.Rect.Width/2, d.Rect.Y+d.Rect.Height/2, kind, withAlpha(light, light.Alpha*opacity), behind)
 }
 
 // desktopBarFocused reports whether the keyboard is on one of the fullscreen

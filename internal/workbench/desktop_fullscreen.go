@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 )
@@ -10,7 +11,8 @@ import (
 const desktopFullscreenChord = "Ctrl+Alt+Enter"
 
 // desktopBarDock is where the fullscreen bar sits: one of the picture's edges, or
-// free, wherever it was last dropped. While free, free says where.
+// free, wherever it was last dropped. The spot along that edge, or the free
+// place, is desktopFullscreenBar.at.
 type desktopBarDock uint8
 
 const (
@@ -69,35 +71,42 @@ type desktopBarDrag struct {
 }
 
 // desktopFullscreenBar is the floating bar a fullscreen remote desktop shows
-// over its picture. Its pin keeps the bar visible; unpinned, the bar hides and
-// comes back while the pointer reaches the edge it is docked to, or the place a
-// free bar was left, as the platform remote desktop client's connection bar
-// does. zone is the strip or place that reveals it, and bar is the bar's own
-// rect, both laid out by the last paint; over is whether the pointer is in
-// either. free is the bar's centre as a fraction of the picture when it is not
-// docked to an edge. dragHit and labelHit are the bar's background and its exit
-// label, the two places a drag can start.
+// over its picture. Its pin keeps the bar visible; unpinned, the bar slides
+// under the edge it is docked to, or fades into a marker where a free bar was
+// left, and comes back out only while the pointer is on that marker, so no
+// other part of the picture hides something that then takes its clicks. bar is
+// the bar's own rect when it is out, marker the tab it leaves, and zone that
+// tab with the bar, all laid out by the last paint; over is whether the pointer
+// is on the marker or the bar. at is the bar's centre as a fraction of the
+// picture: along the top or bottom edge it is docked to its X says where,
+// along the left or right edge its Y, and a free bar takes both. dragHit and
+// labelHit are the bar's background and its exit label, the two places a drag
+// can start.
 type desktopFullscreenBar struct {
 	autoHide bool
 	over     bool
 	zone     gfx.Rect
 	bar      gfx.Rect
+	marker   gfx.Rect
 	dock     desktopBarDock
-	free     gfx.Point
+	at       gfx.Point
 	drag     desktopBarDrag
 	dragHit  gfx.ID
 	labelHit gfx.ID
 }
 
-// fullscreenBarRevealSlack is how far around the bar a pointer still counts as
-// on it, so the bar does not flicker while it is being aimed at.
+// fullscreenBarRevealSlack is how far around the marker, and around the bar
+// once it is out, a pointer still counts as on it, so the bar does not flicker
+// while it is being aimed at.
 const fullscreenBarRevealSlack = float32(6)
 
-// desktopBarRevealDepth is how far from the docked edge a pointer still counts
-// as reaching for the bar. Only this strip reveals an unpinned bar: the bar's
-// own rect keeps it visible once shown, but moving over the picture near the
-// edge is not enough to bring it up.
-const desktopBarRevealDepth = float32(10)
+// desktopBarMarkerLength and desktopBarMarkerDepth are the tab a hidden bar
+// leaves where it sits: its length along the edge, or across a free bar's
+// middle, and how far it reaches from the edge. It holds the connection light.
+const (
+	desktopBarMarkerLength = float32(28)
+	desktopBarMarkerDepth  = float32(12)
+)
 
 // desktopBarEdgeMargin is the gap between the bar and the edge it docks to.
 const desktopBarEdgeMargin = float32(8)
@@ -109,6 +118,19 @@ const desktopBarSnapDistance = float32(24)
 // desktopBarDragDistance is how far a press on the exit label must move before
 // it is a drag rather than a click.
 const desktopBarDragDistance = float32(4)
+
+// desktopBarFreeSlide is how far a free bar lifts as it gives way to its
+// marker: an edge-docked bar slides out under its edge, a free one has no edge
+// to go under and fades instead.
+const desktopBarFreeSlide = float32(6)
+
+// desktopBarSlideMotion is the slide of an unpinned bar out of its edge and
+// back in, as the pointer reaches its marker and leaves it.
+var desktopBarSlideMotion = gfx.Motion{Duration: 160 * time.Millisecond, Easing: gfx.EaseOut}
+
+// desktopBarRevealSlot is the animated slot of the bar's drag surface: how far
+// out of its marker the bar is.
+const desktopBarRevealSlot = 0
 
 // SetFullscreenControl connects the desktop action to Viva's native window.
 func (state *State) SetFullscreenControl(set func(bool) error) {
@@ -164,8 +186,8 @@ func (state *State) toggleDesktopFullscreen(session *Session) {
 			return
 		}
 		chrome.fullscreenSession = session.ID
-		// An unpinned bar starts hidden: the pointer is on the control that
-		// entered fullscreen, not at the top edge the bar answers to.
+		// An unpinned bar starts behind its marker: the pointer is on the
+		// control that entered fullscreen, not on the marker.
 		state.desktopBar.over = false
 	}
 	if selected, ok := state.sessionByIDPointer(chrome.fullscreenSession); ok && selected.desk != nil {
@@ -206,8 +228,8 @@ func (state *State) syncDesktopFullscreen() {
 }
 
 // setDesktopFullscreenBarAutoHide turns the fullscreen bar's pin off or on: off
-// keeps the bar always visible, on hides it until the pointer reaches the top
-// edge. The choice is this computer's and is written to the state file.
+// keeps the bar always visible, on hides it behind its marker until the pointer
+// reaches that. The choice is this computer's and is written to the state file.
 func (state *State) setDesktopFullscreenBarAutoHide(autoHide bool) bool {
 	bar := &state.desktopBar
 	if bar.autoHide == autoHide {
@@ -224,7 +246,9 @@ func (state *State) setDesktopFullscreenBarAutoHide(autoHide bool) bool {
 }
 
 // setDesktopFullscreenBarDock moves the fullscreen bar to another edge of the
-// picture. The choice is this computer's and is written to the state file.
+// picture, to the point of that edge nearest where it was, so the spot chosen
+// along an edge survives a change between the top and bottom, or the left and
+// right. The choice is this computer's and is written to the state file.
 func (state *State) setDesktopFullscreenBarDock(dock desktopBarDock) bool {
 	bar := &state.desktopBar
 	if bar.dock == dock {
@@ -239,7 +263,7 @@ func (state *State) setDesktopFullscreenBarDock(dock desktopBarDock) bool {
 }
 
 // trackDesktopFullscreenBar follows the pointer for an unpinned fullscreen bar.
-// The strip is the one the last paint laid out along the docked edge: moving
+// The zone is the one the last paint laid out around the bar's marker: moving
 // into it shows the bar, and the bar's own rect keeps it shown while it is being
 // used. Leaving both hides it again. A drag that captured the pointer keeps the
 // bar as it was, so panning the picture cannot make it appear, and an open dock
@@ -390,12 +414,95 @@ func (state *State) dropDesktopFullscreenBar(area gfx.Rect) {
 		bar.dock = best
 	} else {
 		bar.dock = desktopBarDockFree
-		if area.Width > 0 && area.Height > 0 {
-			bar.free = gfx.Point{
-				X: (rect.X + rect.Width/2 - area.X) / area.Width,
-				Y: (rect.Y + rect.Height/2 - area.Y) / area.Height,
-			}
+	}
+	// Either way the bar keeps the spot it was let go at: along the edge it
+	// snapped to, or where it is, remembered as a fraction of the picture so
+	// another screen size keeps it in about the same place.
+	if area.Width > 0 && area.Height > 0 {
+		bar.at = gfx.Point{
+			X: min(max((rect.X+rect.Width/2-area.X)/area.Width, 0), 1),
+			Y: min(max((rect.Y+rect.Height/2-area.Y)/area.Height, 0), 1),
 		}
 	}
 	state.save()
+}
+
+// rect is where the bar of this size sits when it is out: against the edge it
+// is docked to, centred at its spot along that edge, or centred on a free
+// bar's place; either way kept inside area. The spot is the bar's centre as a
+// fraction of the picture; one never chosen, or saved before the bar could be
+// placed along an edge, reads as the middle of the edge.
+func (bar *desktopFullscreenBar) rect(area gfx.Rect, width, height float32) gfx.Rect {
+	centre := gfx.Point{X: area.X + min(max(bar.at.X, 0), 1)*area.Width, Y: area.Y + min(max(bar.at.Y, 0), 1)*area.Height}
+	switch bar.dock {
+	case desktopBarDockTop, desktopBarDockBottom:
+		centre.X = area.X + placedFraction(bar.at.X)*area.Width
+	case desktopBarDockLeft, desktopBarDockRight:
+		centre.Y = area.Y + placedFraction(bar.at.Y)*area.Height
+	}
+	x := min(max(centre.X-width/2, area.X), max(area.X+area.Width-width, area.X))
+	y := min(max(centre.Y-height/2, area.Y), max(area.Y+area.Height-height, area.Y))
+	x = min(max(x, area.X+desktopBarEdgeMargin), max(area.X+area.Width-width-desktopBarEdgeMargin, area.X+desktopBarEdgeMargin))
+	y = min(max(y, area.Y+desktopBarEdgeMargin), max(area.Y+area.Height-height-desktopBarEdgeMargin, area.Y+desktopBarEdgeMargin))
+	switch bar.dock {
+	case desktopBarDockBottom:
+		y = area.Y + area.Height - height - desktopBarEdgeMargin
+	case desktopBarDockLeft:
+		x = area.X + desktopBarEdgeMargin
+	case desktopBarDockRight:
+		x = area.X + area.Width - width - desktopBarEdgeMargin
+	case desktopBarDockTop:
+		y = area.Y + desktopBarEdgeMargin
+	}
+	return gfx.Rect{X: x, Y: y, Width: width, Height: height}
+}
+
+// placedFraction is a saved spot along an edge: a bar is never let go with its
+// centre on the edge itself, so zero can only be a file that predates placing.
+func placedFraction(v float32) float32 {
+	if v <= 0 || v > 1 {
+		return 0.5
+	}
+	return v
+}
+
+// markerRect is the tab the bar leaves when hidden: at its spot on the edge it
+// is docked to, or across the middle of a free bar.
+func (bar *desktopFullscreenBar) markerRect(rest gfx.Rect, area gfx.Rect) gfx.Rect {
+	length, depth := desktopBarMarkerLength, desktopBarMarkerDepth
+	centre := gfx.Point{X: rest.X + rest.Width/2, Y: rest.Y + rest.Height/2}
+	switch bar.dock {
+	case desktopBarDockLeft, desktopBarDockRight:
+		y := min(max(centre.Y-length/2, area.Y), max(area.Y+area.Height-length, area.Y))
+		if bar.dock == desktopBarDockLeft {
+			return gfx.Rect{X: area.X, Y: y, Width: depth, Height: length}
+		}
+		return gfx.Rect{X: area.X + area.Width - depth, Y: y, Width: depth, Height: length}
+	}
+	x := min(max(centre.X-length/2, area.X), max(area.X+area.Width-length, area.X))
+	switch bar.dock {
+	case desktopBarDockBottom:
+		return gfx.Rect{X: x, Y: area.Y + area.Height - depth, Width: length, Height: depth}
+	case desktopBarDockFree:
+		return gfx.Rect{X: x, Y: centre.Y - depth/2, Width: length, Height: depth}
+	default:
+		return gfx.Rect{X: x, Y: area.Y, Width: length, Height: depth}
+	}
+}
+
+// slide is the vector from the bar's rest to where it hides: under its edge,
+// or lifted off a free bar's marker.
+func (bar *desktopFullscreenBar) slide(rest gfx.Rect, area gfx.Rect) gfx.Point {
+	switch bar.dock {
+	case desktopBarDockBottom:
+		return gfx.Point{Y: area.Y + area.Height - rest.Y}
+	case desktopBarDockLeft:
+		return gfx.Point{X: rest.X + rest.Width - area.X}
+	case desktopBarDockRight:
+		return gfx.Point{X: -(area.X + area.Width - rest.X)}
+	case desktopBarDockFree:
+		return gfx.Point{Y: -desktopBarFreeSlide}
+	default:
+		return gfx.Point{Y: -(rest.Y + rest.Height - area.Y)}
+	}
 }

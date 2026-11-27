@@ -402,10 +402,7 @@ func TestUnpinnedDesktopFullscreenBarHidesAndReturnsAtTheTopEdge(t *testing.T) {
 		t.Fatalf("unpinning: autoHide=%v over=%v", state.desktopBar.autoHide, state.desktopBar.over)
 	}
 	move := func(x, y float32) {
-		state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: x, Y: y, Viewport: state.viewport})
-		if err := repaintDesktopDriver(driver, state); err != nil {
-			t.Fatal(err)
-		}
+		moveDesktopPointer(t, driver, state, x, y)
 	}
 	move(state.viewport.Width/2, state.viewport.Height/2)
 	if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopBarPin); ok {
@@ -416,6 +413,12 @@ func TestUnpinnedDesktopFullscreenBarHidesAndReturnsAtTheTopEdge(t *testing.T) {
 		t.Fatal("the unpinned bar did not return at the top edge")
 	}
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerExit})
+	if err := repaintDesktopDriver(driver, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(desktopBarSlideMotion.Duration + time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
 	if err := repaintDesktopDriver(driver, state); err != nil {
 		t.Fatal(err)
 	}
@@ -462,11 +465,18 @@ func openFullscreenDesktop(t *testing.T) (*State, *Session, *app.Driver) {
 	return state, session, driver
 }
 
-// moveDesktopPointer moves the pointer and paints what follows, as the window
-// does between events.
+// moveDesktopPointer moves the pointer, paints what follows, as the window
+// does between events, and lets a slide of the bar that started finish, so the
+// next check reads where the bar settled rather than where it is on the way.
 func moveDesktopPointer(t *testing.T, driver *app.Driver, state *State, x, y float32) {
 	t.Helper()
 	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: x, Y: y, Viewport: state.viewport})
+	if err := repaintDesktopDriver(driver, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(desktopBarSlideMotion.Duration + time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
 	if err := repaintDesktopDriver(driver, state); err != nil {
 		t.Fatal(err)
 	}
@@ -504,30 +514,61 @@ func snapshotHasMenuRow(snapshot app.Snapshot, label string) bool {
 	return false
 }
 
-// TestUnpinnedFullscreenBarRevealsOnlyFromTheEdgeStrip is the guard for issue
-// 1591: the reveal must be the thin strip at the edge, not the whole band the
-// bar and its slack cover. Movement over the picture just inside that band used
-// to bring the bar up over the remote content there.
-func TestUnpinnedFullscreenBarRevealsOnlyFromTheEdgeStrip(t *testing.T) {
-	state, _, driver := openFullscreenDesktop(t)
+// TestUnpinnedFullscreenBarRevealsOnlyFromItsMarker is the guard for issues
+// 1591 and 1697: the reveal is the marker the hidden bar leaves at its spot,
+// not the band the bar and its slack cover nor the rest of the edge. Movement
+// over the picture just inside that band, or along the edge away from the
+// marker, must not bring the bar up over the remote content there.
+func TestUnpinnedFullscreenBarRevealsOnlyFromItsMarker(t *testing.T) {
+	state, session, driver := openFullscreenDesktop(t)
 	unpinDesktopBar(t, driver, state)
 	width, height := state.viewport.Width, state.viewport.Height
 	moveDesktopPointer(t, driver, state, width/2, height/2)
 	if barShown(t, driver) {
-		t.Fatal("the unpinned bar stayed visible away from the edge")
+		t.Fatal("the unpinned bar stayed visible away from its marker")
 	}
-	bar := state.desktopBar.bar
+	if !state.desktopBar.dragHit.IsZero() {
+		t.Fatal("the hidden bar still declares its drag surface")
+	}
+	bar, marker := state.desktopBar.bar, state.desktopBar.marker
 	oldBand := bar.Y + bar.Height + fullscreenBarRevealSlack
-	if desktopBarRevealDepth >= oldBand {
-		t.Fatalf("the edge strip %g reaches the old band %g", desktopBarRevealDepth, oldBand)
+	if marker.Y != session.desk.area.Y || marker.Y+marker.Height >= oldBand {
+		t.Fatalf("the marker %+v does not hug the edge outside the bar's band %g", marker, oldBand)
 	}
-	moveDesktopPointer(t, driver, state, width/2, (desktopBarRevealDepth+oldBand)/2)
+	moveDesktopPointer(t, driver, state, width/2, (marker.Y+marker.Height+fullscreenBarRevealSlack+oldBand)/2)
 	if barShown(t, driver) {
-		t.Fatal("the bar came up from inside the picture, not from the edge")
+		t.Fatal("the bar came up from inside the picture, not from the marker")
 	}
-	moveDesktopPointer(t, driver, state, width/2, desktopBarRevealDepth/2)
+	// Along the top edge, away from the marker: aiming at something in the
+	// remote's own top row does not bring the bar out.
+	moveDesktopPointer(t, driver, state, marker.X-fullscreenBarRevealSlack-2, session.desk.area.Y+1)
+	if barShown(t, driver) {
+		t.Fatal("the bar came up from the edge away from its marker")
+	}
+	// After the pointer lands on the marker the bar comes out from under the
+	// edge: partway through the slide it is above where it comes to rest and
+	// no higher than where it hid, and the frames after that bring it to rest.
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: marker.X + marker.Width/2, Y: marker.Y + marker.Height/2, Viewport: state.viewport})
+	if err := repaintDesktopDriver(driver, state); err != nil {
+		t.Fatal(err)
+	}
+	if err := driver.Advance(desktopBarSlideMotion.Duration / 3); err != nil {
+		t.Fatal(err)
+	}
+	hidden := bar.Y + state.desktopBar.slide(bar, session.desk.area).Y
+	if hit, ok := hitByIDInSnapshot(driver.Snapshot(), state.paneIdentity(session, hitDesktopBarDrag)); !ok ||
+		hit.Bounds.Height != bar.Height || hit.Bounds.Y >= bar.Y || hit.Bounds.Y < hidden {
+		t.Fatalf("the bar partway out %+v (found %v), want it between %g and its rest %+v", hit.Bounds, ok, hidden, bar)
+	}
+	moveDesktopPointer(t, driver, state, marker.X+marker.Width/2, marker.Y+marker.Height/2)
 	if !barShown(t, driver) {
-		t.Fatal("the bar did not return at the edge strip")
+		t.Fatal("the bar did not return at its marker")
+	}
+	if hit, ok := hitByIDInSnapshot(driver.Snapshot(), state.desktopBar.dragHit); !ok || hit.Bounds.Width != bar.Width {
+		t.Fatalf("the bar came out at %+v, want %+v", hit.Bounds, bar)
+	}
+	if !state.desktopBar.over || state.desktopBar.bar != bar {
+		t.Fatalf("the bar came out somewhere else: %+v, want %+v", state.desktopBar.bar, bar)
 	}
 	moveDesktopPointer(t, driver, state, width/2, bar.Y+bar.Height/2)
 	if !barShown(t, driver) {
@@ -535,12 +576,13 @@ func TestUnpinnedFullscreenBarRevealsOnlyFromTheEdgeStrip(t *testing.T) {
 	}
 	moveDesktopPointer(t, driver, state, width/2, bar.Y+bar.Height+fullscreenBarRevealSlack+1)
 	if barShown(t, driver) {
-		t.Fatal("the bar stayed after the pointer left the bar")
+		t.Fatal("the bar stayed after the pointer left it")
 	}
 }
 
 // TestDesktopFullscreenBarDocksToEachEdge checks the bar hugs the chosen edge,
-// stays centred on the other axis, and reveals only from that edge's strip.
+// sits centred on the other axis when never placed, leaves a marker at its
+// centre on that edge, and reveals only from the marker.
 func TestDesktopFullscreenBarDocksToEachEdge(t *testing.T) {
 	state, session, driver := openFullscreenDesktop(t)
 	unpinDesktopBar(t, driver, state)
@@ -548,14 +590,15 @@ func TestDesktopFullscreenBarDocksToEachEdge(t *testing.T) {
 	centreX, centreY := area.X+area.Width/2, area.Y+area.Height/2
 	closeTo := func(got, want float32) bool { return got >= want-1 && got <= want+1 }
 	for _, tc := range []struct {
-		name   string
-		dock   desktopBarDock
-		reveal gfx.Point
+		name string
+		dock desktopBarDock
+		// edgeAway is on the docked edge, far from the marker at the bar.
+		edgeAway gfx.Point
 	}{
-		{"top", desktopBarDockTop, gfx.Point{X: centreX, Y: area.Y + 1}},
-		{"bottom", desktopBarDockBottom, gfx.Point{X: centreX, Y: area.Y + area.Height - 1}},
-		{"left", desktopBarDockLeft, gfx.Point{X: area.X + 1, Y: centreY}},
-		{"right", desktopBarDockRight, gfx.Point{X: area.X + area.Width - 1, Y: centreY}},
+		{"top", desktopBarDockTop, gfx.Point{X: area.X + area.Width/6, Y: area.Y + 1}},
+		{"bottom", desktopBarDockBottom, gfx.Point{X: area.X + area.Width/6, Y: area.Y + area.Height - 1}},
+		{"left", desktopBarDockLeft, gfx.Point{X: area.X + 1, Y: area.Y + area.Height/6}},
+		{"right", desktopBarDockRight, gfx.Point{X: area.X + area.Width - 1, Y: area.Y + area.Height/6}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state.setDesktopFullscreenBarDock(tc.dock)
@@ -566,36 +609,42 @@ func TestDesktopFullscreenBarDocksToEachEdge(t *testing.T) {
 			if barShown(t, driver) {
 				t.Fatal("the bar stayed visible away from the edge")
 			}
-			bar, zone := state.desktopBar.bar, state.desktopBar.zone
+			bar := state.desktopBar.bar
 			switch tc.dock {
 			case desktopBarDockTop:
 				if bar.Y != area.Y+desktopBarEdgeMargin || !closeTo(bar.X+bar.Width/2, centreX) {
 					t.Fatalf("top dock bar %+v in %+v", bar, area)
 				}
-				if zone != (gfx.Rect{X: area.X, Y: area.Y, Width: area.Width, Height: desktopBarRevealDepth}) {
-					t.Fatalf("top dock strip %+v", zone)
-				}
 			case desktopBarDockBottom:
 				if bar.Y+bar.Height != area.Y+area.Height-desktopBarEdgeMargin || !closeTo(bar.X+bar.Width/2, centreX) {
 					t.Fatalf("bottom dock bar %+v in %+v", bar, area)
-				}
-				if zone != (gfx.Rect{X: area.X, Y: area.Y + area.Height - desktopBarRevealDepth, Width: area.Width, Height: desktopBarRevealDepth}) {
-					t.Fatalf("bottom dock strip %+v", zone)
 				}
 			case desktopBarDockLeft:
 				if bar.X != area.X+desktopBarEdgeMargin || !closeTo(bar.Y+bar.Height/2, centreY) {
 					t.Fatalf("left dock bar %+v in %+v", bar, area)
 				}
-				if zone != (gfx.Rect{X: area.X, Y: area.Y, Width: desktopBarRevealDepth, Height: area.Height}) {
-					t.Fatalf("left dock strip %+v", zone)
-				}
 			case desktopBarDockRight:
 				if bar.X+bar.Width != area.X+area.Width-desktopBarEdgeMargin || !closeTo(bar.Y+bar.Height/2, centreY) {
 					t.Fatalf("right dock bar %+v in %+v", bar, area)
 				}
-				if zone != (gfx.Rect{X: area.X + area.Width - desktopBarRevealDepth, Y: area.Y, Width: desktopBarRevealDepth, Height: area.Height}) {
-					t.Fatalf("right dock strip %+v", zone)
-				}
+			}
+			// The marker is a tab on the docked edge at the bar's centre, with
+			// the reveal zone around it and nothing more.
+			marker := state.desktopBar.marker
+			depth, length := desktopBarMarkerDepth, desktopBarMarkerLength
+			var want gfx.Rect
+			switch tc.dock {
+			case desktopBarDockTop:
+				want = gfx.Rect{X: bar.X + bar.Width/2 - length/2, Y: area.Y, Width: length, Height: depth}
+			case desktopBarDockBottom:
+				want = gfx.Rect{X: bar.X + bar.Width/2 - length/2, Y: area.Y + area.Height - depth, Width: length, Height: depth}
+			case desktopBarDockLeft:
+				want = gfx.Rect{X: area.X, Y: bar.Y + bar.Height/2 - length/2, Width: depth, Height: length}
+			case desktopBarDockRight:
+				want = gfx.Rect{X: area.X + area.Width - depth, Y: bar.Y + bar.Height/2 - length/2, Width: depth, Height: length}
+			}
+			if marker != want || state.desktopBar.zone != inflateRect(want, fullscreenBarRevealSlack) {
+				t.Fatalf("marker %+v zone %+v, want marker %+v", marker, state.desktopBar.zone, want)
 			}
 			if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopBarDock); ok {
 				t.Fatal("the hidden bar still declares its dock button")
@@ -605,24 +654,16 @@ func TestDesktopFullscreenBarDocksToEachEdge(t *testing.T) {
 			if barShown(t, driver) {
 				t.Fatal("the bar came up from its own rectangle")
 			}
-			moveDesktopPointer(t, driver, state, tc.reveal.X, tc.reveal.Y)
+			moveDesktopPointer(t, driver, state, tc.edgeAway.X, tc.edgeAway.Y)
+			if barShown(t, driver) {
+				t.Fatal("the bar came up from its edge away from the marker")
+			}
+			moveDesktopPointer(t, driver, state, marker.X+marker.Width/2, marker.Y+marker.Height/2)
 			if !barShown(t, driver) {
-				t.Fatal("the bar did not return at the docked edge")
+				t.Fatal("the bar did not return at its marker")
 			}
 			if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopBarDock); !ok {
 				t.Fatal("the placed bar has no dock button")
-			}
-			// Along the strip, away from the bar, it stays out.
-			stripAway := gfx.Point{X: area.X + 1, Y: area.Y + 1}
-			if tc.dock == desktopBarDockBottom {
-				stripAway.Y = area.Y + area.Height - 1
-			}
-			if tc.dock == desktopBarDockRight {
-				stripAway.X = area.X + area.Width - 1
-			}
-			moveDesktopPointer(t, driver, state, stripAway.X, stripAway.Y)
-			if !barShown(t, driver) {
-				t.Fatal("the bar hid while the pointer was still in the strip")
 			}
 			var away gfx.Point
 			switch tc.dock {
@@ -724,6 +765,8 @@ func TestDesktopFullscreenBarDockMenuChoosesAnEdge(t *testing.T) {
 func TestDesktopFullscreenBarDragsToAnEdgeAndStaysWhereItIsDropped(t *testing.T) {
 	state, session, driver := openFullscreenDesktop(t)
 	area := session.desk.area
+	closeTo := func(got, want float32) bool { return got >= want-1 && got <= want+1 }
+	barHeight := barToolSize + 8
 	drag := func(to gfx.Point) {
 		t.Helper()
 		hit := state.desktopBar.dragHit
@@ -753,27 +796,45 @@ func TestDesktopFullscreenBarDragsToAnEdgeAndStaysWhereItIsDropped(t *testing.T)
 	if state.desktopBar.dock != desktopBarDockFree {
 		t.Fatalf("dock = %v, want free", state.desktopBar.dock)
 	}
-	bar := state.desktopBar.bar
 	// The press was 2 px into the bar, so the bar's corner follows the pointer.
+	bar := state.desktopBar.bar
 	if bar.X < area.X+area.Width/2-2-2 || bar.X > area.X+area.Width/2-2+2 ||
 		bar.Y < area.Y+area.Height/2-2-2 || bar.Y > area.Y+area.Height/2-2+2 {
 		t.Fatalf("dropped bar %+v, want its corner at the pointer", bar)
 	}
-	// Dropped near the right edge, it snaps flush to that edge.
-	drag(gfx.Point{X: area.X + area.Width - bar.Width, Y: area.Y + area.Height/2})
+	// Dropped near the right edge, a third of the way down, it snaps flush to
+	// that edge and keeps that spot along it (issue 1697: it used to jump back
+	// to the middle of the edge).
+	// The press is 2 px into the bar, so its corner follows the pointer.
+	dropY := area.Y + area.Height/3
+	drag(gfx.Point{X: area.X + area.Width - bar.Width, Y: dropY})
 	if state.desktopBar.dock != desktopBarDockRight {
 		t.Fatalf("dock = %v after a drop by the right edge, want right", state.desktopBar.dock)
 	}
-	if bar := state.desktopBar.bar; bar.X+bar.Width != area.X+area.Width-desktopBarEdgeMargin {
-		t.Fatalf("right dock bar %+v in %+v", bar, area)
+	if bar := state.desktopBar.bar; bar.X+bar.Width != area.X+area.Width-desktopBarEdgeMargin || !closeTo(bar.Y, dropY-2) {
+		t.Fatalf("right dock bar %+v in %+v, want its top at %g", bar, area, dropY-2)
 	}
-	// Dropped near the top edge, it snaps up.
-	drag(gfx.Point{X: area.X + area.Width/2, Y: area.Y + 4})
+	// The marker follows the spot, not the middle of the edge.
+	if marker := state.desktopBar.marker; !closeTo(marker.Y+marker.Height/2, dropY-2+barHeight/2) {
+		t.Fatalf("right dock marker %+v, want it centred at %g", marker, dropY-2+barHeight/2)
+	}
+	// Picking the other edge of the same axis from the menu keeps the spot.
+	state.setDesktopFullscreenBarDock(desktopBarDockTop)
+	if err := repaintDesktopDriver(driver, state); err != nil {
+		t.Fatal(err)
+	}
+	if bar := state.desktopBar.bar; bar.Y != area.Y+desktopBarEdgeMargin || bar.X+bar.Width != area.X+area.Width-desktopBarEdgeMargin {
+		t.Fatalf("top dock bar %+v kept no spot", bar)
+	}
+	// Dropped near the top edge, a quarter of the way in, it snaps up and
+	// keeps that spot too.
+	dropX := area.X + area.Width/4
+	drag(gfx.Point{X: dropX, Y: area.Y + 4})
 	if state.desktopBar.dock != desktopBarDockTop {
 		t.Fatalf("dock = %v after a drop by the top edge, want top", state.desktopBar.dock)
 	}
-	if bar := state.desktopBar.bar; bar.Y != area.Y+desktopBarEdgeMargin {
-		t.Fatalf("top dock bar %+v in %+v", bar, area)
+	if bar := state.desktopBar.bar; bar.Y != area.Y+desktopBarEdgeMargin || !closeTo(bar.X, dropX-2) {
+		t.Fatalf("top dock bar %+v in %+v, want its left edge at %g", bar, area, dropX-2)
 	}
 
 	// The pointer leaving the window finishes a drag where the bar is.
@@ -838,7 +899,7 @@ func TestFreeDesktopFullscreenBarReturnsWhereItWasLeft(t *testing.T) {
 	state, session, driver := openFullscreenDesktop(t)
 	unpinDesktopBar(t, driver, state)
 	state.desktopBar.dock = desktopBarDockFree
-	state.desktopBar.free = gfx.Point{X: 0.5, Y: 0.5}
+	state.desktopBar.at = gfx.Point{X: 0.5, Y: 0.5}
 	if err := repaintDesktopDriver(driver, state); err != nil {
 		t.Fatal(err)
 	}
@@ -902,15 +963,36 @@ func TestDesktopFullscreenBarDockSurvivesARestart(t *testing.T) {
 		t.Fatalf("restored dock = %v, want left", restored.desktopBar.dock)
 	}
 	state.desktopBar.dock = desktopBarDockFree
-	state.desktopBar.free = gfx.Point{X: 0.25, Y: 0.75}
+	state.desktopBar.at = gfx.Point{X: 0.25, Y: 0.75}
 	state.save()
 	if saved := state.snapshot(); saved.FullscreenBarDock != "free" || saved.FullscreenBarX != 0.25 || saved.FullscreenBarY != 0.75 {
 		t.Fatalf("saved free bar = %q at %v,%v", saved.FullscreenBarDock, saved.FullscreenBarX, saved.FullscreenBarY)
 	}
 	free := newTestState(t, testOptions(t))
 	free.restoreShared(state.snapshot())
-	if free.desktopBar.dock != desktopBarDockFree || free.desktopBar.free != (gfx.Point{X: 0.25, Y: 0.75}) {
-		t.Fatalf("restored free bar = %v at %+v", free.desktopBar.dock, free.desktopBar.free)
+	if free.desktopBar.dock != desktopBarDockFree || free.desktopBar.at != (gfx.Point{X: 0.25, Y: 0.75}) {
+		t.Fatalf("restored free bar = %v at %+v", free.desktopBar.dock, free.desktopBar.at)
+	}
+	// A spot along an edge survives a restart in the same fields: X along the
+	// top or bottom, Y along the left or right.
+	state.desktopBar.dock, state.desktopBar.at = desktopBarDockBottom, gfx.Point{X: 0.8, Y: 0.97}
+	state.save()
+	if saved := state.snapshot(); saved.FullscreenBarDock != "bottom" || saved.FullscreenBarX < 0.79 || saved.FullscreenBarX > 0.81 {
+		t.Fatalf("saved bottom bar = %q at x %v", saved.FullscreenBarDock, saved.FullscreenBarX)
+	}
+	docked := newTestState(t, testOptions(t))
+	docked.restoreShared(state.snapshot())
+	if docked.desktopBar.dock != desktopBarDockBottom || docked.desktopBar.at != (gfx.Point{X: 0.8, Y: 0.97}) {
+		t.Fatalf("restored bottom bar = %v at %+v", docked.desktopBar.dock, docked.desktopBar.at)
+	}
+	// A file from before the bar could be placed has no spot: its zero must
+	// not send the bar to the left end of the edge.
+	saved := state.snapshot()
+	saved.FullscreenBarDock, saved.FullscreenBarX, saved.FullscreenBarY = "top", 0, 0
+	old := newTestState(t, testOptions(t))
+	old.restoreShared(saved)
+	if bar := old.desktopBar.rect(gfx.Rect{Width: 1400, Height: 900}, 400, 40); bar.X+bar.Width/2 != 700 {
+		t.Fatalf("an old file's missing spot placed the bar at %+v", bar)
 	}
 	for value, want := range map[string]desktopBarDock{
 		"":         desktopBarDockTop,
