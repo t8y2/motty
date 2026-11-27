@@ -185,7 +185,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	if state.interfaceFontRowVisible() {
 		row(settingsAppearance, m.SettingsInterfaceFont, "")
 	}
-	row(settingsAppearance, m.SettingsToastPosition, m.SettingsToastPositionDescription)
+	row(settingsAppearance, m.SettingsToastPosition, "")
 	row(settingsAppearance, m.SettingsToolbarPosition, m.SettingsToolbarPositionDescription)
 	row(settingsAppearance, m.SettingsTabOrientation, m.SettingsTabOrientationDescription)
 	if state.tabOrientation == tabsVertical {

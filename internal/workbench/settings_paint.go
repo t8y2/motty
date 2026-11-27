@@ -398,8 +398,8 @@ func (state *State) paintAppearanceSettings(page *settingsPage) {
 				page.valueActionRow(messages.SettingsInterfaceFont, state.interfaceFontDescription(), state.interfaceFontInEffect(), !state.uiFont.supported,
 					components.ButtonAction{ID: hitInterfaceFontChoose, Label: state.messages.Tools.FontChoose, Variant: components.ButtonOutline})
 			}
-			settingsChoiceRow(page, messages.SettingsToastPosition, messages.SettingsToastPositionDescription, &state.toastPlacement, settingsToastPlacementChoices[:], state.settingsToastPlacementLabel,
-				func() { state.save() }, nil)
+			settingsSelectRow(page, messages.SettingsToastPosition, "", &state.toastPlacement, settingsToastPlacementChoices[:], state.settingsToastPlacementLabel,
+				nil, func() { state.save() })
 			settingsChoiceRow(page, messages.SettingsToolbarPosition, messages.SettingsToolbarPositionDescription, &state.terminalToolbarPosition, settingsToolbarPositionChoices[:], state.settingsToolbarPositionLabel,
 				func() { state.applyTerminalToolbarPosition(); state.save() }, nil)
 			settingsChoiceRow(page, messages.SettingsTabOrientation, messages.SettingsTabOrientationDescription, &state.tabOrientation, settingsTabOrientationChoices[:], state.settingsTabOrientationLabel,

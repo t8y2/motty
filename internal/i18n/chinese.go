@@ -354,7 +354,6 @@ var ChineseMessages = Messages{
 	SettingsToolbarPositionLeft:            "左侧",
 	SettingsToolbarPositionRight:           "右侧",
 	SettingsToastPosition:                  "通知位置",
-	SettingsToastPositionDescription:       "选择通知弹出的位置。",
 	SettingsToastTopCenter:                 "顶部居中",
 	SettingsToastTopLeft:                   "左上",
 	SettingsToastTopRight:                  "右上",

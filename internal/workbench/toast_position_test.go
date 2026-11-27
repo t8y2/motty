@@ -11,7 +11,7 @@ import (
 // reader does: the notice starts in the top center, choosing the bottom right
 // corner moves it there, and the choice is still there after a restart.
 func TestTheNoticePositionSettingMovesTheNotices(t *testing.T) {
-	world, options := newWorld(t)
+	_, options := newWorld(t)
 	state := newTestState(t, options)
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsAppearance)
@@ -26,7 +26,7 @@ func TestTheNoticePositionSettingMovesTheNotices(t *testing.T) {
 		t.Fatalf("the notice painted at Y=%v, below the middle of a window it should sit at the top of", top.Y)
 	}
 
-	clickSettingsChoice(t, state, state.settingsToastPlacementLabel(toastBottomRight))
+	chooseSelectOption(t, state, state.messages.SettingsToastPosition, state.settingsToastPlacementLabel(toastBottomRight))
 	if state.toastPlacement != toastBottomRight {
 		t.Fatalf("the bottom right choice was not taken: %v", state.toastPlacement)
 	}
@@ -39,11 +39,14 @@ func TestTheNoticePositionSettingMovesTheNotices(t *testing.T) {
 		t.Fatalf("the notice painted at Y=%v, above the middle of a window it should sit at the bottom of", bottom.Y)
 	}
 
+	if bottom.X+bottom.Width/2 < 900/2 {
+		t.Fatalf("the notice is centered at X=%v, left of the middle of a window it should sit right of", bottom.X+bottom.Width/2)
+	}
+
 	restarted := newTestState(t, options)
 	if restarted.toastPlacement != toastBottomRight {
 		t.Fatalf("after a restart the notice position is %v, want the bottom right", restarted.toastPlacement)
 	}
-	_ = world
 }
 
 // TestANoticePositionThisBuildDoesNotKnowFallsBackToTheTop keeps an older or

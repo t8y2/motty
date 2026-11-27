@@ -334,7 +334,6 @@ type Messages struct {
 	SettingsToolbarPositionLeft            string
 	SettingsToolbarPositionRight           string
 	SettingsToastPosition                  string
-	SettingsToastPositionDescription       string
 	SettingsToastTopCenter                 string
 	SettingsToastTopLeft                   string
 	SettingsToastTopRight                  string

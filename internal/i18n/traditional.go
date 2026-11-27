@@ -354,7 +354,6 @@ var TraditionalMessages = Messages{
 	SettingsToolbarPositionLeft:            "左側",
 	SettingsToolbarPositionRight:           "右側",
 	SettingsToastPosition:                  "通知位置",
-	SettingsToastPositionDescription:       "選擇通知顯示的位置。",
 	SettingsToastTopCenter:                 "頂部置中",
 	SettingsToastTopLeft:                   "左上",
 	SettingsToastTopRight:                  "右上",

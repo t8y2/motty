@@ -354,7 +354,6 @@ var EnglishMessages = Messages{
 	SettingsToolbarPositionLeft:            "Left",
 	SettingsToolbarPositionRight:           "Right",
 	SettingsToastPosition:                  "Notification position",
-	SettingsToastPositionDescription:       "Choose where notifications appear.",
 	SettingsToastTopCenter:                 "Top center",
 	SettingsToastTopLeft:                   "Top left",
 	SettingsToastTopRight:                  "Top right",
