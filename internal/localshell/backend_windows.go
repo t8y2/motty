@@ -5,6 +5,7 @@ package localshell
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -147,6 +148,19 @@ func startBackend(config Config) (backend, error) {
 
 	output := os.NewFile(uintptr(outRead), "conpty-out")
 	input := os.NewFile(uintptr(inWrite), "conpty-in")
+	var reader io.Reader = output
+	var closeReader func()
+	if needsLegacyPSReadLineColorFix(consoleBackend.passthrough, program, windowsBuildNumberFn()) {
+		filter := newPSReadLineColorFilter(output, func() bool {
+			args, ok := windowsForeground(shellPID, shellCreated)
+			if !ok || len(args) == 0 {
+				return true
+			}
+			return isWindowsPowerShell(args[0])
+		})
+		reader = filter
+		closeReader = filter.Close
+	}
 	var consoleMu sync.Mutex
 	consoleClosed := false
 	closeConsole := func() {
@@ -162,7 +176,7 @@ func startBackend(config Config) (backend, error) {
 		consoleBackend.close(console)
 	}
 	return backend{
-		io:         &consoleIO{output: output, input: input, closeConsole: closeConsole},
+		io:         &consoleIO{reader: reader, closeReader: closeReader, output: output, input: input, closeConsole: closeConsole},
 		foreground: func() ([]string, bool) { return windowsForeground(shellPID, shellCreated) },
 		// ConPTY sizes its console in cells only: Windows' console API has no
 		// pixel size to carry, so the size's pixel fields stop here.
@@ -198,17 +212,22 @@ func startBackend(config Config) (backend, error) {
 
 // consoleIO is the two pipe ends of a pseudo console as one stream.
 type consoleIO struct {
+	reader        io.Reader
+	closeReader   func()
 	output, input *os.File
 	closeConsole  func()
 }
 
-func (stream *consoleIO) Read(p []byte) (int, error)  { return stream.output.Read(p) }
+func (stream *consoleIO) Read(p []byte) (int, error)  { return stream.reader.Read(p) }
 func (stream *consoleIO) Write(p []byte) (int, error) { return stream.input.Write(p) }
 
 // Close ends the console first: it can wait for the output pipe to be drained,
 // so it runs beside the closing of the pipes rather than before.
 func (stream *consoleIO) Close() error {
 	go stream.closeConsole()
+	if stream.closeReader != nil {
+		stream.closeReader()
+	}
 	_ = stream.input.Close()
 	return stream.output.Close()
 }
