@@ -620,6 +620,7 @@ var ChineseMessages = Messages{
 	ColorPickerApply:                     "确定",
 	ColorPickerInvalid:                   "请输入有效的十六进制色值",
 	ColorNone:                            "无颜色",
+	ColorRandom:                          "随机颜色",
 	ColorGreen:                           "绿色",
 	ColorYellow:                          "黄色",
 	ColorOrange:                          "橙色",
