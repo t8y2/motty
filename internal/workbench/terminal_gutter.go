@@ -31,7 +31,7 @@ const (
 )
 
 const (
-	gutterMinNumberChars = 2 // 1..99 without resizing during initial output
+	gutterMinNumberChars = 4 // 1..9999 without resizing: an ordinary session never crosses it
 	gutterMaxNumberChars = 6 // up to 999999, then the low digits
 	gutterTimeChars      = 8 // HH:MM:SS
 	gutterRuleGap        = float32(16)
@@ -68,18 +68,11 @@ func (gutter terminalGutter) times() bool   { return gutter == gutterTime || gut
 // gutter's minimum and maximum digit width. Lines past 999999 wrap to their
 // low six digits, so the column stays at gutterMaxNumberChars once reached.
 func gutterNumberDigits(line uint64) int {
-	switch {
-	case line >= 100000:
-		return gutterMaxNumberChars
-	case line >= 10000:
-		return 5
-	case line >= 1000:
-		return 4
-	case line >= 100:
-		return 3
-	default:
-		return gutterMinNumberChars
+	digits := 1
+	for ; line >= 10 && digits < gutterMaxNumberChars; line /= 10 {
+		digits++
 	}
+	return max(digits, gutterMinNumberChars)
 }
 
 // gutterNumberChars is the digit columns reserved for t's line numbers. It

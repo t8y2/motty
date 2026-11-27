@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -120,6 +121,16 @@ func TestGutterSettingPersists(t *testing.T) {
 	}
 }
 
+// gutterCrossLine is the first line number that no longer fits the minimum
+// width, so the gutter grows by one digit there.
+func gutterCrossLine() int {
+	line := 1
+	for range gutterMinNumberChars {
+		line *= 10
+	}
+	return line
+}
+
 func TestGutterNumberDigitsBoundaries(t *testing.T) {
 	cases := []struct {
 		line uint64
@@ -127,14 +138,9 @@ func TestGutterNumberDigitsBoundaries(t *testing.T) {
 	}{
 		{0, gutterMinNumberChars},
 		{1, gutterMinNumberChars},
-		{9, gutterMinNumberChars},
-		{10, 2},
-		{12, 2},
-		{99, 2},
-		{100, 3},
-		{999, 3},
-		{1000, 4},
-		{9999, 4},
+		{99, gutterMinNumberChars},
+		{999, gutterMinNumberChars},
+		{9999, gutterMinNumberChars},
 		{10000, 5},
 		{99999, 5},
 		{100000, 6},
@@ -152,18 +158,19 @@ func TestGutterAutoSizesNumberColumn(t *testing.T) {
 	state, session, _ := selectionState()
 	state.viewport.Width = 600
 	state.setTerminalGutter(gutterNumbers)
+	cross := gutterCrossLine()
 
-	// Fresh session with 12 lines stays at the 2-digit minimum width instead of reserving 6 digits.
+	// A fresh session with 12 lines stays at the minimum width instead of reserving 6 digits.
 	session.term.write([]byte(strings.Repeat("line\r\n", 11)))
 	state.fitTerminal(session)
-	twoDigit := state.layoutForSession(session.ID)
-	wantTwoWidth := snap(float32(gutterMinNumberChars)*state.cellWidth) + gutterRuleGap
-	if got := state.gutterWidthFor(session.term); got != wantTwoWidth {
-		t.Fatalf("12-line gutter width = %v, want %v (2 digits)", got, wantTwoWidth)
+	minimum := state.layoutForSession(session.ID)
+	wantMinWidth := snap(float32(gutterMinNumberChars)*state.cellWidth) + gutterRuleGap
+	if got := state.gutterWidthFor(session.term); got != wantMinWidth {
+		t.Fatalf("12-line gutter width = %v, want %v (%d digits)", got, wantMinWidth, gutterMinNumberChars)
 	}
 
 	var canvas gfx.Canvas
-	state.paintGrid(&canvas, session, twoDigit)
+	state.paintGrid(&canvas, session, minimum)
 	found12 := false
 	for _, text := range canvas.Texts() {
 		if text.Value == "12" {
@@ -178,40 +185,32 @@ func TestGutterAutoSizesNumberColumn(t *testing.T) {
 		t.Fatalf("line 12 not painted in %q", gutterTexts(&canvas))
 	}
 
-	// Up to line 99 keeps the same 2-digit width with no resize.
-	session.term.write([]byte(strings.Repeat("line\r\n", 87)))
+	// Up to the last line that fits keeps the same width with no resize.
+	session.term.write([]byte(strings.Repeat("line\r\n", cross-1-12)))
 	state.fitTerminal(session)
-	if got := state.layoutForSession(session.ID); got != twoDigit {
-		t.Fatalf("line 99 resized gutter: %+v -> %+v", twoDigit, got)
+	if got := state.layoutForSession(session.ID); got != minimum {
+		t.Fatalf("line %d resized gutter: %+v -> %+v", cross-1, minimum, got)
 	}
 
-	// Crossing line 100 expands the gutter to 3 digits and shrinks the grid by 1 column.
+	// Crossing it widens the gutter by one digit and shrinks the grid by 1 column.
 	session.term.write([]byte("line\r\n"))
 	state.fitTerminal(session)
-	threeDigit := state.layoutForSession(session.ID)
-	wantThreeWidth := snap(3*state.cellWidth) + gutterRuleGap
-	if got := state.gutterWidthFor(session.term); got != wantThreeWidth {
-		t.Fatalf("100-line gutter width = %v, want %v (3 digits)", got, wantThreeWidth)
+	wider := state.layoutForSession(session.ID)
+	wantWiderWidth := snap(float32(gutterMinNumberChars+1)*state.cellWidth) + gutterRuleGap
+	if got := state.gutterWidthFor(session.term); got != wantWiderWidth {
+		t.Fatalf("line %d gutter width = %v, want %v", cross, got, wantWiderWidth)
 	}
-	if threeDigit.left != twoDigit.left+state.cellWidth {
-		t.Fatalf("3-digit left = %v, want %v", threeDigit.left, twoDigit.left+state.cellWidth)
+	if wider.left != minimum.left+state.cellWidth {
+		t.Fatalf("wider left = %v, want %v", wider.left, minimum.left+state.cellWidth)
 	}
-	if cols, _ := session.term.screen.Size(); cols != threeDigit.cols {
-		t.Fatalf("screen cols = %d, want layout cols %d", cols, threeDigit.cols)
+	if cols, _ := session.term.screen.Size(); cols != wider.cols {
+		t.Fatalf("screen cols = %d, want layout cols %d", cols, wider.cols)
 	}
 
 	canvas.Reset()
-	state.paintGrid(&canvas, session, threeDigit)
-	if !slices.Contains(gutterTexts(&canvas), "100") {
-		t.Fatalf("line 100 not painted in %q", gutterTexts(&canvas))
-	}
-
-	// Crossing line 1000 expands the gutter to 4 digits.
-	session.term.write([]byte(strings.Repeat("line\r\n", 900)))
-	state.fitTerminal(session)
-	wantFourWidth := snap(4*state.cellWidth) + gutterRuleGap
-	if got := state.gutterWidthFor(session.term); got != wantFourWidth {
-		t.Fatalf("1000-line gutter width = %v, want %v (4 digits)", got, wantFourWidth)
+	state.paintGrid(&canvas, session, wider)
+	if !slices.Contains(gutterTexts(&canvas), strconv.Itoa(cross)) {
+		t.Fatalf("line %d not painted in %q", cross, gutterTexts(&canvas))
 	}
 }
 
@@ -226,20 +225,20 @@ func TestGutterAutoWidthInBothModeAndPerSession(t *testing.T) {
 	first = &state.sessions[0]
 	secondPtr := &state.sessions[1]
 
-	// Both mode starts with 2 digits + 1 space + 8 time chars = 11 cells.
+	// Both mode starts with the minimum digits + 1 space + 8 time chars = 11 cells.
 	wantInitial := snap(float32(gutterMinNumberChars+1+gutterTimeChars)*state.cellWidth) + gutterRuleGap
 	if got := state.gutterWidthFor(first.term); got != wantInitial {
 		t.Fatalf("initial both-mode width = %v, want %v", got, wantInitial)
 	}
 
-	// Push only the first session past 1000 lines; the second session keeps its narrow gutter.
-	first.term.write([]byte(strings.Repeat("x\r\n", 1050)))
+	// Push only the first session past the minimum width; the second session keeps its narrow gutter.
+	first.term.write([]byte(strings.Repeat("x\r\n", gutterCrossLine()+50)))
 	secondPtr.term.write([]byte("short\r\n"))
 	state.fitTerminals()
 
 	firstLayout := state.layoutForSession(first.ID)
 	secondLayout := state.layoutForSession(secondPtr.ID)
-	if firstLayout.left != secondLayout.left+2*state.cellWidth {
+	if firstLayout.left != secondLayout.left+state.cellWidth {
 		t.Fatalf("per-session gutter mismatch: first.left=%v second.left=%v cellWidth=%v", firstLayout.left, secondLayout.left, state.cellWidth)
 	}
 	if firstCols, _ := first.term.screen.Size(); firstCols != firstLayout.cols {
@@ -256,14 +255,15 @@ func TestGutterAutoWidthStaysMonotonicAcrossScrollAltScreenAndCursorMove(t *test
 	state.setTerminalGutter(gutterNumbers)
 	state.fitTerminal(session)
 
-	// Advance to line 80 (still 2 digits), then enter alternate screen and move
-	// cursor to the bottom row: main scrolled + alt row would exceed 100 if
-	// alternate screen were not ignored.
-	session.term.write([]byte(strings.Repeat("x\r\n", 79)))
+	// Advance to 20 lines short of the crossing, then enter alternate screen and
+	// move the cursor to the bottom row: main scrolled + alt row would cross it
+	// if the alternate screen were not ignored.
+	cross := gutterCrossLine()
+	session.term.write([]byte(strings.Repeat("x\r\n", cross-21)))
 	state.fitTerminal(session)
 	beforeAlt := state.layoutForSession(session.ID)
-	if got := session.term.gutterNumberChars(); got != 2 {
-		t.Fatalf("80-line digits = %d, want 2", got)
+	if got := session.term.gutterNumberChars(); got != gutterMinNumberChars {
+		t.Fatalf("%d-line digits = %d, want %d", cross-20, got, gutterMinNumberChars)
 	}
 	session.term.write([]byte("\x1b[?1049h\x1b[40;1H"))
 	state.fitTerminal(session)
@@ -272,12 +272,12 @@ func TestGutterAutoWidthStaysMonotonicAcrossScrollAltScreenAndCursorMove(t *test
 	}
 	session.term.write([]byte("\x1b[?1049l"))
 
-	// Now cross line 100 on the main screen -> grows to 3 digits.
+	// Now cross the minimum width on the main screen -> grows by one digit.
 	session.term.write([]byte(strings.Repeat("x\r\n", 40)))
 	state.fitTerminal(session)
 	threeDigit := state.layoutForSession(session.ID)
-	if got := session.term.gutterNumberChars(); got != 3 {
-		t.Fatalf("120-line digits = %d, want 3", got)
+	if got := session.term.gutterNumberChars(); got != gutterMinNumberChars+1 {
+		t.Fatalf("%d-line digits = %d, want %d", cross+20, got, gutterMinNumberChars+1)
 	}
 
 	// Scrolling back to line 1 must not shrink the gutter or resize the grid.
@@ -306,12 +306,12 @@ func TestGutterAutoWidthResizesLiveShellOnWake(t *testing.T) {
 	before := state.layoutForSession(session.ID)
 	resizesBefore := shell.resizeCount()
 
-	shell.say(strings.Repeat("out\r\n", 105))
+	shell.say(strings.Repeat("out\r\n", gutterCrossLine()+5))
 	state.Wake()
 
 	after := state.layoutForSession(session.ID)
 	if after.cols >= before.cols || after.left <= before.left {
-		t.Fatalf("Wake did not widen gutter for 105 lines: %+v -> %+v", before, after)
+		t.Fatalf("Wake did not widen gutter past the minimum: %+v -> %+v", before, after)
 	}
 	if cols, _ := session.term.screen.Size(); cols != after.cols {
 		t.Fatalf("screen cols = %d, want %d", cols, after.cols)
