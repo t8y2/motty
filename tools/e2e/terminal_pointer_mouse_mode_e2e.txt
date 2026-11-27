@@ -1,0 +1,38 @@
+# End to end: the pointer over a terminal is the I-beam, except while the program
+# in it asked for mouse reports (a multiplexer, a TUI), when it is the default
+# arrow. `cursor` prints shape=0 for the arrow and shape=1 for the I-beam. Only a
+# local shell is needed.
+#
+#   dir=$(mktemp -d)
+#   MOTTY_LANG=en MOTTY_DATA_DIR=$dir python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_pointer_mouse_mode_e2e.txt
+# lang: en
+
+click "Local Terminal"
+settle 800
+type echo plain shell
+key enter
+settle 400
+move 400 300
+settle 100
+cursor
+shot /tmp/pointer-plain-shell.png
+
+# The program switches on any-motion reporting, as a multiplexer does.
+type printf '\033[?1003h'; echo mouse reporting on; sleep 60
+key enter
+settle 600
+move 401 300
+settle 100
+cursor
+shot /tmp/pointer-mouse-reporting.png
+
+# It switches the reports off again and the I-beam returns.
+key ctrl+c
+settle 300
+type printf '\033[?1003l'; echo mouse reporting off
+key enter
+settle 400
+move 400 300
+settle 100
+cursor
+shot /tmp/pointer-reporting-off.png

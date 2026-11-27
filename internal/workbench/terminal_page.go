@@ -107,10 +107,6 @@ func (state *State) installTerminalHandlers(session *Session) {
 	t.pageIdentity(sessionID)
 	h := &t.handlers
 	h.Role = gfx.RoleTerminal
-	// The grid is text the user selects, so the pointer over it is the I-beam,
-	// as over any terminal; a part painted over the control (the scrollbar, the
-	// accept-suggestion badge) declares its own.
-	h.Cursor = gfx.PointerCursorText
 	// The terminal's input is the application's own routing: a key the
 	// application acts on (a shortcut, the completion list, the key that
 	// activates a pane) is handled before the terminal encodes it, and the
@@ -327,6 +323,9 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 			}
 			c.Part(terminalControlPart)
 			label := t.accessibleName(state.messages.LabelTerminalFmt, session.Address)
+			// The pointer follows what the program asked for, so it is read for
+			// each declaration, not once with the handlers.
+			t.handlers.Cursor = t.pointerCursor()
 			terminal := ui.Control(c, label, &t.handlers)
 			if session.ID == state.activeSessionID && !t.find.open {
 				terminal.AutoFocus()
