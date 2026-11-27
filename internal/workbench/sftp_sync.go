@@ -244,6 +244,10 @@ func (state *State) syncTerminalDirectory(view *sftpView) {
 		if locate {
 			view.status = state.messages.Tools.FilesLocateTerminalSkipped
 		}
+		return
+	}
+	if session.term.folderIntegrationSeen {
+		session.term.syncCommandPending = true
 	}
 }
 

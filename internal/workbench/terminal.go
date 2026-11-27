@@ -135,6 +135,7 @@ type terminal struct {
 	commandReporting      bool
 	commandActive         bool
 	sftpRefreshPending    bool
+	syncCommandPending    bool
 	submittedLines        int
 	blink                 cursorBlink
 	wheelX                float32             // horizontal wheel travel not yet worth a whole cell
@@ -557,7 +558,11 @@ func (state *State) configureTerminal(session *Session) {
 			// command ran; one redrawn with nothing keyed is not.
 			if t.commandActive || (!t.commandReporting && t.folderIntegrationSeen && t.keyedSincePrompt) {
 				t.commandActive = false
-				t.sftpRefreshPending = true
+				if t.syncCommandPending {
+					t.syncCommandPending = false
+				} else {
+					t.sftpRefreshPending = true
+				}
 			}
 			t.inputGuard.start()
 			t.promptVersion++
@@ -590,7 +595,11 @@ func (state *State) configureTerminal(session *Session) {
 			if current.term != nil {
 				if current.term.commandActive {
 					current.term.commandActive = false
-					current.term.sftpRefreshPending = true
+					if current.term.syncCommandPending {
+						current.term.syncCommandPending = false
+					} else {
+						current.term.sftpRefreshPending = true
+					}
 				} else if current.term.submittedLines > 0 {
 					current.term.submittedLines--
 				}
@@ -634,7 +643,7 @@ func (t *terminal) resetFolderSync() {
 	t.inputLine = false
 	t.keyedSincePrompt = false
 	t.folderIntegrationSeen, t.commandReporting = false, false
-	t.commandActive, t.sftpRefreshPending = false, false
+	t.commandActive, t.sftpRefreshPending, t.syncCommandPending = false, false, false
 	t.reportedDirectory = term.Cwd{}
 	t.reportedHome = ""
 	// followSeq is left alone: it names reports, and a reconnect must not make

@@ -494,6 +494,7 @@ func (state *State) cancelSFTPOperation(view *sftpView) {
 	if view.extracting && view.cancelExtract != nil {
 		view.cancelExtract()
 	} else {
+		clear(view.prefetching)
 		view.worker.Cancel()
 	}
 	view.status = state.messages.SFTPCanceling
@@ -1259,8 +1260,15 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 	if result.ListID != 0 && view.prefetching[result.Path] != result.ListID {
 		return
 	}
-	delete(view.prefetching, result.Path)
 	waited := view.waiting != "" && view.waiting == result.Path && (result.ListID == 0 || result.ListID == view.waitingID)
+	if result.Err == nil && result.LinksPending && !result.FollowUp && !waited {
+		// Wait for the resolved follow-up before touching the cache, file list,
+		// or directory tree. Applying an unresolved background listing drops
+		// directory symlinks (such as /bin, /lib, /sbin) and then re-inserts
+		// them milliseconds later.
+		return
+	}
+	delete(view.prefetching, result.Path)
 	nav := view.waitingNavigation
 	if waited {
 		view.waiting = ""
@@ -1279,17 +1287,24 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 		}
 		return
 	}
-	view.remember(result.Path, result.Entries)
-	if view.detached != nil {
-		view.detached.observeDirectoryTreeListing(false, result.Path, result.Entries)
+	entries := result.Entries
+	if result.LinksPending {
+		entries = seedKnownSFTPLinks(view, result.Path, entries)
 	}
+	view.remember(result.Path, entries)
 	switch {
 	case waited:
-		state.showSFTPListingNavigation(view, result.Path, result.Entries, nav, result.ListID)
+		state.showSFTPListingNavigation(view, result.Path, entries, nav, result.ListID)
 	case view.path == result.Path && !view.busy:
 		view.acceptedListID = result.ListID
-		if !sameSFTPListing(view.allRows, result.Entries) {
-			state.updateSFTPRows(view, result.Entries)
+		if !sameResolvedSFTPListing(view.allRows, entries) {
+			state.updateSFTPRows(view, entries)
+		} else if view.detached != nil {
+			view.detached.observeDirectoryTreeListing(false, result.Path, entries)
+		}
+	default:
+		if view.detached != nil {
+			view.detached.observeDirectoryTreeListing(false, result.Path, entries)
 		}
 	}
 }
@@ -1360,6 +1375,115 @@ func sameSFTPListing(rows []sftpRow, entries []sftpclient.Entry) bool {
 
 func sameSFTPEntry(left, right sftpclient.Entry) bool {
 	return left.Name == right.Name && left.Size == right.Size && left.Mode == right.Mode && left.ModTime.Equal(right.ModTime)
+}
+
+func sameResolvedSFTPListing(rows []sftpRow, entries []sftpclient.Entry) bool {
+	if len(rows) != len(entries) {
+		return false
+	}
+	for index := range rows {
+		if !sameResolvedSFTPEntry(rows[index].entry, entries[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameResolvedSFTPEntry(left, right sftpclient.Entry) bool {
+	return sameSFTPEntry(left, right) &&
+		left.HasOwner == right.HasOwner &&
+		left.UID == right.UID &&
+		left.GID == right.GID &&
+		left.Owner == right.Owner &&
+		left.Group == right.Group &&
+		left.LinkTarget == right.LinkTarget &&
+		left.LinkDir == right.LinkDir &&
+		left.LinkBroken == right.LinkBroken
+}
+
+// seedKnownSFTPLinks carries forward previously resolved symlink metadata onto
+// a fresh listing whose links are still resolving in the background. Known
+// folder links (such as /bin, /lib, /sbin on Linux root) keep their resolved
+// position and directory tree nodes while the follow-up confirms their targets.
+func seedKnownSFTPLinks(view *sftpView, directory string, entries []sftpclient.Entry) []sftpclient.Entry {
+	if view == nil || len(entries) == 0 {
+		return entries
+	}
+	var known map[string]sftpclient.Entry
+	collect := func(entry sftpclient.Entry) {
+		if !entry.IsLink() || (entry.LinkTarget == "" && !entry.LinkDir && !entry.LinkBroken) {
+			return
+		}
+		if known == nil {
+			known = make(map[string]sftpclient.Entry)
+		}
+		known[entry.Name] = entry
+	}
+	if cached, ok := view.listing(directory); ok {
+		for _, entry := range cached {
+			collect(entry)
+		}
+	}
+	if sameDirectoryTreePath(false, view.path, directory) {
+		for index := range view.allRows {
+			collect(view.allRows[index].entry)
+		}
+	}
+	var treeDirs map[string]struct{}
+	if view.detached != nil && view.detached.directoryTree[1].enabled {
+		if node := directoryTreeResolveNode(&view.detached.directoryTree[1], false, directory); node != nil && len(node.children) > 0 {
+			treeDirs = make(map[string]struct{}, len(node.children))
+			for _, child := range node.children {
+				treeDirs[child.name] = struct{}{}
+			}
+		}
+	}
+	if len(known) == 0 && len(treeDirs) == 0 {
+		return entries
+	}
+	var seeded []sftpclient.Entry
+	dirChanged := false
+	for index, entry := range entries {
+		if !entry.IsLink() || entry.LinkTarget != "" || entry.LinkDir || entry.LinkBroken {
+			continue
+		}
+		if prev, ok := known[entry.Name]; ok {
+			if prev.Mode == entry.Mode && prev.ModTime.Equal(entry.ModTime) {
+				if seeded == nil {
+					seeded = slices.Clone(entries)
+				}
+				seeded[index].LinkTarget = prev.LinkTarget
+				seeded[index].LinkDir = prev.LinkDir
+				seeded[index].LinkBroken = prev.LinkBroken
+				if prev.LinkDir {
+					dirChanged = true
+				}
+			}
+			continue
+		}
+		if _, ok := treeDirs[entry.Name]; ok {
+			if seeded == nil {
+				seeded = slices.Clone(entries)
+			}
+			seeded[index].LinkDir = true
+			dirChanged = true
+		}
+	}
+	if seeded == nil {
+		return entries
+	}
+	if dirChanged {
+		slices.SortFunc(seeded, func(left, right sftpclient.Entry) int {
+			if left.IsDir() != right.IsDir() {
+				if left.IsDir() {
+					return -1
+				}
+				return 1
+			}
+			return strings.Compare(left.Name, right.Name)
+		})
+	}
+	return seeded
 }
 
 func (state *State) listSFTP(view *sftpView, remotePath string) {
@@ -2791,6 +2915,12 @@ func (state *State) pumpSFTP(session *Session) {
 			if result.Operation == sftpclient.OperationList && result.Background && view.detached != nil && view.detached.acceptDirectoryTreeResult(result) {
 				continue
 			}
+			if result.Background && result.FollowUp {
+				if id, pending := view.prefetching[result.Path]; pending && (result.ListID == 0 || id == result.ListID) {
+					state.finishSFTPPrefetch(view, result)
+					continue
+				}
+			}
 			if result.FollowUp {
 				if result.ListID != 0 {
 					shown := result.ListID == view.acceptedListID && result.Path == view.path && !view.busy
@@ -2804,7 +2934,9 @@ func (state *State) pumpSFTP(session *Session) {
 				// listing already in flight supersedes this one.
 				view.remember(result.Path, result.Entries)
 				if view.path == result.Path && !view.busy {
-					state.updateSFTPRows(view, result.Entries)
+					if !sameResolvedSFTPListing(view.allRows, result.Entries) {
+						state.updateSFTPRows(view, result.Entries)
+					}
 				} else if view.preparingPath == result.Path && (result.ListID == 0 || result.ListID == view.preparingID) {
 					// The first rows are still being prepared; the follow-up has the
 					// targets and must win over the initial entries.
@@ -2975,12 +3107,16 @@ func (state *State) pumpSFTP(session *Session) {
 			switch result.Operation {
 			case sftpclient.OperationList:
 				nav := view.navigation
-				view.remember(result.Path, result.Entries)
+				entries := result.Entries
+				if result.LinksPending {
+					entries = seedKnownSFTPLinks(view, result.Path, entries)
+				}
+				view.remember(result.Path, entries)
 				view.remoteSeq++
 				view.preparingPath, view.followUpPath, view.followUpEntries = "", "", nil
-				if len(result.Entries) > sftpPrepInlineEntries {
+				if len(entries) > sftpPrepInlineEntries {
 					view.busy = true // navigation completes only when its prepared rows are published
-					seq, entries := view.remoteSeq, result.Entries
+					seq := view.remoteSeq
 					view.preparingPath = result.Path
 					view.preparingID = result.ListID
 					view.startListingStatus(state.messages.SFTPLoading)
@@ -2999,7 +3135,7 @@ func (state *State) pumpSFTP(session *Session) {
 					}()
 					continue
 				}
-				state.showSFTPListingNavigation(view, result.Path, result.Entries, nav, result.ListID)
+				state.showSFTPListingNavigation(view, result.Path, entries, nav, result.ListID)
 			case sftpclient.OperationDownload:
 				view.status = fmt.Sprintf(state.messages.SFTPDownloadedFmt, formatBytes(result.Bytes), result.LocalPath)
 			case sftpclient.OperationUpload:
