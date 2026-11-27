@@ -12,7 +12,7 @@ import (
 )
 
 func TestBulkAuthenticationNarrowWindowRequiresExplicitSave(t *testing.T) {
-	for _, language := range []i18n.Language{i18n.English, i18n.Chinese} {
+	for _, language := range []i18n.Language{i18n.English, i18n.Chinese, i18n.TraditionalChinese} {
 		state := newTestState(t, testOptions(t))
 		state.setLanguage(language)
 		host := state.hosts[0]
