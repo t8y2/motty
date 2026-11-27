@@ -50,10 +50,11 @@ func (state *State) refreshSnippets() {
 // snippetsSectionUI is what the snippets page's declaration leaves for its
 // paint and tests.
 type snippetsSectionUI struct {
-	tree  ui.Box
-	send  ui.Box
-	empty ui.Box
-	draw  func(*ui.DrawContext)
+	tree     ui.Box
+	treeRect gfx.Rect
+	send     ui.Box
+	empty    ui.Box
+	draw     func(*ui.DrawContext)
 }
 
 // prepareSnippetTree initializes the Tree and Splitter callbacks once so
@@ -81,6 +82,11 @@ func (state *State) prepareSnippetTree() {
 	form.tree.Label = form.treeLabel
 	form.tree.CanDrop = form.treeCanDrop
 	form.treeAfterLayout = func(*ui.DrawContext) { state.snippetTreeAfterLayout() }
+	form.recordTreeRect = func(*ui.DrawContext) {
+		if view := &state.sectionBodies.snippets; view.tree.Valid() {
+			view.treeRect = view.tree.Rect()
+		}
+	}
 	form.drawInlineFields = func(d *ui.DrawContext) { state.paintSnippetInlineFields(d.Canvas) }
 }
 
@@ -653,7 +659,8 @@ func (state *State) declareSnippetsTree(c ui.C, width float32) {
 	}
 	ui.Divider(c).Height(1).MarginSides(8, 8, 0, 8).Background(state.pal.line)
 	area := ui.Column(c).Grow(1).FillWidth().MarginSides(6, 6, 4, 6).
-		HitWith(hitSnippetTreeScroll, m.SnippetListScroll, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true})
+		HitWith(hitSnippetTreeScroll, m.SnippetListScroll, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true}).
+		DrawOver(form.recordTreeRect)
 	area.Children(func() {
 		if len(form.treeRows) == 0 {
 			ui.Text(c, m.SnippetPickerEmpty).FontSize(12).Color(state.pal.muted).FillWidth().Ellipsis().MarginSides(8, 4, 0, 6)
@@ -830,8 +837,8 @@ func (state *State) snippetBlankPointer(event gfx.PointerEvent) (gfx.EventResult
 	if !event.Target.IsZero() && event.Target != hitSnippetTreeScroll {
 		return gfx.EventResult{}, false
 	}
-	area := state.sectionBodies.snippets.tree.Rect()
-	if !pointInRect(event.X, event.Y, area) {
+	area := state.sectionBodies.snippets.treeRect
+	if area.Width <= 0 || area.Height <= 0 || !pointInRect(event.X, event.Y, area) {
 		return gfx.EventResult{}, false
 	}
 	state.openSnippetBlankMenu(gfx.Point{X: event.X, Y: event.Y})
@@ -1018,6 +1025,7 @@ func (state *State) leaveSnippetsSection() {
 	inline.groupPicker.Open = false
 	state.snippets.folderMenu.open = false
 	state.snippets.blankMenu.open = false
+	state.sectionBodies.snippets.treeRect = gfx.Rect{}
 	if inline.dirty {
 		state.flushInlineSnippetSave()
 	}

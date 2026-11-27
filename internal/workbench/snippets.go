@@ -154,6 +154,7 @@ type snippetsUI struct {
 	treeKey             func(int) int
 	treeCanDrop         func(int, int, ui.TreeDrop) bool
 	treeAfterLayout     func(*ui.DrawContext)
+	recordTreeRect      func(*ui.DrawContext)
 	drawInlineFields    func(*ui.DrawContext)
 	folderMenu          snippetFolderMenu
 	blankMenu           snippetBlankMenu
