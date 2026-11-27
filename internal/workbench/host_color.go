@@ -1,6 +1,9 @@
 package workbench
 
 import (
+	"fmt"
+	"math"
+	"math/rand/v2"
 	"strconv"
 	"strings"
 
@@ -13,6 +16,7 @@ import (
 )
 
 var hitHostColors = tree.Sub(shellHits, tree.Name("host-colors"))
+var hitHostRandomColor = tree.ID(hitHostColors, "random")
 
 // Keep the same familiar palette as DBX's connection editor.
 var hostColors = [...]string{"", "#22c55e", "#eab308", "#f97316", "#ef4444", "#3b82f6", "#a855f7"}
@@ -43,6 +47,11 @@ func hostAccent(value string) gfx.Color {
 }
 
 func (state *State) clickHostColor(id gfx.ID) bool {
+	if id == hitHostRandomColor {
+		state.editor.color = text.Editor{}
+		state.editor.color.Insert(randomHostColor(state.editor.value(fieldColor)))
+		return true
+	}
 	index, ok := id.In(hitHostColors)
 	if !ok || index < 0 || index >= len(hostColors) {
 		return false
@@ -81,6 +90,7 @@ func (state *State) declareHostColorChoice(c ui.C, parent ui.Box, rowHeight floa
 						editor.color.Insert(color)
 					}
 				}
+				form.randomColorBox = state.declareIconButton(c, hitHostRandomColor, iconSparkles, m.ColorRandom, false, iconButtonQuiet).Size(32, 32)
 				form.colorPickerBox = ui.ColorPicker(c, &form.colorState, &form.colorValue, m.FieldColor).RoundTrigger().TriggerIcon(&icons.Pipette).NoColor(empty).
 					PanelLabels(components.ColorPickerLabels{
 						Color: m.ColorPickerChoose, Saturation: m.ColorPickerSV, Hue: m.ColorPickerHue,
@@ -106,6 +116,9 @@ func (state *State) rememberHostColor(canvas *gfx.Canvas) {
 		if form.colorSwatchBoxes[index].Valid() {
 			state.rememberHostControl(hitHostColors.At(index), form.colorSwatchBoxes[index].Rect())
 		}
+	}
+	if form.randomColorBox.Valid() {
+		state.rememberHostControl(hitHostRandomColor, form.randomColorBox.Rect())
 	}
 	if !form.colorPickerBox.Valid() {
 		return
