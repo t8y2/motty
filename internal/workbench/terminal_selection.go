@@ -318,6 +318,11 @@ func (state *State) terminalPointer(session *Session, event gfx.PointerEvent) gf
 	linksEnabled := terminal.screen.Modes().Mouse == term.MouseOff && state.terminalLinkOpens(event.Modifiers)
 	switch event.Kind {
 	case gfx.PointerDown:
+		if event.Button == gfx.PointerButtonMiddle {
+			state.terminalMenu.open = false
+			state.pasteIntoTerminal(session)
+			return gfx.EventResult{Handled: true, Repaint: true}
+		}
 		if event.Button == gfx.PointerButtonSecondary {
 			if state.terminalRightClickPaste && event.Modifiers&gfx.ModifierShift == 0 && terminal.selection.selected {
 				// The Windows Terminal convention. Without copy-on-select the
