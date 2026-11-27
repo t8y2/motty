@@ -32,7 +32,7 @@ func (state *State) paintTerminalScrollbar(canvas *gfx.Canvas, session *Session,
 	session.term.pageIdentity(session.ID)
 	id := session.term.parts.At(terminalPartScrollbar)
 	bar := state.terminalScrollGeometry(session, geometry.area)
-	paintScrollbarBar(canvas, theme, bar, true, id, state.messages.Tools.ScrollbarLabel, "", true)
+	paintScrollbarBar(canvas, theme, bar, true, id, state.messages.Tools.ScrollbarLabel, "", true, false)
 }
 
 // terminalBarFade is how opaque the scrollbar is in this frame. The bar is lit

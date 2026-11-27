@@ -421,7 +421,7 @@ func (state *State) drawVerticalTabsScrollbar(d *ui.DrawContext) {
 	view.barGeometry = base.LayoutScrollArea(d.Rect, gfx.Size{Width: d.Rect.Width, Height: view.content},
 		base.ScrollAreaLayout{OffsetY: view.scroll, BarSize: scrollbarHoverSize})
 	paintScrollbarBar(d.Canvas, state.Theme(), view.barGeometry, true,
-		hitVerticalTabsBar, m.VerticalTabsScrollbar, "", view.over || view.barDrag)
+		hitVerticalTabsBar, m.VerticalTabsScrollbar, "", view.over || view.barDrag, false)
 }
 
 // drawVerticalTabsSeparator paints the line that parts the sidebar from the rest

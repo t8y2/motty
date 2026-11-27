@@ -8,8 +8,10 @@ import (
 // paintScrollbarBar paints a caller-owned bar from its pure geometry, exactly as
 // components.ScrollArea painted the same bar: the rounded thumb, the focus ring,
 // the hover and press tint, and the separator hit over the track. revealed false
-// leaves a hover bar unpainted and unhit, as the old HoverScrollbars did.
-func paintScrollbarBar(canvas *gfx.Canvas, theme gfx.Theme, geometry base.ScrollAreaGeometry, vertical bool, id gfx.ID, label, value string, revealed bool) {
+// leaves a hover bar unpainted and unhit, as the old HoverScrollbars did. hot is
+// the pointer on the bar as the caller tracks it, for a bar that moves under the
+// pointer before the canvas has found the hit it is about to declare.
+func paintScrollbarBar(canvas *gfx.Canvas, theme gfx.Theme, geometry base.ScrollAreaGeometry, vertical bool, id gfx.ID, label, value string, revealed, hot bool) {
 	if !revealed {
 		return
 	}
@@ -24,7 +26,7 @@ func paintScrollbarBar(canvas *gfx.Canvas, theme gfx.Theme, geometry base.Scroll
 		return
 	}
 	color := theme.Border
-	if canvas.Hovered() == id || canvas.Pressed() == id {
+	if hot || canvas.Hovered() == id || canvas.Pressed() == id {
 		color = theme.MutedForeground
 		color.Alpha *= 0.72
 	}

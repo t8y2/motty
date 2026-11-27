@@ -18,11 +18,20 @@ var (
 // would map to a thumb other than the one that was painted.
 const scrollbarHoverSize = float32(6)
 
+// windowBarTabsBarRestSize is the thickness the title bar's tab scrollbar keeps
+// while the pointer is only over the tabs. The full bar at rest would lie as a
+// light band across the bar's bottom edge, which reads as a rule rather than a
+// scrollbar when the tabs overflow by less than one tab and the thumb spans
+// nearly the whole track. It stays a hairline until the pointer reaches it or a
+// drag holds it, as desktop overlay scrollbars do.
+const windowBarTabsBarRestSize = float32(4)
+
 // windowBarScroll is the hover scrollbar under the title bar's tabs. The wheel
 // already scrolls them; the bar shows how far, and lets the pointer drag them
 // when there is no wheel to turn sideways.
 type windowBarScroll struct {
-	over     bool
+	over     bool // the pointer is over the tabs, so the bar is painted
+	near     bool // the pointer is on the bar itself, so it is at full thickness
 	dragging bool
 	grab     float32 // where along the thumb the pointer took it
 	geometry components.ScrollAreaGeometry
@@ -112,34 +121,56 @@ func (state *State) windowBarScrollBounds() gfx.Rect {
 	return gfx.Rect{X: strip.area.X, Width: strip.area.Width, Height: windowBarHeight}
 }
 
+// windowBarScrollLane is the strip along the bar's bottom edge that the pointer
+// has to reach for the bar to grow to its full thickness. It is the resting
+// bar's own track, so the bar grows exactly where the thin one lies.
+func (state *State) windowBarScrollLane() gfx.Rect {
+	bounds := state.windowBarScrollBounds()
+	if bounds.Width <= 0 {
+		return gfx.Rect{}
+	}
+	return gfx.Rect{
+		X: bounds.X, Y: bounds.Y + bounds.Height - windowBarTabsBarRestSize,
+		Width: bounds.Width, Height: windowBarTabsBarRestSize,
+	}
+}
+
 // paintWindowBarScrollbar paints the bar after the tabs, so it lies over them.
-// It paints, and can be hit, only while the pointer is over the tabs or drags it.
+// It paints, and can be hit, only while the pointer is over the tabs or drags
+// it, as a hairline until the pointer reaches the bar itself.
 func (state *State) paintWindowBarScrollbar(canvas *gfx.Canvas) {
 	view := &state.windowBarScroll
 	view.geometry = components.ScrollAreaGeometry{}
 	bounds := state.windowBarScrollBounds()
 	if bounds.Width <= 0 {
-		view.over, view.dragging = false, false
+		view.over, view.near, view.dragging = false, false, false
 		return
 	}
 	strip := state.windowBarStrip()
+	size, hot := windowBarTabsBarRestSize, false
+	if view.near || view.dragging {
+		size, hot = scrollbarHoverSize, true
+	}
 	view.geometry = base.LayoutScrollArea(bounds, gfx.Size{Width: bounds.Width + strip.max, Height: bounds.Height},
-		base.ScrollAreaLayout{OffsetX: strip.offset, BarSize: scrollbarHoverSize})
+		base.ScrollAreaLayout{OffsetX: strip.offset, BarSize: size})
 	paintScrollbarBar(canvas, state.Theme(), view.geometry, false,
-		hitWindowBarTabsBar, state.messages.TabStripScrollbar, "", view.over || view.dragging)
+		hitWindowBarTabsBar, state.messages.TabStripScrollbar, "", view.over || view.dragging, hot)
 }
 
-// trackWindowBarScroll records whether the pointer is over the title bar's tabs.
-// A captured move belongs to a press elsewhere and does not change it.
+// trackWindowBarScroll records whether the pointer is over the title bar's tabs
+// and whether it has reached the bar they scroll with. A captured move belongs
+// to a press elsewhere and does not change it; the release that ends that press
+// does, so a drag let go away from the bar does not leave it showing.
 func (state *State) trackWindowBarScroll(event gfx.PointerEvent) bool {
 	view := &state.windowBarScroll
-	if event.Captured {
+	if event.Captured && event.Kind != gfx.PointerUp {
 		return false
 	}
 	over := event.Kind != gfx.PointerExit && state.modal == modalNone && !state.tabMenu.open && !state.tabDrag.pressed &&
 		pointInRect(event.X, event.Y, state.windowBarScrollBounds())
-	changed := view.over != over
-	view.over = over
+	near := over && pointInRect(event.X, event.Y, state.windowBarScrollLane())
+	changed := view.over != over || view.near != near
+	view.over, view.near = over, near
 	return changed
 }
 

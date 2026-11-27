@@ -62,6 +62,69 @@ func TestTheTabsScrollbarAppearsOverTheTabsBottomEdgeOnHover(t *testing.T) {
 	}
 }
 
+// The bar is a hairline while the pointer is only over the tabs, and grows to
+// its full thickness once the pointer reaches it or a drag holds it. At rest it
+// would lie across the bar's bottom edge as a light band, which reads as a rule
+// when the tabs overflow by less than one tab.
+func TestTheTabsScrollbarThickensWhereThePointerReachesIt(t *testing.T) {
+	state, _ := manyTabs(t, 30)
+	strip := state.tabStrip.area
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: strip.X + 40, Y: windowBarHeight / 2, Viewport: windowBarTestSize})
+	hairline, ok := hitByID(paintWindowBar(state), hitWindowBarTabsBar)
+	if !ok {
+		t.Fatal("the overflowing tabs have no scrollbar")
+	}
+	if hairline.Bounds.Height != windowBarTabsBarRestSize {
+		t.Fatalf("the bar over the tabs is %v thick, want the %v hairline", hairline.Bounds.Height, windowBarTabsBarRestSize)
+	}
+	if hairline.Bounds.Y+hairline.Bounds.Height != windowBarHeight {
+		t.Fatalf("the hairline %+v left the title bar's bottom edge", hairline.Bounds)
+	}
+	thin := state.windowBarScroll.geometry.HorizontalThumb
+
+	// Reaching the bar grows it, without moving the thumb the drag maps from.
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: strip.X + 40, Y: windowBarHeight - 2, Viewport: windowBarTestSize})
+	full, ok := hitByID(paintWindowBar(state), hitWindowBarTabsBar)
+	if !ok || full.Bounds.Height != scrollbarHoverSize {
+		t.Fatalf("the bar under the pointer is %+v (%v), want %v thick", full.Bounds, ok, scrollbarHoverSize)
+	}
+	if full.Bounds.Y+full.Bounds.Height != windowBarHeight {
+		t.Fatalf("the thick bar %+v left the title bar's bottom edge", full.Bounds)
+	}
+	thick := state.windowBarScroll.geometry.HorizontalThumb
+	if thick.Height <= thin.Height {
+		t.Fatalf("the thumb did not grow with the bar: %v -> %v", thin.Height, thick.Height)
+	}
+	if thick.X != thin.X || thick.Width != thin.Width {
+		t.Fatalf("thickening moved the thumb the drag maps from: %+v -> %+v", thin, thick)
+	}
+
+	// Leaving the bar returns it to the hairline while the pointer stays on the tabs.
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: strip.X + 40, Y: windowBarHeight / 2, Viewport: windowBarTestSize})
+	if back, ok := hitByID(paintWindowBar(state), hitWindowBarTabsBar); !ok || back.Bounds.Height != windowBarTabsBarRestSize {
+		t.Fatalf("the bar away from the pointer is %+v (%v), want the %v hairline", back.Bounds, ok, windowBarTabsBarRestSize)
+	}
+
+	// A drag that starts on the bar keeps it thick, even with the pointer below it.
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: strip.X + 40, Y: windowBarHeight - 2, Viewport: windowBarTestSize})
+	at := gfx.Point{X: strip.X + 40, Y: windowBarHeight - 2}
+	if result := press(state, hitWindowBarTabsBar, at); !result.Handled {
+		t.Fatal("pressing the bar was not handled")
+	}
+	dragTo(state, hitWindowBarTabsBar, gfx.Point{X: at.X - 60, Y: 400})
+	if held, ok := hitByID(paintWindowBar(state), hitWindowBarTabsBar); !ok || held.Bounds.Height != scrollbarHoverSize {
+		t.Fatalf("the dragged bar is %+v (%v), want %v thick", held.Bounds, ok, scrollbarHoverSize)
+	}
+	release(state, hitWindowBarTabsBar, gfx.Point{X: at.X - 60, Y: 400})
+	if view := state.windowBarScroll; view.dragging {
+		t.Fatal("releasing the pointer did not end the drag")
+	}
+	// Let go away from the bar, it goes away with the pointer.
+	if _, ok := hitByID(paintWindowBar(state), hitWindowBarTabsBar); ok {
+		t.Fatal("the bar stayed after the drag was let go away from the tabs")
+	}
+}
+
 func TestDraggingTheTabsScrollbarScrollsTheTabs(t *testing.T) {
 	state, _ := manyTabs(t, 30)
 	hoverWindowBarTabs(t, state)
