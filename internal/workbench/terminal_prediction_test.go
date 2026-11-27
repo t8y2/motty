@@ -502,7 +502,7 @@ func TestTerminalPredictionKeepsTheGuessAcrossTabUntilTheCompletionArrives(t *te
 	if text, visible := visibleAt(&prediction, now); !visible || text != "de" {
 		t.Fatalf("guess before Tab = %q, visible=%v", text, visible)
 	}
-	prediction.tab()
+	prediction.seal()
 	if text, visible := visibleAt(&prediction, now); !visible || text != "de" {
 		t.Fatalf("Tab withdrew the guess ahead of its echoes: %q, visible=%v", text, visible)
 	}
@@ -517,5 +517,148 @@ func TestTerminalPredictionKeepsTheGuessAcrossTabUntilTheCompletionArrives(t *te
 	echoed(screen, &prediction, "efgh", now) // the echo and a completion longer than the guess
 	if _, visible := visibleAt(&prediction, now); visible {
 		t.Fatal("a completion left the guess on screen")
+	}
+}
+
+// Enter sent while the echoes of the typed command are still in flight must not
+// pull the shown command back to what the screen already holds; the echoes and
+// newline then replace and end the guess.
+func TestWorkbenchKeepsPredictedCommandAcrossEnterUntilEchoesArrive(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	advance := slowLink(state)
+
+	shell.say(folderSyncMarker(session, "A") + "root@vultr:~# " + folderSyncMarker(session, "B"))
+	state.Wake()
+
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "docker "})
+	advance(150 * time.Millisecond)
+	shell.say("docker ")
+	state.Wake()
+
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "ps"})
+	if _, texts := paintedTexts(state); !containsExact(texts, "ps") {
+		t.Fatalf("predicted suffix before Enter was not painted: %q", texts)
+	}
+
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
+	if _, texts := paintedTexts(state); !containsExact(texts, "ps") {
+		t.Fatalf("Enter withdrew the predicted text ahead of its echoes: %q", texts)
+	}
+
+	// Typing ahead on a proven prompt after Enter must neither withdraw the
+	// sealed command nor predict the next input on the submitted line.
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "l"})
+	if _, texts := paintedTexts(state); !containsExact(texts, "ps") || containsExact(texts, "psl") || containsExact(texts, "l") {
+		t.Fatalf("typeahead after Enter corrupted the sealed guess: %q", texts)
+	}
+
+	advance(150 * time.Millisecond)
+	shell.say("p")
+	state.Wake()
+	if _, texts := paintedTexts(state); !containsExact(texts, "s") {
+		t.Fatalf("partial echo after Enter did not shrink the sealed guess: %q", texts)
+	}
+
+	advance(50 * time.Millisecond)
+	shell.say("s")
+	state.Wake()
+	if _, _, _, predicting := session.term.prediction.overlay(state.now()); predicting {
+		t.Fatal("fully echoed sealed guess remained visible")
+	}
+
+	// Typeahead in the gap between the final echoed character and the remote
+	// newline must not be predicted onto the submitted command line.
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "x"})
+	if _, _, _, predicting := session.term.prediction.overlay(state.now()); predicting {
+		t.Fatal("input between final echo and newline was predicted on the submitted line")
+	}
+
+	shell.say("\r\n" + folderSyncMarker(session, "C") + "output\r\n")
+	state.Wake()
+	if !strings.Contains(screenText(state, 0), "root@vultr:~# docker ps") {
+		t.Fatalf("submitted command line = %q", screenText(state, 0))
+	}
+}
+
+// When the echo of a sealed command, its newline, and the shell's next prompt
+// arrive in a single output chunk, reconciling the moved cursor must not mark
+// the new prompt's proof as blocked.
+func TestWorkbenchSealedEnterAndNextPromptInOneBatchKeepsNextPromptProof(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	advance := slowLink(state)
+
+	shell.say(folderSyncMarker(session, "A") + "$ " + folderSyncMarker(session, "B"))
+	state.Wake()
+
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "ll"})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
+	if _, texts := paintedTexts(state); !containsExact(texts, "ll") {
+		t.Fatalf("Enter withdrew the predicted command: %q", texts)
+	}
+
+	advance(200 * time.Millisecond)
+	shell.say("ll\r\n" +
+		folderSyncMarker(session, "C") +
+		"total 0\r\n" +
+		folderSyncMarker(session, "D;0") +
+		folderSyncMarker(session, "A") + "$ " + folderSyncMarker(session, "B"))
+	state.Wake()
+
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "d"})
+	if _, texts := paintedTexts(state); !containsExact(texts, "d") {
+		t.Fatalf("next prompt lost its proof after a batched sealed Enter: %q", texts)
+	}
+}
+
+// A sealed guess must still expire if the server never echoes it, and other
+// control keys (such as Ctrl+C or Backspace) must still withdraw it at once.
+func TestTerminalPredictionSealedGuessExpiresAndYieldsToControlKeys(t *testing.T) {
+	screen := term.New(80, 24, 0)
+	screen.Write([]byte("$ "))
+	var prediction terminalPrediction
+	now := time.Second
+
+	prediction.input(screen, []byte("rm"), now, true, 0)
+	prediction.seal()
+	if text, visible := visibleAt(&prediction, now); !visible || text != "rm" {
+		t.Fatalf("sealed guess = %q, visible=%v", text, visible)
+	}
+	// Typeahead while proof is false must not drop a fresh sealed guess.
+	if prediction.input(screen, []byte("x"), now+50*time.Millisecond, false, 0) {
+		t.Fatal("typeahead against a fresh sealed guess reported a redraw")
+	}
+	if text, visible := visibleAt(&prediction, now+50*time.Millisecond); !visible || text != "rm" {
+		t.Fatalf("sealed guess after typeahead = %q, visible=%v", text, visible)
+	}
+
+	remaining, ok := prediction.expiry(now)
+	if !ok || remaining <= 0 {
+		t.Fatalf("sealed guess has no expiry: %v %v", remaining, ok)
+	}
+	expiredAt := now + remaining + time.Millisecond
+	if _, visible := visibleAt(&prediction, expiredAt); visible {
+		t.Fatal("sealed guess outlived its stale deadline")
+	}
+	prediction.input(screen, []byte("x"), expiredAt, false, 0)
+	if prediction.sealed || prediction.length != 0 {
+		t.Fatalf("stale sealed guess was not cleared on input: sealed=%v length=%d", prediction.sealed, prediction.length)
+	}
+
+	// Verify workbench control keys other than Tab/Enter still withdraw immediately.
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	shell.say(folderSyncMarker(session, "A") + "$ " + folderSyncMarker(session, "B"))
+	state.Wake()
+
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextInsert, Text: "sleep"})
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyEnter})
+	if _, texts := paintedTexts(state); !containsExact(texts, "sleep") {
+		t.Fatalf("Enter did not keep predicted command: %q", texts)
+	}
+	key(state, 0, gfx.KeyEvent{Key: gfx.KeyBackspace})
+	if _, texts := paintedTexts(state); containsExact(texts, "sleep") {
+		t.Fatalf("Backspace left a sealed guess on screen: %q", texts)
 	}
 }
