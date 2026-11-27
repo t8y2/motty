@@ -83,6 +83,7 @@ func (state *State) openTabMenuOn(canvas *gfx.Canvas, workspace layoutcore.Works
 	if _, ok := state.workspaceTab(workspace); !ok {
 		return
 	}
+	state.copyInfoProbe = copyInfoPasswordProbe{}
 	state.tabMenu = tabMenu{open: true, workspace: workspace, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }

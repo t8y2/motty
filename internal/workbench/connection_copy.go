@@ -70,6 +70,15 @@ func (state *State) hostPasswordSecretNameForCopy(host Host) (string, bool) {
 	return hostPasswordSecretName(host)
 }
 
+// copyInfoPasswordProbe caches one password-availability lookup while a single
+// tab or host context menu stays open, so repainting an open submenu does not
+// re-decrypt records or re-trigger an OS keystore prompt on every frame.
+type copyInfoPasswordProbe struct {
+	name      string
+	checked   bool
+	available bool
+}
+
 // hostPasswordAvailable reports whether host has a saved password that can be
 // copied (or a legacy master-password vault that must be unlocked first).
 func (state *State) hostPasswordAvailable(host Host) bool {
@@ -84,13 +93,13 @@ func (state *State) hostPasswordAvailable(host Host) bool {
 	if vaultFile.NeedsConversion() {
 		return true
 	}
-	value, found, err := vaultFile.Get(name)
-	if err != nil {
-		// Keep the row clickable so choosing it surfaces the vault error in the
-		// status line instead of silently appearing empty.
-		return true
+	if state.copyInfoProbe.checked && state.copyInfoProbe.name == name {
+		return state.copyInfoProbe.available
 	}
-	return found && value != ""
+	value, found, err := vaultFile.Get(name)
+	available := err != nil || (found && value != "")
+	state.copyInfoProbe = copyInfoPasswordProbe{name: name, checked: true, available: available}
+	return available
 }
 
 // hostKeyCredentialLabel names the private key configured on an SSH host, if a

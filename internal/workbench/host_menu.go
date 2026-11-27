@@ -72,6 +72,7 @@ func (state *State) openHostMenuOn(canvas *gfx.Canvas, id gfx.ID, host Host) {
 	}
 	state.selectedHostID = host.ID
 	state.hostBlankMenu.open = false
+	state.copyInfoProbe = copyInfoPasswordProbe{}
 	state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), newTab: id.Scope() == hitNewTabHostList, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }

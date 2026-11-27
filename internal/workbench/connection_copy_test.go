@@ -9,6 +9,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
+	"motty/internal/vault"
 )
 
 func openCopyInfoSubmenu(t testing.TB, state *State) *gfx.Canvas {
@@ -337,5 +338,54 @@ func TestCopyInfoSubmenuKeyboardNavigationAndLocalTab(t *testing.T) {
 		if row, ok := submenuRowByLabel(subCanvas, label); !ok || !row.Disabled {
 			t.Errorf("local tab %q: found=%v disabled=%v, want disabled", label, ok, row.Disabled)
 		}
+	}
+}
+
+type countingDeniedKeystore struct {
+	loads int
+	mem   *memKeys
+	deny  bool
+}
+
+func (k *countingDeniedKeystore) Load(service, account string) ([]byte, error) {
+	k.loads++
+	if k.deny {
+		return nil, vault.ErrKeystoreDenied
+	}
+	return k.mem.Load(service, account)
+}
+
+func (k *countingDeniedKeystore) Store(service, account string, secret []byte) error {
+	return k.mem.Store(service, account, secret)
+}
+
+func (k *countingDeniedKeystore) Delete(service, account string) error {
+	return k.mem.Delete(service, account)
+}
+
+// Painting an open Copy Info submenu repeatedly must probe the keystore at most
+// once per menu opening so a denied keystore never triggers a loop of OS prompts.
+func TestCopyInfoSubmenuProbesKeystoreAtMostOncePerOpen(t *testing.T) {
+	ks := &countingDeniedKeystore{mem: &memKeys{}}
+	options := testOptions(t)
+	options.Keystore = ks
+	state := newTestState(t, options)
+	target := state.hosts[1]
+	secretName, _ := hostPasswordSecretName(target)
+	if err := state.secrets.vault.Set(secretName, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	state.secrets.vault.DropKeyForTests()
+	ks.loads = 0
+	ks.deny = true
+
+	rightClickHost(state, target.ID)
+	openCopyInfoSubmenu(t, state)
+	for range 5 {
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	}
+	if ks.loads != 1 {
+		t.Fatalf("keystore Load calls across 6 submenu paints = %d, want 1", ks.loads)
 	}
 }
