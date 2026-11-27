@@ -5,7 +5,6 @@ package localshell
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
@@ -14,7 +13,8 @@ import (
 // Windows Terminal's OSC 9;9 carries a native path without URI escaping. Wrap
 // the existing prompt, only for recognized interactive shells. Never write a
 // startup command into a running terminal or modify a profile on disk.
-func integrateWindowsShell(config Config, program string) Config {
+// inheritedPrompt is the CMD prompt the shell's environment already has.
+func integrateWindowsShell(config Config, program, inheritedPrompt string) Config {
 	token := config.DirectoryToken
 	if token == "" || len(token) > 128 || len(config.Args) != 0 || strings.IndexFunc(token, func(r rune) bool {
 		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_')
@@ -28,7 +28,7 @@ func integrateWindowsShell(config Config, program string) Config {
 		// in Windows Terminal, and the integration runs after it.
 		config.Args = []string{"-NoExit", "-EncodedCommand", encodePowerShellCommand(script)}
 	case "cmd.exe":
-		prompt := os.Getenv("PROMPT")
+		prompt := inheritedPrompt
 		for _, entry := range config.Env {
 			if key, value, ok := strings.Cut(entry, "="); ok && strings.EqualFold(key, "PROMPT") {
 				prompt = value

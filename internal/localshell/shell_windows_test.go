@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 	"motty/internal/term"
 )
 
@@ -175,6 +177,33 @@ func TestConPTYCtrlCChild(t *testing.T) {
 	shell.Write([]byte("echo ctrlc-%OS%\r\n"))
 	untilWindows(t, shell, wakes, "ctrlc-Windows_NT")
 	fmt.Println("CTRL-C-CHILD-OK")
+}
+
+// A variable the user sets after the application started, as an installer does
+// when it adds its folder to Path, reaches the next local shell the way it
+// reaches a terminal opened from the desktop (issue #1702).
+func TestConPTYShellSeesUserVariablesSetAfterTheApplicationStarted(t *testing.T) {
+	key, err := registry.OpenKey(registry.CURRENT_USER, "Environment", registry.SET_VALUE)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("MOTTY_TEST_RELOAD_%d", os.Getpid())
+	value := "reloaded-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	if err := key.SetStringValue(name, value); err != nil {
+		key.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = key.DeleteValue(name)
+		key.Close()
+	})
+	if _, inherited := os.LookupEnv(name); inherited {
+		t.Fatal("the test process already has the variable")
+	}
+	shell, wakes := startWindows(t, Config{})
+	// The echoed command line holds the name, never the value.
+	shell.Write([]byte("echo [%" + name + "%]\r\n"))
+	untilWindows(t, shell, wakes, "["+value+"]")
 }
 
 func TestConPTYStartsInTheRequestedDirectory(t *testing.T) {

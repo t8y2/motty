@@ -77,13 +77,14 @@ func InstalledWSL(ctx context.Context) []Choice {
 }
 
 // prepareWSL turns a request for a WSL distribution into the wsl.exe command
-// that starts it: the program, and the Config to run it with.
-func prepareWSL(config Config, distro string) (string, Config, error) {
+// that starts it: the program, and the Config to run it with. inheritedWSLENV
+// is the WSLENV the shell's environment already has.
+func prepareWSL(config Config, distro, inheritedWSLENV string) (string, Config, error) {
 	exe := wslExecutable()
 	if exe == "" {
 		return "", config, errors.New("localshell: WSL is not installed")
 	}
-	program, args, env := wslLaunch(exe, config, distro, os.Getenv("WSLENV"))
+	program, args, env := wslLaunch(exe, config, distro, inheritedWSLENV)
 	config.Args = args
 	config.Env = append(append([]string(nil), config.Env...), env...)
 	// wsl.exe takes the folder as --cd or from the script; the Windows folder

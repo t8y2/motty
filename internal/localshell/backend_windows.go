@@ -46,13 +46,14 @@ func startBackend(config Config) (backend, error) {
 	if program == "" {
 		program = defaultShell()
 	}
+	environment := userEnvironment()
 	if distro, ok := WSLDistro(program); ok {
 		var err error
-		if program, config, err = prepareWSL(config, distro); err != nil {
+		if program, config, err = prepareWSL(config, distro, environmentValue(environment, "WSLENV")); err != nil {
 			return backend{}, err
 		}
 	} else {
-		config = integrateWindowsShell(config, program)
+		config = integrateWindowsShell(config, program, environmentValue(environment, "PROMPT"))
 	}
 
 	var inRead, inWrite, outRead, outWrite windows.Handle
@@ -115,8 +116,7 @@ func startBackend(config Config) (backend, error) {
 			return fail(err)
 		}
 	}
-	environment := append(os.Environ(), "TERM=xterm-256color", "COLORTERM=truecolor")
-	for _, entry := range config.Env {
+	for _, entry := range append([]string{"TERM=xterm-256color", "COLORTERM=truecolor"}, config.Env...) {
 		key, _, _ := strings.Cut(entry, "=")
 		// Windows environment names are case-insensitive. An overridden PROMPT
 		// must replace the inherited entry, rather than create ambiguous twins.
@@ -231,6 +231,37 @@ func defaultShell() string {
 		return comspec
 	}
 	return "cmd.exe"
+}
+
+// userEnvironment is the environment a program started from the desktop gets
+// now: the system's and the user's variables as the registry holds them at
+// this moment, which is also what a new tab gets in Windows Terminal. The
+// environment this process inherited is a snapshot from its own start, so a
+// folder an installer has since added to Path, or a variable set in System
+// Properties, would not reach a new local shell until the application
+// restarted (issue #1702). Rebuilding it for every shell is what lets a new
+// tab see them; a shell already running keeps its own, as anywhere else.
+// Should Windows not build the block, the inherited environment still works.
+func userEnvironment() []string {
+	var token windows.Token
+	if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE|windows.TOKEN_IMPERSONATE, &token); err == nil {
+		defer token.Close()
+		if environment, err := token.Environ(false); err == nil {
+			return environment
+		}
+	}
+	return os.Environ()
+}
+
+// environmentValue is the value of name in environment, compared without case
+// as Windows does, or empty when it is not set.
+func environmentValue(environment []string, name string) string {
+	for _, entry := range environment {
+		if key, value, ok := strings.Cut(entry, "="); ok && strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
 }
 
 // environmentBlock is the UTF-16, double-NUL-terminated block CreateProcess takes.

@@ -68,12 +68,12 @@ func TestWindowsShellReportsDirectoryAfterChangingIt(t *testing.T) {
 
 func TestWindowsIntegrationLeavesCommandsAndUnknownShellsUntouched(t *testing.T) {
 	for _, config := range []Config{{DirectoryToken: "bad';command"}, {DirectoryToken: "valid", Args: []string{"-Command", "echo test"}}, {}} {
-		actual := integrateWindowsShell(config, "pwsh.exe")
+		actual := integrateWindowsShell(config, "pwsh.exe", "")
 		if strings.Join(actual.Args, "|") != strings.Join(config.Args, "|") || len(actual.Env) != len(config.Env) {
 			t.Fatal("integration changed an explicit command or invalid configuration")
 		}
 	}
-	if config := integrateWindowsShell(Config{DirectoryToken: "valid"}, "other.exe"); len(config.Args) != 0 || len(config.Env) != 0 {
+	if config := integrateWindowsShell(Config{DirectoryToken: "valid"}, "other.exe", ""); len(config.Args) != 0 || len(config.Env) != 0 {
 		t.Fatal("integration modified an unknown shell")
 	}
 }
