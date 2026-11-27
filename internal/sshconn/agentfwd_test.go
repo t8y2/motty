@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,9 +27,38 @@ func startTestAgent(t *testing.T, comment string) {
 	t.Setenv("SSH_AUTH_SOCK", path)
 }
 
-// startAgent is startTestAgent without touching the environment: it returns the
-// socket and the public half of the key it holds.
+// testAgent is a real ssh-agent on a unix socket whose links the test can end,
+// the way a password manager closes a link that has been idle.
+type testAgent struct {
+	path   string
+	public ssh.PublicKey
+
+	mu    sync.Mutex
+	links []net.Conn
+}
+
+// closeLinks ends every link the agent accepted so far.
+func (local *testAgent) closeLinks() {
+	local.mu.Lock()
+	links := local.links
+	local.links = nil
+	local.mu.Unlock()
+	for _, link := range links {
+		link.Close()
+	}
+}
+
+// startAgent is startAgentServer without the handle that closes its links.
 func startAgent(t *testing.T, comment string) (string, ssh.PublicKey) {
+	t.Helper()
+	local := startAgentServer(t, comment)
+	return local.path, local.public
+}
+
+// startAgentServer is startTestAgent without touching the environment: it
+// returns the socket, the public half of the key it holds and the links it
+// accepted.
+func startAgentServer(t *testing.T, comment string) *testAgent {
 	t.Helper()
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -56,19 +86,23 @@ func startAgent(t *testing.T, comment string) (string, ssh.PublicKey) {
 		listener.Close()
 		os.RemoveAll(dir)
 	})
+	local := &testAgent{path: path, public: signer.PublicKey()}
 	go func() {
 		for {
 			connection, err := listener.Accept()
 			if err != nil {
 				return
 			}
+			local.mu.Lock()
+			local.links = append(local.links, connection)
+			local.mu.Unlock()
 			go func() {
 				defer connection.Close()
 				_ = agent.ServeAgent(keyring, connection)
 			}()
 		}
 	}()
-	return path, signer.PublicKey()
+	return local
 }
 
 // queryForwardedAgent opens the agent channel of a session that asked for
@@ -216,4 +250,65 @@ func TestAgentForwardingNotesMissingAgent(t *testing.T) {
 	if note := shell.AgentForwardNote(); note == "" {
 		t.Fatal("without a running agent the shell must carry a note")
 	}
+}
+
+// waitForwardedKey waits until the server's side of a shell has listed the
+// key of the local agent over a forwarded channel.
+func waitForwardedKey(t *testing.T, shell *fakeShell, comment string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		shell.mu.Lock()
+		comments := append([]string(nil), shell.agentComments...)
+		shell.mu.Unlock()
+		for _, got := range comments {
+			if got == comment {
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("the forwarded agent never listed %q", comment)
+}
+
+// 1Password closes an ssh-agent link that has been idle. A request forwarded
+// afterwards must reach the agent over a fresh link instead of failing on the
+// link an earlier shell opened.
+func TestAgentForwardingRedialsAfterTheAgentDropsIdleLinks(t *testing.T) {
+	local := startAgentServer(t, "idle-drop@e2e")
+	t.Setenv("SSH_AUTH_SOCK", local.path)
+	shells := make(chan *fakeShell, 4)
+	server := startServer(t, func(server *testServer) {
+		server.password = "pw"
+		server.agentForward = true
+		server.shell = func(shell *fakeShell) { shells <- shell }
+	})
+	harness := dial(t, server, nil)
+	harness.phase(PhaseHostKeyPrompt)
+	harness.conn.TrustHostKey(false)
+	harness.phase(PhasePasswordPrompt)
+	harness.conn.SubmitPassword("pw")
+	harness.phase(PhaseConnected)
+
+	open := func() *fakeShell {
+		t.Helper()
+		shell, err := harness.conn.OpenShell(ShellConfig{Cols: 80, Rows: 24, AgentForward: true})
+		if err != nil {
+			t.Fatalf("open shell: %v", err)
+		}
+		t.Cleanup(func() { shell.Close() })
+		select {
+		case remote := <-shells:
+			return remote
+		case <-time.After(5 * time.Second):
+			t.Fatal("the server never opened the shell")
+			return nil
+		}
+	}
+
+	first := open()
+	waitForwardedKey(t, first, "idle-drop@e2e")
+	local.closeLinks()
+	second := open()
+	waitForwardedKey(t, second, "idle-drop@e2e")
 }

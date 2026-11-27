@@ -369,9 +369,9 @@ type Conn struct {
 	x11client *ssh.Client
 	x11       *x11fwd.Hub
 
-	// agentClient is the local ssh-agent, dialed once for authentication and
-	// agent forwarding alike; agentForwardClient is the client whose
-	// "auth-agent@openssh.com" channels are already being served from it.
+	// agentClient is the local ssh-agent, dialed once for authentication;
+	// agentForwardClient is the client whose "auth-agent@openssh.com" channels
+	// are already being served, each over its own link to the agent.
 	agentmu            sync.Mutex
 	agentClient        agent.ExtendedAgent
 	agentForwardClient *ssh.Client

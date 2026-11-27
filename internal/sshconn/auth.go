@@ -672,8 +672,8 @@ func (identity *lockedIdentity) unlock() (ssh.Signer, error) {
 	return signer, nil
 }
 
-// agentSigners offers the keys of the running ssh-agent. The link is shared
-// with agent forwarding (see agentLink).
+// agentSigners offers the keys of the running ssh-agent, over the link the
+// connection keeps for authentication (see agentLink).
 func (conn *Conn) agentSigners() ([]ssh.Signer, error) {
 	client, err := conn.agentLink()
 	if err != nil {
