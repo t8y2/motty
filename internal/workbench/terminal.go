@@ -186,6 +186,10 @@ type terminal struct {
 	// wheelX and wheelY, so half a step in one pane does not complete in another.
 	zoomWheel float32
 
+	// gutterDigits is the high-water digit width reserved for this terminal's
+	// line numbers; see gutterNumberChars.
+	gutterDigits int
+
 	// preedit is the input-method composition, shown at the cursor.
 	preedit      app.TextState
 	inputGuard   terminalInputGuard
@@ -1740,17 +1744,22 @@ func (state *State) layoutForSession(sessionID uint32) terminalGeometry {
 // rectangle of the workbench page. The terminal pane is a component of the
 // window now, so its events and its Draw share these window coordinates.
 func (state *State) terminalWindowLayout(sessionID uint32) terminalGeometry {
+	var term *terminal
+	if session, ok := state.sessionByIDPointer(sessionID); ok {
+		term = session.term
+	}
+	pad := state.paddingFor(term)
 	chrome, sessionOK := state.terminalChromeForSession(sessionID)
 	if !sessionOK {
 		chrome = terminalChrome{top: infoBarHeight}
 	}
 	workspaceID, paneID, ok := state.deck.PaneForSession(layoutcore.SessionID(sessionID))
 	if !ok {
-		return terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
+		return terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, pad)
 	}
 	fraction, _, ok := state.paneFractionBounds(workspaceID, paneID)
 	if !ok {
-		return terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, state.padding())
+		return terminalLayoutWithChrome(state.viewport, state.cellWidth, state.cellHeight, chrome, pad)
 	}
 	bounds := pixelBounds(state.workspacePixelBoundsFor(workspaceID, state.viewport), fraction)
 	return terminalGeometryForArea(gfx.Rect{
@@ -1758,7 +1767,7 @@ func (state *State) terminalWindowLayout(sessionID uint32) terminalGeometry {
 		Y:      bounds.Y + chrome.top,
 		Width:  bounds.Width,
 		Height: max(bounds.Height-chrome.top, 0),
-	}, state.cellWidth, state.cellHeight, state.padding())
+	}, state.cellWidth, state.cellHeight, pad)
 }
 
 // fitTerminals gives every session's screen and pty the size the window now
@@ -1792,7 +1801,16 @@ func (state *State) fitTerminal(session *Session) {
 	}
 	t.prediction.reset()
 	t.sync = nil
-	t.screen.Resize(geometry.cols, geometry.rows)
+	// Reflow can push the line count past a power of ten and widen the gutter
+	// by one digit; converge before notifying the shell once.
+	for range gutterMaxNumberChars {
+		t.screen.Resize(geometry.cols, geometry.rows)
+		next := state.layoutForSession(session.ID)
+		if next.cols == geometry.cols && next.rows == geometry.rows {
+			break
+		}
+		geometry = next
+	}
 	if t.exec != nil {
 		// Reflow moves the lines above the cursor, so the command's block goes on
 		// from the line it last wrote; everything before that is already marked.
