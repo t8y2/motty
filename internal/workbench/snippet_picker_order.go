@@ -12,12 +12,12 @@ func (state *State) snippetPickerNeighbor(source, direction int) int {
 			break
 		}
 	}
-	if row < 0 || state.snippetSend.target == sendChosen {
+	if row < 0 || !state.snippets.pickerGrouped || state.snippetSend.target == sendChosen {
 		return -1
 	}
 	for at := row + direction; at >= 0 && at < len(palette.visible); at += direction {
 		index, ok := palette.entries[palette.visible[at]].target.In(hitSnippetSendList)
-		if ok && (!state.snippets.pickerGrouped || sameSnippetGroup(state.snippets.list[index].Group, state.snippets.list[source].Group)) {
+		if ok && sameSnippetGroup(state.snippets.list[index].Group, state.snippets.list[source].Group) {
 			return index
 		}
 	}
@@ -60,7 +60,7 @@ func (state *State) moveSnippetPicker(source, direction int) bool {
 
 func (state *State) snippetPickerOrderKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	palette := &state.commandPalette
-	if !palette.snippets || event.Release || event.Modifiers != gfx.ModifierAlt ||
+	if !palette.snippets || !state.snippets.pickerGrouped || event.Release || event.Modifiers != gfx.ModifierAlt ||
 		(event.Key != gfx.KeyUp && event.Key != gfx.KeyDown) || state.snippetSend.target == sendChosen {
 		return gfx.EventResult{}, false
 	}
@@ -75,8 +75,8 @@ func (state *State) snippetPickerOrderKey(event gfx.KeyEvent) (gfx.EventResult, 
 		}
 	}
 	focus := hitCommandPaletteSearch
-	if _, inItems := event.Target.In(hitCommandPaletteItems); inItems {
-		focus = hitCommandPaletteItems.At(palette.selected)
+	if _, inItems := palette.rowIndex(event.Target); inItems {
+		focus = palette.rowID(palette.selected)
 	}
 	return gfx.EventResult{Handled: true, Repaint: true, Focus: focus}, true
 }

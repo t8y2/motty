@@ -71,12 +71,16 @@ func (state *State) foldSnippetGroup(key string, expand bool) {
 		}
 	}
 	palette.scroll = min(max(scroll, 0), palette.maxScroll())
+	if palette.scrollState != nil {
+		palette.scrollState.ScrollTo(palette.scroll)
+	}
 }
 
 // rebuildSnippetPicker fills the palette with the snippets; choosing one sends it
 // like the palette's own snippet entries do. With none saved, the one row leads
 // to the Snippets page where one is added.
 func (state *State) rebuildSnippetPicker() {
+	state.commandPalette.treeMode = state.snippets.pickerGrouped && state.snippetSend.target != sendChosen
 	if state.snippetSend.target == sendChosen {
 		state.rebuildSendTargetPicker()
 		return
@@ -112,20 +116,28 @@ func (state *State) rebuildSnippetPicker() {
 		// With groups, the unfiltered list is a collapsible tree in pre-order,
 		// the ungrouped last; a search drops the headings and still matches
 		// every snippet and its full group path.
-		for _, group := range state.snippetPickerGroups() {
-			key := strings.ToLower(group)
-			depth := snippetGroupDepth(group)
-			if palette.groupAncestorsExpanded(group) {
-				header(snippetGroupLeaf(group), key, form.groupCounts[group], depth)
-			} else {
-				folded = true
-			}
-			for index := range form.list {
-				if sameSnippetGroup(form.list[index].Group, group) {
-					add(index, depth+1)
+		children := make(map[string][]string)
+		for _, group := range form.groups {
+			parent := strings.ToLower(snippetGroupParent(group))
+			children[parent] = append(children[parent], group)
+		}
+		var visit func(string)
+		visit = func(parent string) {
+			for _, group := range children[strings.ToLower(parent)] {
+				key, depth := strings.ToLower(group), snippetGroupDepth(group)
+				if palette.groupAncestorsExpanded(group) {
+					header(snippetGroupLeaf(group), key, form.groupCounts[group], depth)
+				}
+				visit(group)
+				folded = !palette.groupAncestorsExpanded(group) || !palette.groupExpanded(key)
+				for index := range form.list {
+					if sameSnippetGroup(form.list[index].Group, group) {
+						add(index, depth+1)
+					}
 				}
 			}
 		}
+		visit("")
 		if form.hasUngrouped {
 			count := 0
 			for index := range form.list {

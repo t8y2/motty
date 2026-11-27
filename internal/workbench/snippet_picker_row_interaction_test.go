@@ -14,7 +14,7 @@ func TestSnippetPickerWholeRowClickStillSendsCommand(t *testing.T) {
 	addTestSnippets(state, snippet{Name: "First", Command: "echo first"})
 	state.openSnippetPicker()
 	view := openPickerView(t, state, 1)
-	row := dualHit(t, view, hitCommandPaletteItems.At(0))
+	row := dualHit(t, view, state.commandPalette.rowID(0))
 	if err := view.Click(row.X+row.Width*0.8, row.Y+row.Height/2); err != nil {
 		t.Fatal(err)
 	}
@@ -29,7 +29,7 @@ func TestSnippetPickerWholeGroupRowClickStillExpands(t *testing.T) {
 	state.openSnippetPicker()
 	view := openPickerView(t, state, 1)
 	for _, want := range [][]string{{"#Ops", "First"}, {"#Ops"}} {
-		row := dualHit(t, view, hitCommandPaletteItems.At(0))
+		row := dualHit(t, view, state.commandPalette.rowID(0))
 		if err := view.Click(row.X+row.Width*0.8, row.Y+row.Height/2); err != nil {
 			t.Fatal(err)
 		}

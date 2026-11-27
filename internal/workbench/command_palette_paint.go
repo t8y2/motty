@@ -143,6 +143,8 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 			palette.listRect = gfx.Rect{}
 			palette.scrollState = nil
 			ui.Text(c, palette.emptyText).FontSize(metrics.FontSizeM).Color(state.pal.muted).LineHeight(24).TextCenter().MarginSides(36, 0, 0, 0)
+		} else if palette.usesSnippetTree() {
+			state.declareSnippetPickerTree(c)
 		} else {
 			// The list is the page's scroll area: the rows are page controls, and
 			// the bar beside them is the page's. The choice the keyboard made is
@@ -358,8 +360,14 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 // paintCommandPaletteListOver records the list's rectangle, which the wheel
 // resolves the row under the pointer with.
 func (state *State) paintCommandPaletteListOver(d *ui.DrawContext) {
-	state.commandPalette.listRect = d.Rect
-	state.paintSnippetPickerDrop(d)
+	palette := &state.commandPalette
+	palette.listRect = d.Rect
+	if palette.usesSnippetTree() {
+		first, last := palette.snippetTree.state.Visible()
+		for row := first; row <= last && row < len(palette.visible); row++ {
+			d.Canvas.HintSince(gfx.Mark{}, palette.rowID(row), palette.entries[palette.visible[row]].recencyHint)
+		}
+	}
 }
 
 // paintCommandPaletteChrome paints the parts the dialog body left for the page's

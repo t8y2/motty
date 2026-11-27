@@ -2,8 +2,6 @@ package workbench
 
 import (
 	"testing"
-
-	"github.com/vivaui/viva/text"
 )
 
 func TestSnippetPickerDragPersistsManualOrderWithoutSending(t *testing.T) {
@@ -11,15 +9,15 @@ func TestSnippetPickerDragPersistsManualOrderWithoutSending(t *testing.T) {
 	state := newTestState(t, options)
 	world.connectFirst(t, state)
 	shell := world.conns[0].shell(t)
-	addTestSnippets(state, snippet{Name: "First", Command: "one", Group: "git"},
-		snippet{Name: "Second", Command: "two", Group: "ai"}, snippet{Name: "Third", Command: "three", Group: "git"})
-	state.snippets.pickerGrouped = false
+	addTestSnippets(state, snippet{Name: "First", Command: "one", Group: ""},
+		snippet{Name: "Second", Command: "two", Group: ""}, snippet{Name: "Third", Command: "three", Group: ""})
+	state.snippets.pickerGrouped = true
 	state.snippets.filter = snippetFilter{group: "ai"}
 	state.refreshSnippets()
 	state.openSnippetPicker()
 	view := openPickerView(t, state, 1)
-	source := dualHit(t, view, hitCommandPaletteItems.At(2))
-	first := dualHit(t, view, hitCommandPaletteItems.At(0))
+	source := dualHit(t, view, state.commandPalette.rowID(2))
+	first := dualHit(t, view, state.commandPalette.rowID(0))
 	x := source.X + source.Width*0.75
 	if err := view.Press(x, source.Y+source.Height/2); err != nil {
 		t.Fatal(err)
@@ -43,19 +41,16 @@ func TestSnippetPickerDragPersistsManualOrderWithoutSending(t *testing.T) {
 	}
 }
 
-func TestSnippetPickerDragWithinGroupAndSearch(t *testing.T) {
+func TestSnippetPickerTreeDragWithinGroup(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	addTestSnippets(state, snippet{Name: "First", Command: "one", Group: "git"},
 		snippet{Name: "Other", Command: "two", Group: "ai"}, snippet{Name: "Last", Command: "three", Group: "git"})
 	state.snippets.pickerGrouped = true
 	state.openSnippetPicker()
 	state.foldSnippetGroup("git", true)
-	state.commandPalette.search = text.Editor{}
-	state.commandPalette.search.Insert("git")
-	state.refreshCommandPalette()
 	view := openPickerView(t, state, 1)
-	source := dualHit(t, view, hitCommandPaletteItems.At(1))
-	first := dualHit(t, view, hitCommandPaletteItems.At(0))
+	source := dualHit(t, view, state.commandPalette.rowID(3))
+	first := dualHit(t, view, state.commandPalette.rowID(2))
 	x := source.X + source.Width*0.75
 	if err := view.Press(x, source.Y+source.Height/2); err != nil {
 		t.Fatal(err)
@@ -66,10 +61,10 @@ func TestSnippetPickerDragWithinGroupAndSearch(t *testing.T) {
 	if err := view.Release(x, first.Y+2); err != nil {
 		t.Fatal(err)
 	}
-	if got := pickerShape(state); !sameShape(got, []string{"Last", "First"}) {
+	if got := pickerShape(state); !sameShape(got, []string{"#ai", "#git", "Last", "First"}) {
 		t.Fatalf("group search order: %v", got)
 	}
-	if state.commandPalette.search.String() != "git" || state.snippets.list[0].Group != "git" {
+	if state.commandPalette.search.String() != "" || state.snippets.list[0].Group != "git" {
 		t.Fatal("drag changed search or group")
 	}
 }

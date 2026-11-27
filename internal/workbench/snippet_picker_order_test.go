@@ -59,7 +59,7 @@ func TestSnippetPickerMenuMovesUsePickerOrder(t *testing.T) {
 		{0, state.messages.Tools.SnippetMoveDown, []string{"Second", "First"}},
 		{1, state.messages.Tools.SnippetMoveUp, []string{"First", "Second"}},
 	} {
-		row := dualHit(t, view, hitCommandPaletteItems.At(step.row))
+		row := dualHit(t, view, state.commandPalette.rowID(step.row))
 		if err := view.RightClick(row.X+80, row.Y+row.Height/2); err != nil {
 			t.Fatal(err)
 		}

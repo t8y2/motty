@@ -13,7 +13,7 @@ func TestSnippetPickerHoverShowsWholeCommand(t *testing.T) {
 	command := "echo " + strings.Repeat("preview-command ", 18) + "\necho command-end-marker"
 	addTestSnippets(state, snippet{Name: "Full command name", Command: command})
 	state.openSnippetPicker()
-	id := hitCommandPaletteItems.At(0)
+	var id gfx.ID
 	paint := func(hovered gfx.ID) *gfx.Canvas {
 		var canvas gfx.Canvas
 		canvas.SetClock(func() time.Duration { return time.Second })
@@ -23,6 +23,8 @@ func TestSnippetPickerHoverShowsWholeCommand(t *testing.T) {
 		canvas.EndFrame()
 		return &canvas
 	}
+	paint(gfx.ID{})
+	id = state.commandPalette.rowID(0)
 	canvas := paint(id)
 	hit, ok := hitByID(canvas, id)
 	if !ok || hit.Hint != "Full command name\n"+command {

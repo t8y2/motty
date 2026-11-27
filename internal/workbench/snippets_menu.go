@@ -101,7 +101,7 @@ func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 	if state.snippetMenu.fromPicker {
 		neighbor = state.snippetPickerNeighbor
 	}
-	if moves {
+	if moves && (!state.snippetMenu.fromPicker || state.snippets.pickerGrouped) {
 		rows.separate()
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: neighbor(state.snippetMenu.index, -1) < 0})
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: neighbor(state.snippetMenu.index, 1) < 0})

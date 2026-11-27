@@ -117,7 +117,7 @@ func TestCommandBarSwitchIsClickableChrome(t *testing.T) {
 		t.Fatalf("the visible bar's switch is role=%v checked=%v", hit.Role, hit.Checked)
 	}
 	search, hasSearch := hitByIDSnapshot(view.Snapshot().Hits, hitCommandPaletteSearch)
-	first, hasFirst := hitByIDSnapshot(view.Snapshot().Hits, hitCommandPaletteItems.At(0))
+	first, hasFirst := hitByIDSnapshot(view.Snapshot().Hits, state.commandPalette.rowID(0))
 	if hasSearch && hit.Bounds.Y >= search.Bounds.Y || hasFirst && hit.Bounds.Y >= first.Bounds.Y {
 		t.Fatal("the bar checkbox was not above the search field and the list")
 	}
@@ -179,7 +179,7 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			}
 			last := palette.maxScroll()
 
-			rows := dualHit(t, view, hitCommandPaletteItems.At(0))
+			rows := dualHit(t, view, state.commandPalette.rowID(0))
 			if err := view.Move(rows.X+40, rows.Y+rows.Height/2); err != nil {
 				t.Fatal(err)
 			}
@@ -212,7 +212,7 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 				t.Fatal(err)
 			}
 			// Released, the rows answer the pointer again.
-			second := dualHit(t, view, hitCommandPaletteItems.At(int(palette.scroll/commandPaletteRowStep)+3))
+			second := dualHit(t, view, state.commandPalette.rowID(int(palette.scroll/commandPaletteRowStep)+3))
 			if err := view.Move(second.X+40, second.Y+second.Height/2); err != nil {
 				t.Fatal(err)
 			}

@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/ui"
 )
 
 func (state *State) openSnippetPickerMenuOn(canvas *gfx.Canvas, id gfx.ID, entry commandPaletteEntry) {
@@ -35,15 +34,4 @@ func (state *State) openSnippetPickerMenuOn(canvas *gfx.Canvas, id gfx.ID, entry
 	state.snippetMenu = snippetMenu{open: true, fromPicker: true, index: index,
 		name: state.snippets.list[index].Name, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
-}
-
-func (state *State) paintSnippetPickerDrop(d *ui.DrawContext) {
-	palette := &state.commandPalette
-	drag := &palette.snippetDrag
-	if !drag.active || !drag.moved || !drag.valid {
-		return
-	}
-	y := d.Rect.Y + float32(drag.row)*commandPaletteRowStep - palette.scroll
-	y = min(max(y, d.Rect.Y), d.Rect.Y+d.Rect.Height-2)
-	d.Canvas.Rounded(gfx.Rect{X: d.Rect.X, Y: y, Width: palette.bodyWidth, Height: 2}, 1, state.pal.accent)
 }

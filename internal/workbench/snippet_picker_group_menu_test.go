@@ -25,7 +25,7 @@ func clickPickerGroupAction(t *testing.T, state *State, group string, action gfx
 	if row < 0 {
 		t.Fatalf("group %q not visible", group)
 	}
-	bounds := dualHit(t, view, hitCommandPaletteItems.At(row))
+	bounds := dualHit(t, view, state.commandPalette.rowID(row))
 	if err := view.RightClick(bounds.X+80, bounds.Y+bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestSnippetPickerGroupMenuCreatesVisibleEmptyChild(t *testing.T) {
 	state.snippetGroups.editor = text.Editor{}
 	state.snippetGroups.editor.Insert("Ops/Empty")
 	state.Click(hitSnippetGroupRenameSubmit)
-	if state.modal != modalCommandPalette || !sameShape(pickerShape(state), []string{"#Ops", "First", "#Empty"}) {
+	if state.modal != modalCommandPalette || !sameShape(pickerShape(state), []string{"#Ops", "#Empty", "First"}) {
 		t.Fatalf("new child not visible: %v", pickerShape(state))
 	}
 	restored := newTestState(t, options)

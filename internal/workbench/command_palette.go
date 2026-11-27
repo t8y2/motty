@@ -89,7 +89,8 @@ type commandPalette struct {
 	// It starts empty, so every group begins closed and a search is what looks
 	// inside them.
 	expandedGroups []string
-	snippetDrag    snippetPickerDrag
+	snippetTree    snippetPickerTree
+	treeMode       bool
 	returnToPicker bool
 	// ctx is the workbench page's declaration context of the last paint; body
 	// declares the dialog into it, kept so a paint makes no closure.
@@ -129,7 +130,7 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
-	state.commandPalette.snippetDrag = snippetPickerDrag{}
+	state.commandPalette.snippetTree = snippetPickerTree{}
 	state.commandPalette.returnToPicker = false
 	if state.snippets.folderMenu.fromPicker {
 		state.snippets.folderMenu.open = false
@@ -334,6 +335,9 @@ const commandPaletteRowStep float32 = commandPaletteRowPitch
 const commandPaletteListHeight float32 = commandPaletteVisibleRows*commandPaletteRowStep - 4
 
 func (palette *commandPalette) contentHeight() float32 {
+	if palette.usesSnippetTree() {
+		return float32(len(palette.visible)) * commandPaletteRowStep
+	}
 	return max(0, float32(len(palette.visible))*commandPaletteRowStep-4)
 }
 
@@ -443,14 +447,11 @@ func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResu
 		return gfx.EventResult{}, false
 	}
 	palette := &state.commandPalette
-	if result := state.snippetPickerDragPointer(event); result.Handled {
-		return result, true
-	}
 	// WindowConfig gives the page's controls, the sort switch, the list's own
 	// scrollbar and the dialog's backdrop and close button their presses first.
 	// The identities this file names by hand are the rows, so those presses
 	// reach the gesture below.
-	visible, ok := event.Target.In(hitCommandPaletteItems)
+	visible, ok := palette.rowIndex(event.Target)
 	if !ok {
 		return gfx.EventResult{}, false
 	}
@@ -507,7 +508,10 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		}
 	}
 	inSearch := event.Target == hitCommandPaletteSearch
-	_, inItems := event.Target.In(hitCommandPaletteItems)
+	focusedRow, inItems := palette.rowIndex(event.Target)
+	if inItems && palette.usesSnippetTree() {
+		palette.selected = focusedRow
+	}
 	if !inSearch && !inItems {
 		return gfx.EventResult{}, false
 	}
@@ -544,7 +548,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			if first < 0 {
 				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(first), FocusVisible: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: palette.rowID(first), FocusVisible: true}, true
 		}
 		switch event.Key {
 		case gfx.KeyRight:
@@ -583,7 +587,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		}
 		return gfx.EventResult{
 			Handled: true, Repaint: true,
-			Focus: hitCommandPaletteItems.At(palette.selected), FocusVisible: true,
+			Focus: palette.rowID(palette.selected), FocusVisible: true,
 		}, true
 	}
 	switch event.Key {

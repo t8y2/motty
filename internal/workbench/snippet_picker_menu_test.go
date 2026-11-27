@@ -14,7 +14,7 @@ func TestSnippetPickerRightClickEditsInlineAndPersists(t *testing.T) {
 	state.commandPalette.search.Insert("Second")
 	state.refreshCommandPalette()
 	view := openPickerView(t, state, 1)
-	row := dualHit(t, view, hitCommandPaletteItems.At(0))
+	row := dualHit(t, view, state.commandPalette.rowID(0))
 	if err := view.RightClick(row.X+80, row.Y+row.Height/2); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestSnippetPickerRightClickDeletesAndReturnsToList(t *testing.T) {
 	state.focusInlineSnippet(0)
 	state.openSnippetPicker()
 	view := openPickerView(t, state, 1)
-	row := dualHit(t, view, hitCommandPaletteItems.At(0))
+	row := dualHit(t, view, state.commandPalette.rowID(0))
 	if err := view.RightClick(row.X+80, row.Y+row.Height/2); err != nil {
 		t.Fatal(err)
 	}
