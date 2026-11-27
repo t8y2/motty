@@ -357,6 +357,26 @@ func (state *State) bulkAuthDuplicate(updated map[uint32]Host) bool {
 	return false
 }
 
+func (state *State) bulkForwardUser(forward forwardRecord, updated map[uint32]Host) (string, bool) {
+	var user, login string
+	matched := false
+	for _, host := range state.hosts {
+		if !forward.matchesHost(host) {
+			continue
+		}
+		candidate, changed := updated[host.ID]
+		if !changed || candidate.User == host.User {
+			return "", false
+		}
+		nextLogin := state.login(candidate)
+		if matched && (candidate.User != user || nextLogin != login) {
+			return "", false
+		}
+		user, login, matched = candidate.User, nextLogin, true
+	}
+	return user, matched
+}
+
 func (state *State) confirmBulkHostPassword() {
 	batch, m := &state.bulkPassword, state.messages
 	if batch.review == nil {
@@ -380,9 +400,10 @@ func (state *State) confirmBulkHostPassword() {
 			return nil
 		}
 		previousForwards := slices.Clone(state.forwards)
-		for _, host := range previousHosts {
-			if candidate, ok := plan.updated[host.ID]; ok && host.User != candidate.User {
-				state.updateHostForwardEndpoints(host, candidate)
+		for index := range state.forwards {
+			forward := &state.forwards[index]
+			if user, ok := state.bulkForwardUser(*forward, plan.updated); ok {
+				forward.HostUser = user
 			}
 		}
 		for index, host := range state.hosts {

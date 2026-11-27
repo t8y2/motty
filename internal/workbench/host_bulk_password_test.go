@@ -661,17 +661,26 @@ func TestBulkAuthenticationRefusesBlockedConfigurationBeforeWritingSecrets(t *te
 
 func TestBulkAuthenticationPersistsTheForwardWithTheNewLogin(t *testing.T) {
 	for _, test := range []struct {
-		name, wantForwardUser string
-		shared                bool
+		name, newUser, wantForwardUser string
+		shared, selectBoth, split      bool
 	}{
-		{name: "owned endpoint", wantForwardUser: "new-user"},
-		{name: "shared endpoint", wantForwardUser: "deploy", shared: true},
+		{name: "owned endpoint", newUser: "new-user", wantForwardUser: "new-user"},
+		{name: "shared endpoint", newUser: "new-user", wantForwardUser: "deploy", shared: true},
+		{name: "shared endpoint moves together", newUser: "new-user", wantForwardUser: "new-user", shared: true, selectBoth: true},
+		{name: "shared endpoint splits", wantForwardUser: "deploy", shared: true, selectBoth: true, split: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			state := newTestState(t, testOptions(t))
 			host := state.hosts[0]
 			if test.shared {
 				state.hosts[1].Address, state.hosts[1].User, state.hosts[1].Port = host.Address, host.User, host.Port
+			}
+			if test.split {
+				state.credentials = []credential{
+					{ID: "first-login", Name: "Production Login", User: "ops"},
+					{ID: "second-login", Name: "Staging Login", User: "ci"},
+				}
+				state.hosts[0].Credential, state.hosts[1].Credential = "first-login", "second-login"
 			}
 			state.restoreForwards([]savedForward{{
 				ID: 1, Label: "Web", HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
@@ -681,16 +690,19 @@ func TestBulkAuthenticationPersistsTheForwardWithTheNewLogin(t *testing.T) {
 				t.Fatal(err)
 			}
 			state.Click(hitHostCheckList.At(int(host.ID)))
+			if test.selectBoth {
+				state.Click(hitHostCheckList.At(int(state.hosts[1].ID)))
+			}
 			state.Click(hitBulkHostPassword)
 			state.Click(hitBulkApplyUser)
-			typeInto(state, hitBulkUserField, "new-user")
+			typeInto(state, hitBulkUserField, test.newUser)
 			reviewAndSaveBulkAuth(state)
 			if state.modal != modalNone || len(state.forwards) != 1 || state.forwards[0].HostUser != test.wantForwardUser {
 				t.Fatalf("unexpected live forward after save: %+v, error=%q", state.forwards, state.dialogError)
 			}
 			restarted := newTestState(t, state.options)
-			if restarted.hosts[0].User != "new-user" {
-				t.Fatal("batch edit did not persist the host's new login")
+			if restarted.hosts[0].User != test.newUser || test.selectBoth && restarted.hosts[1].User != test.newUser {
+				t.Fatal("batch edit did not persist the selected hosts' new logins")
 			}
 			if len(restarted.forwards) != 1 || restarted.forwards[0].HostUser != test.wantForwardUser {
 				t.Fatalf("restored forward = %+v, want endpoint user %q", restarted.forwards, test.wantForwardUser)

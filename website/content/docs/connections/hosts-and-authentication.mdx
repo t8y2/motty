@@ -184,6 +184,10 @@ Nothing is written until you choose **Save changes**. Returned save errors
 trigger rollback; a crash or power loss can interrupt it. There is no undo
 after a successful save. Remote servers' passwords never change.
 
+A port forward follows a batch username change only if all hosts at its old
+endpoint move to the same login. If any still uses that endpoint or moves to a
+different login, the forward stays put; you can change it in **Port Forwarding**.
+
 ## Syncing with your SSH config
 
 Importing reads a file once. To keep `~/.ssh/config` and Motty in step both ways,
