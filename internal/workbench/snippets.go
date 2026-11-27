@@ -115,12 +115,12 @@ type snippetsUI struct {
 
 	// The page's group state: the groups there are, how many snippets each
 	// names, and the list indices visible under the active filter/search.
-	customGroups []string
-	groups       []string
-	groupCounts  map[string]int
-	hasUngrouped bool
-	visible      []int
-	filter       snippetFilter
+	customGroups  []string
+	groups        []string
+	groupCounts   map[string]int
+	hasUngrouped  bool
+	visible       []int
+	filter        snippetFilter
 	pickerGrouped bool
 
 	// The page: the selected snippet and the count under the tree.

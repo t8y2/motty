@@ -106,7 +106,7 @@ func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: neighbor(state.snippetMenu.index, 1) < 0})
 	}
 	rows.separate()
-	if !moves {
+	if !moves || state.snippetMenu.fromPicker {
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuEdit, Label: m.SnippetEdit, Icon: icon(iconPencil)})
 	}
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuDelete, Label: m.SnippetDelete, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})

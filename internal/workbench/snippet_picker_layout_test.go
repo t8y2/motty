@@ -22,7 +22,7 @@ func TestSnippetPickerFlatOrderFollowsManualOrder(t *testing.T) {
 		t.Fatalf("default order = %v", got)
 	}
 	state.closeCommandPalette()
-	if !state.moveSnippetTo(2, 0) {
+	if !state.moveSnippetInOrder(2, 0) {
 		t.Fatal("manual move failed")
 	}
 	state.openSnippetPicker()

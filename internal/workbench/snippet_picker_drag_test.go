@@ -3,7 +3,6 @@ package workbench
 import (
 	"testing"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/text"
 )
 
@@ -16,7 +15,6 @@ func TestSnippetPickerDragPersistsManualOrderWithoutSending(t *testing.T) {
 		snippet{Name: "Second", Command: "two", Group: "ai"}, snippet{Name: "Third", Command: "three", Group: "git"})
 	state.snippets.pickerGrouped = false
 	state.snippets.filter = snippetFilter{group: "ai"}
-	state.snippets.sort = components.TableSortState{Column: 0, Direction: components.TableSortAscending}
 	state.refreshSnippets()
 	state.openSnippetPicker()
 	view := openPickerView(t, state, 1)
