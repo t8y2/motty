@@ -361,24 +361,142 @@ func TestOpenDoesNotBlockReceiveLoopWhileInputOpens(t *testing.T) {
 	}
 }
 
-func TestShortAndMalformedPDUsDoNotPanic(t *testing.T) {
-	cap := &capture{}
-	h := NewHandler(cap.send, func(uint32, uint16, uint32) (io.ReadCloser, error) {
-		return newFakeReader(), nil
-	}, nil)
-	for _, pdu := range [][]byte{
-		nil,
-		{msgVersion},
-		{msgVersion, 1, 2},
-		{msgFormats},
-		{msgFormats, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0},
-		{msgOpen},
-		{msgOpen, 0, 0, 0, 0, 99, 0, 0, 0},
-		{msgFormatChange},
-		{msgFormatChange, 99, 0, 0, 0},
-		{0x7f, 1, 2, 3},
-	} {
+func TestProcessPDUUnpackingAndMalformedInputs(t *testing.T) {
+	t.Run("truncated fixed headers send no reply", func(t *testing.T) {
+		cap := &capture{}
+		h := NewHandler(cap.send, func(uint32, uint16, uint32) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(nil)), nil
+		}, nil)
+		defer h.Close()
+
+		for n := range 4 {
+			h.ProcessPDU(append([]byte{msgVersion}, make([]byte, n)...))
+		}
+		for n := range 8 {
+			h.ProcessPDU(append([]byte{msgFormats}, make([]byte, n)...))
+		}
+		for n := range 8 {
+			h.ProcessPDU(append([]byte{msgOpen}, make([]byte, n)...))
+		}
+		for n := range 4 {
+			h.ProcessPDU(append([]byte{msgFormatChange}, make([]byte, n)...))
+		}
+		h.ProcessPDU(nil)
+		h.ProcessPDU([]byte{0x7f, 1, 2, 3})
+
+		if sent := cap.sent(); len(sent) != 0 {
+			t.Fatalf("truncated/unknown PDUs sent %d replies, want 0: %v", len(sent), sent)
+		}
+	})
+
+	t.Run("formats extra bytes and trailing truncation preserve earlier valid formats", func(t *testing.T) {
+		cap := &capture{}
+		h := NewHandler(cap.send, func(uint32, uint16, uint32) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(nil)), nil
+		}, nil)
+		defer h.Close()
+
+		// Format 0: non-PCM with 6 extra bytes (must advance offset cleanly).
+		f0 := audioFormat{Tag: 0x0002, Channels: 2, SampleRate: 44100, BitsPerSample: 4, BlockAlign: 1024, Extra: []byte{1, 2, 3, 4, 5, 6}}
+		// Format 1: valid 16-bit PCM with BlockAlign=0 (normalized to Channels*2).
+		f1 := audioFormat{Tag: waveFormatPCM, Channels: 2, SampleRate: 48000, BitsPerSample: 16, BlockAlign: 0}
+		// Format 2: invalid BlockAlign / channels / sample rate (filtered out).
+		f2 := audioFormat{Tag: waveFormatPCM, Channels: 2, SampleRate: 48000, BitsPerSample: 16, BlockAlign: 8}
+		f3 := audioFormat{Tag: waveFormatPCM, Channels: 3, SampleRate: 48000, BitsPerSample: 16, BlockAlign: 6}
+		f4 := audioFormat{Tag: waveFormatPCM, Channels: 1, SampleRate: 4000, BitsPerSample: 16, BlockAlign: 2}
+		// Format 5: valid PCM followed by a truncated trailing format header.
+		f5 := pcmFormat(16000, 1)
+
+		pdu := serverFormatsPDU(f0, f1, f2, f3, f4, f5)
+		// Claim 0xFFFFFFFF formats and append a partial 10-byte format header.
+		binary.LittleEndian.PutUint32(pdu[1:5], 0xffffffff)
+		pdu = append(pdu, make([]byte, 10)...)
+
 		h.ProcessPDU(pdu)
-	}
-	h.Close()
+		sent := cap.sent()
+		if len(sent) != 2 || sent[0][0] != msgDataIncoming || sent[1][0] != msgFormats {
+			t.Fatalf("sent = %v, want DATA_INCOMING + FORMATS", sent)
+		}
+		if got := binary.LittleEndian.Uint32(sent[1][1:5]); got != 2 {
+			t.Fatalf("accepted formats = %d, want 2", got)
+		}
+
+		// Overflowing cbSize in extra data stops parsing cleanly without panic.
+		cap.clear()
+		badExtra := serverFormatsPDU(pcmFormat(44100, 1), pcmFormat(16000, 1))
+		// Corrupt cbSize of second format to 500 bytes (past end of PDU).
+		binary.LittleEndian.PutUint16(badExtra[9+audioFormatFixed+16:], 500)
+		h.ProcessPDU(badExtra)
+		sent = cap.sent()
+		if len(sent) != 2 || binary.LittleEndian.Uint32(sent[1][1:5]) != 1 {
+			t.Fatalf("badExtra accepted = %v, want 1 format", sent)
+		}
+	})
+
+	t.Run("open and format change bounds and extreme framesPerPacket", func(t *testing.T) {
+		cap := &capture{}
+		var gotFrames []uint32
+		var mu sync.Mutex
+		h := NewHandler(cap.send, func(_ uint32, _ uint16, frames uint32) (io.ReadCloser, error) {
+			mu.Lock()
+			gotFrames = append(gotFrames, frames)
+			mu.Unlock()
+			return io.NopCloser(bytes.NewReader(nil)), nil
+		}, nil)
+		defer h.Close()
+
+		h.ProcessPDU(serverFormatsPDU(pcmFormat(48000, 2)))
+		cap.clear()
+
+		// Out-of-range uint32 index (including 0xFFFFFFFF) replies E_FAIL.
+		h.ProcessPDU(serverOpenPDU(480, 0xffffffff))
+		if sent := cap.sent(); len(sent) != 1 || sent[0][0] != msgOpenReply || binary.LittleEndian.Uint32(sent[0][1:5]) != hresultFail {
+			t.Fatalf("sent = %v, want OPEN_REPLY(E_FAIL)", sent)
+		}
+
+		// Out-of-range format change is ignored without panic.
+		cap.clear()
+		h.ProcessPDU(serverFormatChangePDU(0xffffffff))
+		if sent := cap.sent(); len(sent) != 0 {
+			t.Fatalf("invalid format change sent %v, want none", sent)
+		}
+
+		// framesPerPacket = 0 falls back to 10ms (480 frames at 48kHz).
+		h.ProcessPDU(serverOpenPDU(0, 0))
+		eventually(t, "open with 0 framesPerPacket", func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(gotFrames) >= 1
+		})
+		// framesPerPacket = 0xFFFFFFFF is clamped to 1s (48000 frames at 48kHz).
+		h.ProcessPDU(serverOpenPDU(0xffffffff, 0))
+		eventually(t, "open with max framesPerPacket", func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return len(gotFrames) >= 2
+		})
+
+		mu.Lock()
+		defer mu.Unlock()
+		if gotFrames[0] != 480 || gotFrames[1] != 48000 {
+			t.Fatalf("clamped framesPerPacket = %v, want [480 48000]", gotFrames)
+		}
+	})
+}
+
+func FuzzProcessPDU(f *testing.F) {
+	f.Add(serverVersionPDU(2), serverFormatsPDU(pcmFormat(48000, 2)), serverOpenPDU(480, 0))
+	f.Add(serverFormatsPDU(pcmFormat(16000, 1)), serverOpenPDU(0, 0), serverFormatChangePDU(0))
+	f.Add([]byte{msgFormats, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0}, []byte{msgOpen, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff}, []byte{msgFormatChange, 1, 2})
+
+	f.Fuzz(func(t *testing.T, pdu1, pdu2, pdu3 []byte) {
+		h := NewHandler(func([]byte) error { return nil }, func(uint32, uint16, uint32) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(nil)), nil
+		}, nil)
+		h.ProcessPDU(pdu1)
+		h.ProcessPDU(pdu2)
+		h.ProcessPDU(pdu3)
+		h.Reset()
+		h.Close()
+	})
 }

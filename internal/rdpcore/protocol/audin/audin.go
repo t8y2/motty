@@ -281,7 +281,7 @@ func (h *Handler) handleOpen(body []byte) {
 		h.mu.Unlock()
 		return
 	}
-	if int(formatIdx) >= len(h.clientFormats) || h.input == nil {
+	if formatIdx >= uint32(len(h.clientFormats)) || h.input == nil {
 		h.mu.Unlock()
 		h.log.Warn("audin: invalid open request", "formatIdx", formatIdx)
 		h.sendOpenReply(hresultFail)
@@ -312,7 +312,7 @@ func (h *Handler) handleFormatChange(body []byte) {
 		h.mu.Unlock()
 		return
 	}
-	if int(formatIdx) >= len(h.clientFormats) || h.input == nil {
+	if formatIdx >= uint32(len(h.clientFormats)) || h.input == nil {
 		h.mu.Unlock()
 		h.log.Warn("audin: invalid format change index", "formatIdx", formatIdx)
 		return
