@@ -30,8 +30,7 @@ Shift+right-click to open Motty's menu in that mode.
 On Windows, a menu takes keyboard focus while the terminal keeps its input
 method context and uncommitted text. Motty asks Viva to capture menu keys
 before character translation and handles the two letters before the menu
-searches its rows by name. A held key stays with the menu through its release,
-even when its first press closes the menu.
+searches its rows by name.
 
 On macOS and Linux, the input method may consume a key before Motty receives
 a key press. If this happens, click the menu item to copy or send the selection.
