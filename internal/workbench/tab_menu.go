@@ -22,9 +22,7 @@ var (
 	hitTabMenuBrowserClose  = tree.ID(tabMenuHits, "tab-menu-close-ssh-browser")
 	hitTabMenuEditHost      = tree.ID(tabMenuHits, "tab-menu-edit-host")
 	hitTabMenuNewWindow     = tree.ID(tabMenuHits, "tab-menu-new-window")
-	hitTabMenuCopyHost      = tree.ID(tabMenuHits, "tab-menu-copy-host")
-	hitTabMenuCopyAddress   = tree.ID(tabMenuHits, "tab-menu-copy-address")
-	hitTabMenuCopyName      = tree.ID(tabMenuHits, "tab-menu-copy-name")
+	hitTabMenuCopyInfo      = tree.ID(tabMenuHits, "tab-menu-copy-info")
 	hitTabMenuReconnect     = tree.ID(tabMenuHits, "tab-menu-reconnect")
 	hitTabMenuRestart       = tree.ID(tabMenuHits, "tab-menu-restart")
 	hitTabMenuDisconnect    = tree.ID(tabMenuHits, "tab-menu-disconnect")
@@ -134,12 +132,14 @@ func (state *State) declareTabMenu(c ui.C) {
 	closeKeys := state.shortcuts.chords.Chord(shortcutCloseTab).Keycaps(keys[:0])
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
-	address, hostAddress, name := "", "", ""
+	var copyHost Host
+	hasHost := false
 	if hasSession {
-		address, name = connectionAddressAndPort(session.host), session.host.Label
-		hostAddress = connectionHostAddress(session.host)
+		copyHost = session.host
+		if saved, ok := state.tabMenuHost(session); ok {
+			copyHost, hasHost = saved, true
+		}
 	}
-	_, hasHost := state.tabMenuHost(session)
 	rows.add(components.ContextMenuItem{ID: hitTabMenuRename, Label: messages.MenuRenameTab, Icon: icon(iconPencil)})
 	lockLabel := messages.MenuLockTab
 	if state.deck.Locked(state.tabMenu.workspace) {
@@ -150,9 +150,7 @@ func (state *State) declareTabMenu(c ui.C) {
 	rows.add(components.ContextMenuItem{ID: hitTabMenuEditHost, Label: messages.EditHostTitle, Icon: icon(iconPencil), Disabled: !hasHost})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuNewWindow, Label: messages.MenuMoveTabToNewWindow, Icon: icon(iconExternal), Disabled: !state.canTearOffTab()})
 	rows.separate()
-	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyHost, Label: messages.CopyHostAddress, Icon: icon(iconCopy), Disabled: hostAddress == ""})
-	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: address == ""})
-	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: name == ""})
+	state.addCopyInfoSubmenu(c, &rows, hitTabMenuCopyInfo, copyHost, !hasSession)
 	if hasSession && session.canOpenSSHBrowser() {
 		if session.browser != nil && session.browser.Running() {
 			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserClose, Label: messages.MenuCloseSSHBrowser, Icon: icon(iconGlobe)})
@@ -237,18 +235,6 @@ func (state *State) chooseTabMenu(id gfx.ID) {
 	case hitTabMenuNewWindow:
 		if frame, ok := state.windowFrameOnScreen(); ok && state.canTearOffTab() {
 			state.tearOffTab(workspace, gfx.Point{X: frame.X + tearOffCascade, Y: frame.Y + tearOffCascade})
-		}
-	case hitTabMenuCopyHost:
-		if session, ok := state.tabMenuSessionFor(workspace); ok {
-			state.copyConnectionText(connectionHostAddress(session.host))
-		}
-	case hitTabMenuCopyAddress:
-		if session, ok := state.tabMenuSessionFor(workspace); ok {
-			state.copyConnectionText(connectionAddressAndPort(session.host))
-		}
-	case hitTabMenuCopyName:
-		if session, ok := state.tabMenuSessionFor(workspace); ok {
-			state.copyConnectionText(session.host.Label)
 		}
 	case hitTabMenuRename:
 		state.beginTabInline(workspace)

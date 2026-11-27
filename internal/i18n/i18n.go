@@ -448,9 +448,16 @@ type Messages struct {
 	MenuFile                               string
 	MenuEdit                               string
 	MenuView                               string
+	CopyInfo                               string
 	CopyHostAddress                        string
 	CopyAddressAndPort                     string
 	CopyConnectionName                     string
+	CopyUsername                           string
+	CopyPassword                           string
+	CopyConnectionInfo                     string
+	CopyConnectionInfoWithCredentials      string
+	CopyInfoFieldName                      string
+	CopyInfoFieldProtocol                  string
 	MenuPaste                              string
 	MenuPasteSelection                     string
 	MenuSelectAll                          string
