@@ -94,7 +94,7 @@ type hostFormScroll struct {
 	colorState       ui.ColorPickerState
 	colorSwatchBoxes [len(hostColors)]ui.Box
 	colorPickerBox   ui.Box
-	randomColorBox ui.Box
+	randomColorBox   ui.Box
 	// algoLayout is the algorithm mode this frame's advanced rows were laid out
 	// for, before the page's choice writes the mode a click chose.
 	algoLayout algoMode

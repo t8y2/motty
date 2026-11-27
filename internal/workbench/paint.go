@@ -92,6 +92,7 @@ const (
 	iconCloseOthers
 	iconCloseRight
 	iconSparkles
+	iconDices
 	iconTransfer
 	iconBug
 	iconInfo
@@ -2882,6 +2883,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconCloseOthers:         icons.ListX,
 	iconCloseRight:          icons.ArrowRightToLine,
 	iconSparkles:            icons.Sparkles,
+	iconDices:               icons.Dices,
 	iconTransfer:            icons.ArrowUpDown,
 	iconBug:                 icons.Bug,
 	iconInfo:                icons.Info,
