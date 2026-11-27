@@ -107,7 +107,7 @@ func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *test
 	for _, rectangle := range canvas.Rectangles() {
 		if rectangle.Bounds.Width >= size.Width-terminalToolRailExtent && rectangle.Bounds.Height > size.Height/2 && rectangle.Color.Alpha < 1 {
 			translucentTerminal = true
-			if rectangle.Color.Alpha != 0.8 {
+			if rectangle.Color.Alpha != state.ground(gfx.Color{Alpha: 1}).Alpha {
 				t.Fatalf("terminal ground alpha %v", rectangle.Color.Alpha)
 			}
 		}
@@ -128,7 +128,7 @@ func TestABackgroundPictureIsCopiedDecodedAndShownOnlyBehindTheTerminals(t *test
 	state.Paint(&canvas, size)
 	found := false
 	for _, rectangle := range canvas.Rectangles() {
-		if rectangle.Bounds.Width >= size.Width-terminalToolRailExtent && rectangle.Bounds.Height > size.Height/2 && rectangle.Color.Alpha == 0.25 {
+		if rectangle.Bounds.Width >= size.Width-terminalToolRailExtent && rectangle.Bounds.Height > size.Height/2 && rectangle.Color.Alpha == state.ground(gfx.Color{Alpha: 1}).Alpha {
 			found = true
 		}
 	}

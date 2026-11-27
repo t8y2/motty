@@ -380,7 +380,7 @@ func (state *State) paintBackgroundSettings(page *settingsPage) {
 			ui.Row(page.c).Grow(1).Gap(8).Items(ui.Center).Children(func() {
 				slider := &bg.visibility
 				wasDragging := slider.Dragging()
-				control := ui.Slider(page.c, slider).Range(0, 100).Step(1).Label(m.BgVisibility).Hit(hitBgVisibility, m.BgVisibility).Grow(1).Shrink(1)
+				control := ui.Slider(page.c, slider).Range(0, 100).Step(1).Label(m.BgVisibility).Hit(hitBgVisibility, m.BgVisibility).Disabled(!bg.set).Grow(1).Shrink(1)
 				slider.ID = hitBgVisibility
 				changed := control.Changed()
 				if !slider.Dragging() && (wasDragging || changed) {

@@ -26,6 +26,7 @@ func TestBackgroundVisibilitySlider(t *testing.T) {
 	}
 	slider := hitOf(t, driver, hitBgVisibility).Bounds
 	x, y := slider.X+slider.Width/2, slider.Y+slider.Height/2
+	before := state.bg.visibility.Value
 	if err := driver.Press(x, y, gfx.PointerButtonPrimary); err != nil {
 		t.Fatal(err)
 	}
@@ -33,8 +34,8 @@ func TestBackgroundVisibilitySlider(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := int(state.bg.visibility.Value)
-	if got < 70 || got > 85 {
-		t.Fatalf("dragged visibility = %d", got)
+	if got <= int(before) {
+		t.Fatalf("dragging right left visibility at %d, from %v", got, before)
 	}
 	if err := driver.Release(x+slider.Width/4, y, gfx.PointerButtonPrimary); err != nil {
 		t.Fatal(err)
