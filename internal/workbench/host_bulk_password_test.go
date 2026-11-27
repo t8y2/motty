@@ -659,25 +659,93 @@ func TestBulkAuthenticationRefusesBlockedConfigurationBeforeWritingSecrets(t *te
 	}
 }
 
-func TestBulkAuthenticationConfigFailureRestoresHostAndVault(t *testing.T) {
+func TestBulkAuthenticationPersistsTheForwardWithTheNewLogin(t *testing.T) {
+	for _, test := range []struct {
+		name, wantForwardUser string
+		shared                bool
+	}{
+		{name: "owned endpoint", wantForwardUser: "new-user"},
+		{name: "shared endpoint", wantForwardUser: "deploy", shared: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			state := newTestState(t, testOptions(t))
+			host := state.hosts[0]
+			if test.shared {
+				state.hosts[1].Address, state.hosts[1].User, state.hosts[1].Port = host.Address, host.User, host.Port
+			}
+			state.restoreForwards([]savedForward{{
+				ID: 1, Label: "Web", HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
+				LocalPort: 9000, DestinationHost: "localhost", DestinationPort: 443,
+			}})
+			if err := state.saveWithResult(); err != nil {
+				t.Fatal(err)
+			}
+			state.Click(hitHostCheckList.At(int(host.ID)))
+			state.Click(hitBulkHostPassword)
+			state.Click(hitBulkApplyUser)
+			typeInto(state, hitBulkUserField, "new-user")
+			reviewAndSaveBulkAuth(state)
+			if state.modal != modalNone || len(state.forwards) != 1 || state.forwards[0].HostUser != test.wantForwardUser {
+				t.Fatalf("unexpected live forward after save: %+v, error=%q", state.forwards, state.dialogError)
+			}
+			restarted := newTestState(t, state.options)
+			if restarted.hosts[0].User != "new-user" {
+				t.Fatal("batch edit did not persist the host's new login")
+			}
+			if len(restarted.forwards) != 1 || restarted.forwards[0].HostUser != test.wantForwardUser {
+				t.Fatalf("restored forward = %+v, want endpoint user %q", restarted.forwards, test.wantForwardUser)
+			}
+		})
+	}
+}
+
+func TestBulkAuthenticationConfigFailureRestoresHostForwardAndVault(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	host := state.hosts[0]
+	name, _ := hostPasswordSecretName(host)
+	if err := state.secrets.vault.Set(name, "old-password"); err != nil {
+		t.Fatal(err)
+	}
+	previousSecrets, err := state.secrets.vault.Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.restoreForwards([]savedForward{{
+		ID: 1, Label: "Web", HostLabel: host.Label, HostAddress: host.Address, HostUser: host.User, HostPort: host.Port,
+		LocalPort: 9000, DestinationHost: "localhost", DestinationPort: 443,
+	}})
+	if err := state.saveWithResult(); err != nil {
+		t.Fatal(err)
+	}
 	state.Click(hitHostCheckList.At(int(host.ID)))
 	state.Click(hitBulkHostPassword)
 	state.Click(hitBulkApplyUser)
 	typeInto(state, hitBulkUserField, "changed")
 	state.Click(hitBulkApplyPassword)
 	typeInto(state, hitBulkPasswordField, "new-password")
-	state.lastSaved, state.hasSaved = state.snapshot(), true
+	state.Click(hitBulkPasswordConfirm)
+	if state.bulkPassword.review == nil {
+		t.Fatalf("review not prepared: %q", state.dialogError)
+	}
 	before := append([]byte(nil), state.configBase.local...)
 	state.configBase.local = []byte("{invalid local state")
-	t.Cleanup(func() { state.configBase.local = before })
-	reviewAndSaveBulkAuth(state)
+	state.Click(hitBulkPasswordSave)
+	state.configBase.local = before
 	if state.modal != modalBulkHostPassword || state.dialogError == "" || state.hosts[0].User != host.User {
 		t.Fatalf("config failure partially applied: modal=%d error=%q user=%q", state.modal, state.dialogError, state.hosts[0].User)
 	}
-	if _, found := vaultValue(t, state, hostSecretName(host.CatalogID, hostPasswordPart)); found {
-		t.Fatal("config failure left an orphan saved password")
+	if len(state.forwards) != 1 || state.forwards[0].HostUser != host.User {
+		t.Fatal("config failure changed the live forward endpoint")
+	}
+	if after, err := state.secrets.vault.Export(); err != nil || !reflect.DeepEqual(after, previousSecrets) {
+		t.Fatalf("config failure changed the vault records: %v", err)
+	}
+	restarted := newTestState(t, state.options)
+	if restarted.hosts[0].User != host.User || len(restarted.forwards) != 1 || restarted.forwards[0].HostUser != host.User {
+		t.Fatal("config failure changed the persisted host or forward endpoint")
+	}
+	if password, found := vaultValue(t, restarted, name); !found || password != "old-password" {
+		t.Fatal("config failure changed the persisted password")
 	}
 }
 

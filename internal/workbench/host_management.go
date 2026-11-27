@@ -583,6 +583,29 @@ func (state *State) saveEditedHost(updated, previous Host, refreshConflict bool)
 // the lists that show it.
 func (state *State) replaceHost(index int, previous, updated Host) {
 	state.hosts[index] = updated
+	state.updateHostForwardEndpoints(previous, updated)
+	state.refreshHostReferences(previous, updated)
+}
+
+// A forward belongs to a destination, not to one host: while another host
+// still connects where this one did, the forward stays with it.
+func (state *State) updateHostForwardEndpoints(previous, updated Host) {
+	if state.endpointShared(previous, previous.ID) {
+		return
+	}
+	for index := range state.forwards {
+		forward := &state.forwards[index]
+		if !forward.matchesHost(previous) {
+			continue
+		}
+		forward.HostLabel = updated.Label
+		forward.HostAddress = updated.Address
+		forward.HostUser = updated.User
+		forward.HostPort = updated.Port
+	}
+}
+
+func (state *State) refreshHostReferences(previous, updated Host) {
 	for index := range state.sessions {
 		session := &state.sessions[index]
 		if session.HostID != updated.ID {
@@ -595,19 +618,6 @@ func (state *State) replaceHost(index int, previous, updated Host) {
 		if session.conn == nil {
 			session.Address = state.sessionAddress(updated)
 		}
-	}
-	// A forward belongs to a destination, not to one host: while another host
-	// still connects where this one did, the forward stays with it.
-	forwardsFollow := !state.endpointShared(previous, previous.ID)
-	for index := range state.forwards {
-		forward := &state.forwards[index]
-		if !forwardsFollow || !forward.matchesHost(previous) {
-			continue
-		}
-		forward.HostLabel = updated.Label
-		forward.HostAddress = updated.Address
-		forward.HostUser = updated.User
-		forward.HostPort = updated.Port
 	}
 	// A background tunnel follows its host like a tab does: a live transport
 	// stays, and a retry dials where the host now points.

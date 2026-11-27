@@ -379,6 +379,12 @@ func (state *State) confirmBulkHostPassword() {
 		if len(plan.updated) == 0 {
 			return nil
 		}
+		previousForwards := slices.Clone(state.forwards)
+		for _, host := range previousHosts {
+			if candidate, ok := plan.updated[host.ID]; ok && host.User != candidate.User {
+				state.updateHostForwardEndpoints(host, candidate)
+			}
+		}
 		for index, host := range state.hosts {
 			if candidate, ok := plan.updated[host.ID]; ok {
 				state.hosts[index] = candidate
@@ -387,6 +393,7 @@ func (state *State) confirmBulkHostPassword() {
 		state.refreshHostGroups()
 		if err := state.saveWithResultModeRecovery(false, false, false); err != nil {
 			copy(state.hosts, previousHosts)
+			copy(state.forwards, previousForwards)
 			state.refreshHostGroups()
 			return err
 		}
@@ -414,9 +421,9 @@ func (state *State) confirmBulkHostPassword() {
 		return
 	}
 	if len(plan.updated) != 0 {
-		for index, host := range previousHosts {
+		for _, host := range previousHosts {
 			if candidate, ok := plan.updated[host.ID]; ok {
-				state.replaceHost(index, host, candidate)
+				state.refreshHostReferences(host, candidate)
 			}
 		}
 		state.hostDataChanged()
