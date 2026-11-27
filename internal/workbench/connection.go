@@ -1650,15 +1650,15 @@ func (state *State) clickHostKey(id gfx.ID) {
 	state.answered(session)
 }
 
-// clickPassword handles the password dialog. Dismissing it cancels the
-// connection.
+// clickPassword handles the password dialog. Cancel and the close button
+// cancel the connection.
 func (state *State) clickPassword(id gfx.ID) {
 	switch id {
 	case hitPasswordSave:
 		state.secrets.save = !state.secrets.save
 	case hitPasswordSubmit:
 		state.submitPassword()
-	case hitPasswordCancel, hitPasswordClose, hitPasswordDismiss:
+	case hitPasswordCancel, hitPasswordClose:
 		session := state.promptSession()
 		if session != nil && session.conn != nil {
 			session.conn.Cancel()

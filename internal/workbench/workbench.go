@@ -101,7 +101,6 @@ var (
 	hitPasswordSubmit          = tree.ID(shellHits, "password-submit")
 	hitPasswordCancel          = tree.ID(shellHits, "password-cancel")
 	hitPasswordClose           = tree.ID(shellHits, "password-close")
-	hitPasswordDismiss         = tree.ID(shellHits, "password-dismiss")
 	hitHome                    = tree.ID(shellHits, "home")
 	hitNewTab                  = tree.ID(shellHits, "new-tab")
 	hitNewWindow               = tree.ID(shellHits, "new-window")
