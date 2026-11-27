@@ -1627,7 +1627,7 @@ var chineseAISettings = AISettingsMessages{
 
 	FormAddTitle:             "添加服务商",
 	FormEditTitle:            "编辑服务商",
-	FormDescription:          "密钥只保存在这台电脑上，保存后不会再显示。",
+	FormDescription:          "密钥只保存在这台电脑上。",
 	FormName:                 "名称",
 	FormNamePH:               "我的服务商",
 	FormKind:                 "接口类型",

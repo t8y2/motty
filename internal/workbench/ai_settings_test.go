@@ -541,35 +541,69 @@ func TestAIProviderFormModelsURL(t *testing.T) {
 	state.Click(hitAISetFormCancel)
 }
 
-func TestAIEditKeepsTheOldKeyUnlessReplaced(t *testing.T) {
+func TestAIEditShowsTheSavedKeyAndSavesWhatTheFieldHolds(t *testing.T) {
 	world := newSettingsWorld(t, newLister())
 	state := world.state
-	provider := world.addOpenAI(t, "Work", "", testSecretKey)
+	provider := world.addOpenAI(t, "Work", "https://api.example.com/v1", testSecretKey)
 
 	state.Click(hitAISetProviderEdit.At(0))
-	if state.ai.cfg.editID != provider.ID || !state.ai.cfg.hadKey || state.ai.cfg.apiKey.String() != "" {
-		t.Fatalf("edit form: id=%q hadKey=%v key=%q", state.ai.cfg.editID, state.ai.cfg.hadKey, state.ai.cfg.apiKey.String())
+	if state.ai.cfg.editID != provider.ID || !state.ai.cfg.hadKey || !state.ai.cfg.keySaved || state.ai.cfg.apiKey.String() != testSecretKey {
+		t.Fatalf("edit form: id=%q hadKey=%v keySaved=%v key=%q", state.ai.cfg.editID, state.ai.cfg.hadKey, state.ai.cfg.keySaved, state.ai.cfg.apiKey.String())
 	}
 	if state.ai.cfg.name.String() != "Work" {
 		t.Fatalf("the name field holds %q", state.ai.cfg.name.String())
 	}
-	_, texts := world.paint()
-	if !contains(texts, state.messages.AISettings.FormKeySaved) {
-		t.Fatalf("the saved-key hint is missing: %v", texts)
+	canvas, texts := world.paint()
+	if contains(texts, state.messages.AISettings.FormKeySaved) {
+		t.Fatalf("the saved-key hint is painted while the key is in the field: %v", texts)
 	}
 	for _, text := range texts {
 		if strings.Contains(text, testSecretKey) {
-			t.Fatalf("the saved key is painted in the edit dialog: %q", text)
+			t.Fatalf("the saved key is painted before its eye button is pressed: %q", text)
 		}
 	}
+
+	// The field's eye button shows the saved key, so it can be copied.
+	eye, ok := hitByLabel(canvas, state.messages.ShowSecret)
+	if !ok {
+		t.Fatalf("the key field has no eye button: %v", texts)
+	}
+	// The runtime paints an action's press as the pass that delivers its click.
+	var pressed gfx.Canvas
+	pressed.BeginEventPass(eye.ID, gfx.ClickInfo{})
+	state.Paint(&pressed, gfx.Size{Width: 1400, Height: 3200})
+	pressed.EndEventPass()
+	if !state.ai.cfg.formKeyShown {
+		t.Fatal("the eye button did not show the saved key")
+	}
+	if _, texts = world.paint(); !contains(texts, testSecretKey) {
+		t.Fatalf("the shown key is not painted: %v", texts)
+	}
 	world.typeInto(t, hitAISetFormName, " B")
-	clickSettingsChoice(t, state, state.messages.AISettings.ProviderKindClaude)
 	state.Click(hitAISetFormSubmit)
 	got := state.ai.providers[0]
-	if got.ID != provider.ID || got.Name != "Work B" || got.Kind != store.KindAnthropic || state.aiKeyOf(got) != testSecretKey {
-		t.Fatalf("after editing with the key left empty: %#v", got)
+	if got.ID != provider.ID || got.Name != "Work B" || state.aiKeyOf(got) != testSecretKey {
+		t.Fatalf("after editing with the key untouched: %#v", got)
 	}
 
+	// Emptying the field removes the key: the form saves what it shows.
+	state.Click(hitAISetProviderEdit.At(0))
+	if state.ai.cfg.apiKey.String() != testSecretKey {
+		t.Fatalf("the reopened form holds %q", state.ai.cfg.apiKey.String())
+	}
+	editor := state.EditorFor(hitAISetFormKey)
+	for editor.RuneCount() > 0 {
+		editor.DeleteBackward()
+	}
+	state.Click(hitAISetFormSubmit)
+	if got := state.ai.providers[0]; got.HasKey || state.aiKeyOf(got) != "" {
+		t.Fatalf("after clearing the key: %#v, key %q", got, state.aiKeyOf(got))
+	}
+	if _, found, err := state.secrets.vault.Get(aiKeySecretName(provider.ID)); err != nil || found {
+		t.Fatalf("the cleared key is still in the vault: found=%v err=%v", found, err)
+	}
+
+	// A key typed over the saved one replaces it.
 	state.Click(hitAISetProviderEdit.At(0))
 	world.typeInto(t, hitAISetFormKey, "sk-new-key-9999")
 	state.Click(hitAISetFormSubmit)

@@ -1627,7 +1627,7 @@ var traditionalAISettings = AISettingsMessages{
 
 	FormAddTitle:             "新增服務供應商",
 	FormEditTitle:            "編輯服務供應商",
-	FormDescription:          "金鑰只儲存在這台電腦上，儲存後不會再顯示。",
+	FormDescription:          "金鑰只儲存在這台電腦上。",
 	FormName:                 "名稱",
 	FormNamePH:               "我的服務供應商",
 	FormKind:                 "介面類型",

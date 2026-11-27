@@ -68,8 +68,8 @@ func (state *State) aiProviderFormGeometry() (title, description, submit string,
 	if cfg.editID != "" {
 		title, submit, presetHeight = m.FormEditTitle, m.FormSave, 0
 	}
-	keyHeight := float32(60) // a saved key adds a line saying so under the field
-	if cfg.hadKey {
+	keyHeight := float32(60) // a saved key the form could not read adds a line saying it is kept
+	if cfg.hadKey && !cfg.keySaved {
 		keyHeight = 78
 	}
 	authHeight := float32(0) // only Anthropic has a choice of credential header
@@ -172,7 +172,7 @@ func (state *State) declareAIProviderForm(c ui.C, height float32) {
 			}
 			hint := ""
 			keyHeight := float32(60)
-			if cfg.hadKey {
+			if cfg.hadKey && !cfg.keySaved {
 				hint, keyHeight = m.FormKeySaved, 78
 			}
 			state.aiFormKeyField(c, hitAISetFormKey, &cfg.formAPIKey, m.FormKey, m.FormKeyPH, hint, keyHeight, aiFormFocusKey)

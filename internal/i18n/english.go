@@ -1627,7 +1627,7 @@ var englishAISettings = AISettingsMessages{
 
 	FormAddTitle:             "Add provider",
 	FormEditTitle:            "Edit provider",
-	FormDescription:          "The key is stored on this computer and is never shown again.",
+	FormDescription:          "The key is stored on this computer.",
 	FormName:                 "Name",
 	FormNamePH:               "My provider",
 	FormKind:                 "API type",

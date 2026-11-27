@@ -186,18 +186,23 @@ type aiSettingsUI struct {
 	editID string
 	kind   string
 	// preset is the entry of aiPresets the form was last filled from.
-	preset           int
-	name             text.Editor
-	baseURL          text.Editor
-	modelsURL        text.Editor
-	proxyURL         text.Editor
-	apiKey           text.Editor
-	cliPath          text.Editor
-	cliAutoPath      string
-	cliPathMissing   bool
-	authStyle        string // Anthropic only; empty means the API key default
-	apiFormat        string // OpenAI-compatible only; empty means Chat Completions
-	hadKey           bool
+	preset         int
+	name           text.Editor
+	baseURL        text.Editor
+	modelsURL      text.Editor
+	proxyURL       text.Editor
+	apiKey         text.Editor
+	cliPath        text.Editor
+	cliAutoPath    string
+	cliPathMissing bool
+	authStyle      string // Anthropic only; empty means the API key default
+	apiFormat      string // OpenAI-compatible only; empty means Chat Completions
+	hadKey         bool
+	// keySaved says apiKey holds the key read from the vault when the form
+	// opened; emptying such a field removes the saved key. savedKey is that
+	// key, so an unchanged field writes nothing back.
+	keySaved         bool
+	savedKey         string
 	formErr          string
 	formErrSelection ui.TextSelectionState // what the user selected of formErr, to copy it
 	formFocus        aiFormFocus
@@ -661,6 +666,7 @@ func (state *State) aiImportDialogClick(id gfx.ID) {
 func (state *State) aiCloseDialog() {
 	cfg := &state.ai.cfg
 	cfg.dialog, cfg.editID, cfg.deleteID, cfg.formErr, cfg.hadKey = aiDialogNone, "", "", "", false
+	cfg.keySaved, cfg.savedKey = false, ""
 	cfg.formFocus = aiFormFocusNone
 	cfg.notice = ""
 	cfg.name, cfg.baseURL, cfg.modelsURL, cfg.proxyURL, cfg.apiKey = text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}, text.Editor{}
@@ -868,7 +874,8 @@ func (state *State) aiToggleProvider(index int) {
 }
 
 // aiOpenProviderForm opens the provider dialog for a new provider (id empty)
-// or to edit one. The saved key is never copied into the form.
+// or to edit one. Editing puts the saved key in the field, masked, as the host
+// dialog does with a saved password; the field's eye button shows it.
 func (state *State) aiOpenProviderForm(id string) {
 	cfg := &state.ai.cfg
 	if _, err := state.aiStore(); err != nil {
@@ -901,7 +908,30 @@ func (state *State) aiOpenProviderForm(id string) {
 	cfg.modelsURL.Insert(provider.ModelsURL)
 	cfg.proxyURL.Insert(provider.ProxyURL)
 	cfg.cliPath.Insert(provider.CLIPath)
+	if provider.HasKey && !store.IsCLIKind(provider.Kind) {
+		state.prefillProviderKey(provider.ID)
+	}
 	state.aiDiscoverCLIPath()
+}
+
+// prefillProviderKey puts a provider's saved key into the open edit form, as the
+// host dialog prefills a saved password: the field is masked, the eye button
+// shows it, and emptying it removes the key. A vault that cannot answer leaves
+// the field empty, which saving reads as "keep what is saved".
+func (state *State) prefillProviderKey(providerID string) {
+	cfg := &state.ai.cfg
+	opened := state.secrets.vault
+	// An empty vault has nothing to read; asking it would still open the key
+	// store for a key that does not exist yet.
+	if opened == nil || opened.Len() == 0 || opened.NeedsConversion() {
+		return
+	}
+	value, found, err := opened.Get(aiKeySecretName(providerID))
+	if err != nil || !found || value == "" {
+		return
+	}
+	cfg.apiKey.Insert(value)
+	cfg.keySaved, cfg.savedKey = true, value
 }
 
 // printableLine accepts what a one-line field may hold: no control characters
@@ -943,6 +973,13 @@ func (state *State) aiSubmitProvider() {
 		base, modelsURL, proxyRaw, key = "", "", "", ""
 		proxyAddress, proxyPassword, proxyOK = "", "", true
 	}
+	// keepsKey is an empty field on a provider whose saved key the form could
+	// not read (a vault it could not open): that is "keep what is saved", not
+	// "no key". An empty field on a form that showed the key is the user
+	// removing it. keyChanged is false when the field still holds what it was
+	// filled with, so saving leaves the vault alone.
+	keepsKey := !cliProvider && key == "" && cfg.hadKey && !cfg.keySaved
+	keyChanged := key != cfg.savedKey
 	switch {
 	case name == "":
 		cfg.formErr = m.ErrFormName
@@ -960,7 +997,7 @@ func (state *State) aiSubmitProvider() {
 		cfg.formErr = m.ErrFormProxyURL
 		cfg.formFocus = aiFormFocusProxy
 		return
-	case !cliProvider && base == "" && key == "" && !cfg.hadKey:
+	case !cliProvider && base == "" && key == "" && !keepsKey:
 		cfg.formErr = m.ErrFormKey
 		cfg.formFocus = aiFormFocusKey
 		return
@@ -988,11 +1025,11 @@ func (state *State) aiSubmitProvider() {
 	} else if previous, ok := state.aiProviderByID(cfg.editID); ok {
 		old, editing = previous, true
 		provider.Enabled = old.Enabled
-		if key == "" && !cliProvider {
-			provider.APIKey, provider.HasKey = old.APIKey, old.HasKey // the field is left empty to keep the key
+		if keepsKey {
+			provider.APIKey, provider.HasKey = old.APIKey, old.HasKey
 		}
 		refetch = provider.Kind != old.Kind || provider.BaseURL != old.BaseURL || provider.ModelsURL != old.ModelsURL ||
-			provider.ProxyURL != old.ProxyURL || provider.APIKey != old.APIKey || provider.CLIPath != old.CLIPath
+			provider.ProxyURL != old.ProxyURL || keyChanged || provider.CLIPath != old.CLIPath
 		resetAuth = cliProvider && (provider.Kind != old.Kind || provider.CLIPath != old.CLIPath)
 	}
 	// A proxy password is a secret like the API key: the URL keeps only the
@@ -1009,8 +1046,12 @@ func (state *State) aiSubmitProvider() {
 	db, err := state.aiStore()
 	if err == nil {
 		var changes []vault.Change
-		if key != "" {
+		switch {
+		case keyChanged && key != "":
 			changes = append(changes, vault.Change{Name: aiKeySecretName(provider.ID), Value: key})
+		case keyChanged:
+			// The form showed the saved key and the user emptied it.
+			changes = append(changes, vault.Change{Name: aiKeySecretName(provider.ID), Delete: true})
 		}
 		changes = append(changes, proxyChanges...)
 		commit := func() error { return db.SaveProvider(provider) }
