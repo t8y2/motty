@@ -3219,6 +3219,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 		form.colorSwatchBoxes[index] = ui.Box{}
 	}
 	form.colorPickerBox = ui.Box{}
+	form.randomColorBox = ui.Box{}
 	chrome := &state.chrome
 	chrome.hostDialogTitle = title
 	if chrome.hostFormViewportDraw == nil {
