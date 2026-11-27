@@ -13,6 +13,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/text/find"
+	"motty/internal/configformat"
 	"motty/internal/i18n"
 )
 
@@ -49,6 +50,7 @@ const codeBarLayer = uint16(100)
 type documentEditing struct {
 	options text.CodeOptions
 	noWrap  bool
+	folds   documentFolds
 
 	find      find.Session
 	findOpen  bool
@@ -175,6 +177,7 @@ func (d *fileDocument) loadEditor(value string) {
 	d.editor.SetSelection(text.Range{})
 	d.edit.options = codeOptionsFor(d.name, value)
 	d.editor.SetCode(d.edit.options)
+	d.edit.folds.reset(configformat.DetectKind(editingLanguage(d.name)))
 	d.ui.code = components.CodeEditor{}
 	d.edit.notice = ""
 }
@@ -207,6 +210,12 @@ func (d *fileDocument) paintCodeEditor(canvas *gfx.Canvas, theme gfx.Theme, boun
 		Wrap: !d.edit.noWrap, LineNumbers: true, CurrentLine: true, MatchBrackets: true,
 		Language: documentLanguage(d.name), Highlight: d.ui.highlighter,
 		ScrollbarID: hitDocumentScroll, HorizontalScrollbarID: hitDocumentEditorScrollX,
+	}
+	d.edit.folds.sync(value)
+	if folded, markers := d.edit.folds.snapshotData(code); len(markers) > 0 {
+		snapshot.FoldGutter = true
+		snapshot.FoldedLines = folded
+		snapshot.FoldMarkers = markers
 	}
 	if marked, ok := d.editor.Composition(); ok {
 		snapshot.CompositionStart, snapshot.CompositionEnd = d.editor.ByteOffset(marked.Start), d.editor.ByteOffset(marked.End)
@@ -368,6 +377,7 @@ func (d *fileDocument) goToLine() gfx.EventResult {
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	offset := text.OffsetAt(value, text.Position{Line: line - 1, Column: max(column-1, 0)})
+	d.unfoldContainingOffset(offset)
 	d.editor.MoveTo(d.editor.RuneIndex(offset), false)
 	d.ui.code.Reveal(offset)
 	d.edit.goOpen = false
@@ -403,7 +413,9 @@ func (d *fileDocument) stepFind(forward bool) gfx.EventResult {
 	}
 	d.edit.find.Update(d.editor.String())
 	if d.edit.find.Step(&d.editor, forward) {
-		d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
+		offset := d.editor.ByteOffset(d.editor.Caret())
+		d.unfoldContainingOffset(offset)
+		d.ui.code.Reveal(offset)
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}
 }
@@ -414,7 +426,9 @@ func (d *fileDocument) queryChanged() {
 	d.edit.notice = ""
 	d.edit.find.Update(d.editor.String())
 	if d.edit.find.Seek(&d.editor) {
-		d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
+		offset := d.editor.ByteOffset(d.editor.Caret())
+		d.unfoldContainingOffset(offset)
+		d.ui.code.Reveal(offset)
 	}
 }
 
@@ -483,7 +497,17 @@ func (d *fileDocument) clickCode(id gfx.ID) bool {
 		d.replaceAll()
 	case hitDocumentWrap:
 		d.edit.noWrap = !d.edit.noWrap
+	case hitDocumentFormat:
+		d.formatDocument()
 	default:
+		if line, ok := id.In(hitDocumentFoldList); ok {
+			d.toggleFold(line)
+			return true
+		}
+		if line, ok := id.In(hitDocumentFoldBadgeList); ok {
+			d.toggleFold(line)
+			return true
+		}
 		return false
 	}
 	return true
@@ -615,6 +639,9 @@ func (d *fileDocument) codeShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) 
 	}
 	// Command or Control+/, [ and ] edit the text; they are chords, so they
 	// arrive here before they would arrive as keys.
+	if result, ok := d.foldOrFormatShortcut(event); ok {
+		return result, true
+	}
 	if event.Target == hitDocumentInput && d.canEditCode() {
 		if command, ok := components.CodeEditorCommandForKey(event); ok && command.Apply(&d.editor) {
 			d.ui.code.Reveal(d.editor.ByteOffset(d.editor.Caret()))
