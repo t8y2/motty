@@ -1,0 +1,33 @@
+# End to end: a double click in the terminal takes a whole path, address or
+# version, not one fragment of it, without configuring word separators. Needs a
+# headless build and a local shell only.
+#
+#   go build -tags vivahead,dev -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/terminal_word_selection_e2e.txt
+#
+# What to look for: every clip reply holds the whole token, and the shot shows
+# the path selected as one run.
+
+resize 1400 900
+settle 400
+click "Local Terminal"
+settle 1200
+type printf '\n/drives/C/Users/admin/Desktop/\nuser@host:22 v1.2.3\n'
+key enter
+settle 400
+
+# The path on its own row: a double click anywhere inside it takes all of it.
+dblclick 43 82
+settle 200
+shot /tmp/motty-word-selection.png
+key ctrl+shift+c
+clip
+
+# An address and a dotted version on the next row: the colon, the at sign and
+# the dots stay inside the word.
+dblclick 30 97
+key ctrl+shift+c
+clip
+dblclick 134 97
+key ctrl+shift+c
+clip

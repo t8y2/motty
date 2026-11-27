@@ -19,7 +19,7 @@ type Point struct {
 }
 
 // SetWordSeparators overrides the punctuation that separates words in selections.
-// An empty value keeps the Unicode-based default classification.
+// An empty value keeps the default classification.
 func (t *Terminal) SetWordSeparators(separators string) {
 	t.wordSeparators = separators
 }
@@ -120,7 +120,9 @@ func pointLess(left, right Point) bool {
 }
 
 // WordBounds returns the inclusive run of like cells around position. Letters,
-// numbers, and underscores form words; spaces and punctuation form their own runs.
+// numbers, underscores and the punctuation that appears inside paths, addresses
+// and versions form words; spaces and the rest of the punctuation form their own
+// runs.
 func (t *Terminal) WordBounds(position Position) (Position, Position) {
 	position = t.clampPosition(position)
 	start, end := t.wordColumns(t.Row(position.Row), position.Column)
@@ -267,6 +269,13 @@ const (
 	cellPunctuation
 )
 
+// defaultWordCharacters are the punctuation marks that are part of a word
+// without any setting, so a double click takes a path, an address or a version
+// whole instead of one fragment of it. This is the set kitty has long used for
+// word selection (select_by_word_characters); whitespace and the rest of the
+// punctuation still end a word.
+const defaultWordCharacters = `:./\_~-@`
+
 func (t *Terminal) selectedCellKind(cells []Cell, column int) cellKind {
 	if column < 0 || column >= len(cells) || cells[column].R == 0 || unicode.IsSpace(cells[column].R) {
 		return cellBlank
@@ -277,7 +286,9 @@ func (t *Terminal) selectedCellKind(cells []Cell, column int) cellKind {
 		}
 		return cellWord
 	}
-	if cells[column].R == '_' || unicode.IsLetter(cells[column].R) || unicode.IsNumber(cells[column].R) {
+	character := cells[column].R
+	if character == '_' || unicode.IsLetter(character) || unicode.IsNumber(character) ||
+		strings.ContainsRune(defaultWordCharacters, character) {
 		return cellWord
 	}
 	return cellPunctuation

@@ -67,7 +67,7 @@ func TestCustomWordSeparatorsKeepPathsTogetherAndPreserveWideCells(t *testing.T)
 		column     int
 		want       string
 	}{
-		{"", 1, "path"},
+		{"", 1, "path/to-file"},
 		{"-", 1, "path/to"},
 		{"-", 8, "file"},
 		{"-", 14, "世界!next"},
@@ -78,6 +78,36 @@ func TestCustomWordSeparatorsKeepPathsTogetherAndPreserveWideCells(t *testing.T)
 		if got := screen.SelectedText(start, end); got != test.want {
 			t.Errorf("separators %q at %d: got %q, want %q", test.separators, test.column, got, test.want)
 		}
+	}
+}
+
+// A double click on a path, an address or a version takes the whole thing: the
+// punctuation inside them belongs to the word without any setting. Whitespace
+// and punctuation that does not appear in them still end a word, so prose and
+// CJK text keep selecting by word.
+func TestDefaultWordSelectionKeepsPathsAndAddressesWhole(t *testing.T) {
+	line := "/drives/C/Users/admin/Desktop/ user@host:22 v1.2.3-rc1 hello, world"
+	screen := New(90, 1, 0)
+	screen.Write([]byte(line))
+	for _, test := range []struct{ needle, want string }{
+		{"C", "/drives/C/Users/admin/Desktop/"},
+		{"Desktop", "/drives/C/Users/admin/Desktop/"},
+		{"host:22", "user@host:22"},
+		{"rc1", "v1.2.3-rc1"},
+		{"hello", "hello"},
+	} {
+		start, end := screen.WordBounds(Position{Column: strings.Index(line, test.needle)})
+		if got := screen.SelectedText(start, end); got != test.want {
+			t.Errorf("double click on %q selected %q, want %q", test.needle, got, test.want)
+		}
+	}
+
+	// A full-width comma still ends the word: the path set must not swallow
+	// whole sentences of CJK text.
+	cjk := New(20, 1, 0)
+	cjk.Write([]byte("中文，句子"))
+	if start, end := cjk.WordBounds(Position{Column: 0}); cjk.SelectedText(start, end) != "中文" {
+		t.Errorf("double click in CJK text selected %q, want 中文", cjk.SelectedText(start, end))
 	}
 }
 
