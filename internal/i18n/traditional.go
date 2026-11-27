@@ -2221,6 +2221,7 @@ var traditionalTools = ToolsMessages{
 	ImportWarningCleartextFmt:    "有 %d 個工作階段在匯出檔案中含明文密碼或金鑰材料。使用後請妥善保管或刪除原始檔。",
 	ImportWarningLoopback:        "有工作階段指向本機（127.0.0.1 / localhost）。這通常是其他用戶端開啟的一次性通道，通道關閉後就無法再連。建議直接開啟 .xsh 檔案，或手動填寫目前連接埠。",
 	ImportPasswordPreviewTitle:   "匯入已儲存的密碼？",
+	ImportConnectionsBodyFmt:     "將匯入 %d 台新主機，已儲存的主機會被跳過。",
 	ImportPasswordPreviewBodyFmt: "將匯入 %d 台新主機；找到 %d 個明文 SSH 密碼，可儲存 %d 個。不會覆蓋已有密碼。",
 	ImportConnectionsOnly:        "僅匯入連線",
 	ImportSavePasswords:          "儲存密碼",

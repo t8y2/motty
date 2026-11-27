@@ -31,6 +31,10 @@ func TestWinSCPImportMenuConfirmsBeforeSavingAndSkipsDuplicates(t *testing.T) {
 		if state.modal != modalSessionImportPreview {
 			t.Fatalf("modal = %v, want session import preview", state.modal)
 		}
+		// WinSCP carries no passwords, so the preview must not talk about them.
+		if _, texts := paintedTexts(state); !contains(texts, fmt.Sprintf(state.messages.Tools.ImportConnectionsBodyFmt, len(state.sessionImport.plan.hosts))) {
+			t.Fatalf("preview does not state the host count without password wording: %v", texts)
+		}
 	}
 	openPreview()
 	if len(state.hosts) != 0 || len(newTestState(t, options).hosts) != 0 {

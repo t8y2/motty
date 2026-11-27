@@ -2221,6 +2221,7 @@ var chineseTools = ToolsMessages{
 	ImportWarningCleartextFmt:    "有 %d 个会话在导出文件中含明文密码或密钥材料。使用后请妥善保管或删除源文件。",
 	ImportWarningLoopback:        "有会话指向本机（127.0.0.1 / localhost）。这通常是其他客户端打开的一次性隧道，隧道关闭后就无法再连。建议直接打开 .xsh 文件，或手动填写当前端口。",
 	ImportPasswordPreviewTitle:   "导入已保存的密码？",
+	ImportConnectionsBodyFmt:     "将导入 %d 台新主机，已保存的主机会被跳过。",
 	ImportPasswordPreviewBodyFmt: "将导入 %d 台新主机；找到 %d 个明文 SSH 密码，可保存 %d 个。不会覆盖已有密码。",
 	ImportConnectionsOnly:        "仅导入连接",
 	ImportSavePasswords:          "保存密码",

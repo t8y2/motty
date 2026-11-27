@@ -482,6 +482,7 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 	title, saveLabel := m.ImportPasswordPreviewTitle, m.ImportSavePasswords
 	if state.sessionImport.connectionsOnly {
 		title = m.ImportChooserTitle
+		description = fmt.Sprintf(m.ImportConnectionsBodyFmt, len(state.sessionImport.plan.hosts))
 	}
 	if state.sessionImport.tabby != nil {
 		title, saveLabel = m.TabbyImportTitle, m.TabbyImportSave

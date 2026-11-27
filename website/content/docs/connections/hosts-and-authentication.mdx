@@ -154,8 +154,9 @@ any hosts. If several selected files have an encoding ambiguity, import them
 one at a time so each can be decoded correctly.
 
 WinSCP import reads SFTP and SCP sites from the INI file and keeps their names,
-folders, addresses, users, ports, and local key paths. Saved WinSCP passwords stay
-in the original file.
+folders, addresses, users, ports, and local key paths. A site that uses a SOCKS5 or HTTP proxy keeps it as an outbound proxy, and a
+tunnel becomes an extra jump host named `<site> → <jump host>`. Saved WinSCP
+passwords, including the proxy's and the tunnel's, stay in the original file.
 
 ## Syncing with your SSH config
 
