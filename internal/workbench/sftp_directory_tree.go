@@ -696,10 +696,11 @@ func (w *sftpWindow) acceptDirectoryTreeResult(result sftpclient.Result) bool {
 		node.err = result.Err.Error()
 		delete(tree.requests, result.ListID)
 	} else {
-		w.setDirectoryTreeChildren(tree, false, node, result.Entries, len(result.Entries) > maxDirectoryTreeChildren)
-		if !result.LinksPending || result.FollowUp {
-			delete(tree.requests, result.ListID)
+		if result.LinksPending && !result.FollowUp {
+			return true
 		}
+		w.setDirectoryTreeChildren(tree, false, node, result.Entries, len(result.Entries) > maxDirectoryTreeChildren)
+		delete(tree.requests, result.ListID)
 		w.syncDirectoryTreeAfterBackgroundLoad(false)
 	}
 	w.loadExpandedDirectoryTree(false)
