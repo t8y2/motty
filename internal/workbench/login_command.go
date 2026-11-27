@@ -408,10 +408,11 @@ func (state *State) loginQuiet(session *Session) time.Duration {
 }
 
 // loginInteractivePromptReady reports that a command has stopped at a prompt
-// which cannot be completed by shell integration. In a multi-line login
-// sequence, the next configured line is the user's answer to that prompt.
-func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) bool {
-	if t == nil || t.screen == nil || t.promptDirty || !t.login.seen || t.login.quietWait(now, loginCommandGrace) > 0 {
+// which cannot be completed by shell integration. These anchored prompts are
+// actionable as soon as they appear; in a multi-line login sequence, the next
+// configured line is the user's answer to that prompt.
+func (state *State) loginInteractivePromptReady(t *terminal) bool {
+	if t == nil || t.screen == nil || t.promptDirty || !t.login.seen {
 		return false
 	}
 	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
@@ -430,8 +431,8 @@ func (state *State) loginInteractivePromptReady(t *terminal, now time.Duration) 
 	return loginInteractivePrompt.MatchString(rowText)
 }
 
-func loginPasswordPromptText(t *terminal, now time.Duration) string {
-	if t == nil || t.screen == nil || t.promptDirty || !t.login.seen || t.login.quietWait(now, loginCommandGrace) > 0 {
+func loginPasswordPromptText(t *terminal) string {
+	if t == nil || t.screen == nil || t.promptDirty || !t.login.seen {
 		return ""
 	}
 	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
@@ -556,7 +557,7 @@ func (state *State) loginStepFinished(session *Session, now time.Duration) bool 
 	if !t.login.running {
 		return false
 	}
-	if loginPasswordPromptText(t, now) != "" {
+	if loginPasswordPromptText(t) != "" {
 		return false
 	}
 	if t.login.passwordPromptObserved && t.promptStarted && !t.promptDirty && t.promptVersion > t.login.passwordPromptVersion {
@@ -568,7 +569,7 @@ func (state *State) loginStepFinished(session *Session, now time.Duration) bool 
 	if t.login.hasExitCode && ((t.login.exitCode != 0 && t.login.policy == loginFailureStop) || (t.login.line == "" || t.login.isWorkspaceStep)) {
 		return true
 	}
-	if state.loginInteractivePromptReady(t, now) {
+	if state.loginInteractivePromptReady(t) {
 		return true
 	}
 	if !t.folderIntegrationSeen && t.login.seen && t.login.quietWait(now, loginCommandQuiet) == 0 {
@@ -769,14 +770,14 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	if t.login.running {
-		if prompt := loginPasswordPromptText(t, now); prompt != "" && state.handleLoginPasswordPrompt(session, prompt, now) {
+		if prompt := loginPasswordPromptText(t); prompt != "" && state.handleLoginPasswordPrompt(session, prompt, now) {
 			return
 		}
 		if t.login.hasRemainingSteps() && loginUnapprovedSecretPromptReady(t, now) {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
-		if loginIncompletePromptReady(t, now) && !state.loginInteractivePromptReady(t, now) {
+		if loginIncompletePromptReady(t, now) && !state.loginInteractivePromptReady(t) {
 			if t.login.hasRemainingSteps() {
 				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			} else {
@@ -815,7 +816,7 @@ func (state *State) runLoginCommand(session *Session) {
 			return
 		}
 		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginIncompletePromptReady(t, now) &&
-			!state.loginInteractivePromptReady(t, now) {
+			!state.loginInteractivePromptReady(t) {
 			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
@@ -825,7 +826,7 @@ func (state *State) runLoginCommand(session *Session) {
 			}
 		} else if t.folderIntegrationSeen {
 			if !t.promptIdle() || t.promptDirty || t.promptVersion <= t.login.promptVersion {
-				if !state.loginInteractivePromptReady(t, now) {
+				if !state.loginInteractivePromptReady(t) {
 					return
 				}
 			}
@@ -852,7 +853,7 @@ func (state *State) runLoginCommand(session *Session) {
 			}
 			return
 		}
-		if !state.loginInteractivePromptReady(t, now) {
+		if !state.loginInteractivePromptReady(t) {
 			if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginIncompletePromptReady(t, now) {
 				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			}

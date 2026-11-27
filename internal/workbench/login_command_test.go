@@ -176,9 +176,7 @@ func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
 			term.promptStarted = true // A prompt-start marker alone is not enough.
 			term.promptReady = false
 			term.promptDirty = false
-			*now += loginCommandGrace
-
-			if got := state.loginInteractivePromptReady(term, *now); got != tt.want {
+			if got := state.loginInteractivePromptReady(term); got != tt.want {
 				t.Fatalf("loginInteractivePromptReady(%q) = %t, want %t", tt.prompt, got, tt.want)
 			}
 		})
@@ -573,7 +571,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		}
 		for _, prompt := range prompts {
 			t.Run(prompt.name, func(t *testing.T) {
-				state, shell, now := loginCommandSession(t, "sudo -i\necho after")
+				state, shell, _ := loginCommandSession(t, "sudo -i\necho after")
 				session := &state.sessions[0]
 				token := session.term.folderToken
 
@@ -584,7 +582,6 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 				}
 				shell.say("\x1b]133;A;motty=" + token + "\x07\r\n" + prompt.text)
 				state.Wake()
-				*now += loginCommandGrace
 				state.Wake()
 				if session.LoginCommandAborted() != "" {
 					t.Fatalf("prompt aborted remaining commands: %q", session.LoginCommandAborted())
@@ -598,7 +595,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 
 	t.Run("sudo password prompt sends one secret without recording it", func(t *testing.T) {
 		const password = "configured-password"
-		state, shell, now := loginCommandSession(t, "sudo -i\n"+password+"\necho after")
+		state, shell, _ := loginCommandSession(t, "sudo -i\n"+password+"\necho after")
 		session := &state.sessions[0]
 		token := session.term.folderToken
 
@@ -606,9 +603,6 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		state.Wake()
 		shell.say("\x1b]133;A;motty=" + token + "\x07\r\n[sudo] password for root:")
 		state.Wake()
-		*now += loginCommandGrace
-		state.Wake()
-
 		if aborted := session.LoginCommandAborted(); aborted != "" {
 			t.Fatalf("password prompt aborted the configured password: %q", aborted)
 		}
@@ -624,7 +618,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 
 		// Authentication opens the root shell. Advance to the next configured
 		// command without reporting the still-open sudo process as successful.
-		shell.say("\x1b]133;A;motty=" + token + "\x07root@host:~# \x1b]133;B;motty=" + token + "\x07")
+		shell.say("\r\n\x1b]133;A;motty=" + token + "\x07root@host:~# \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
 		if shell.typed() != "sudo -i\r"+password+"\recho after\r" {
 			t.Fatalf("next command did not run at the authenticated prompt: %q", shell.typed())
@@ -636,20 +630,13 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 
 	t.Run("GateShell bracketed SSH password prompt sends configured secret", func(t *testing.T) {
 		const password = "configured-password"
-		state, shell, now := loginCommandSession(t, "ssh root@10.169.156.26:22\n"+password+"\necho after")
+		state, shell, _ := loginCommandSession(t, "ssh root@10.169.156.26:22\n"+password+"\necho after")
 		session := &state.sessions[0]
 		token := session.term.folderToken
 
 		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
 		shell.say("\x1b]133;A;motty=" + token + "\x07\r\n| [root@10.169.156.26:22] Password:")
-		state.Wake()
-		*now += time.Second - time.Millisecond
-		state.Wake()
-		if shell.typed() != "ssh root@10.169.156.26:22\r" {
-			t.Fatalf("password was sent before the one-second prompt quiet period: %q", shell.typed())
-		}
-		*now += time.Millisecond
 		state.Wake()
 
 		if aborted := session.LoginCommandAborted(); aborted != "" {
@@ -665,7 +652,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 			t.Fatal("configured password was displayed in the status bar or terminal")
 		}
 
-		shell.say("\x1b]133;A;motty=" + token + "\x07root@host:~# \x1b]133;B;motty=" + token + "\x07")
+		shell.say("\r\n\x1b]133;A;motty=" + token + "\x07root@host:~# \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
 		if shell.typed() != "ssh root@10.169.156.26:22\r"+password+"\recho after\r" {
 			t.Fatalf("next command did not run after authentication: %q", shell.typed())
@@ -674,7 +661,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 
 	t.Run("repeated password prompt aborts without trying another line", func(t *testing.T) {
 		const password = "configured-password"
-		state, shell, now := loginCommandSession(t, "ssh root@example\n"+password+"\necho after")
+		state, shell, _ := loginCommandSession(t, "ssh root@example\n"+password+"\necho after")
 		session := &state.sessions[0]
 		token := session.term.folderToken
 
@@ -682,20 +669,15 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		state.Wake()
 		shell.say("\x1b]133;A;motty=" + token + "\x07\r\nroot@example's password:")
 		state.Wake()
-		*now += loginCommandGrace
-		state.Wake()
 		if shell.typed() != "ssh root@example\r"+password+"\r" {
 			t.Fatalf("first password reply was not sent once: %q", shell.typed())
 		}
-		*now += loginCommandGrace
 		state.Wake()
 		if session.LoginCommandAborted() != "" || shell.typed() != "ssh root@example\r"+password+"\r" {
 			t.Fatalf("unchanged password prompt retried or aborted unexpectedly: typed=%q aborted=%q", shell.typed(), session.LoginCommandAborted())
 		}
 
 		shell.say("\r\nPermission denied, please try again.\r\nroot@example's password:")
-		state.Wake()
-		*now += loginCommandGrace
 		state.Wake()
 		if session.LoginCommandAborted() == "" {
 			t.Fatal("repeated password prompt should abort the remaining sequence")
