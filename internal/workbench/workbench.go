@@ -2349,6 +2349,13 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		} else {
 			state.clickSFTP(id)
 		}
+	case tree.Within(id.Scope(), filePropertiesHits):
+		// The docked panel's properties dialog is one of the workbench modals
+		// dispatched above. A file-manager tab declares its own in the same page
+		// with the same identities, so its window has to act on it.
+		if w := state.activeSFTPWindow(); w != nil && !w.closed && w.fileProperties.open {
+			w.click(id)
+		}
 	case tree.Within(id.Scope(), sftpWindowHits):
 		// The hand-painted controls of the file-manager tab keep the window's
 		// own identities; the workbench page routes the press to its window.
@@ -2865,6 +2872,16 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 			return gfx.EventResult{}
 		}
 		return gfx.EventResult{Handled: true}
+	}
+	if state.modal == modalNone {
+		if w := state.activeSFTPWindow(); w != nil && w.fileProperties.open {
+			// A file-manager tab's properties dialog is modal for its tab, not a
+			// workbench modal: only its own close actions reach the runtime.
+			if event.Target == hitFilePropertiesClose || event.Target == hitFilePropertiesDismiss {
+				return gfx.EventResult{}
+			}
+			return gfx.EventResult{Handled: true}
+		}
 	}
 	if result, handled := state.localProxyPointer(event); handled {
 		return result

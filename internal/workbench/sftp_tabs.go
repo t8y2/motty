@@ -524,7 +524,15 @@ func (state *State) sftpTabPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 
 func (state *State) sftpTabKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	w := state.activeSFTPWindow()
-	if w == nil || !state.fileTabHit(event.Target) {
+	if w == nil {
+		return gfx.EventResult{}, false
+	}
+	// The properties dialog a tab declares is modal for it, though the tab is
+	// not a workbench modal: every key belongs to the window that opened it.
+	if w.fileProperties.open {
+		return w.key(event), true
+	}
+	if !state.fileTabHit(event.Target) {
 		return gfx.EventResult{}, false
 	}
 	// A key over the file tab's hand-painted chrome is the file window's; the

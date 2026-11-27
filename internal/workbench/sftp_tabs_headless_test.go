@@ -365,6 +365,94 @@ func TestSFTPFileTabEventsRouteThroughTheWorkbenchPage(t *testing.T) {
 	}
 }
 
+// The properties dialog a file-manager tab declares keeps the same identities
+// as the docked panel's, so the workbench page must route its close actions and
+// keys to the window that opened it: both close controls (the title bar's and
+// the footer's) and the backdrop, as well as Escape, must close it without
+// acting on the file list behind it.
+func TestSFTPFileTabPropertiesDialogClosesFromItsOwnControls(t *testing.T) {
+	state, _, w, _, _ := openSFTPTabFixture(t)
+	preview, err := headless.Open(app.Config{
+		Title: "File tab properties", Width: 1100, Height: 720, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnResize: state.Resize,
+	}, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer preview.Close()
+	if err := preview.Driver().Pump(); err != nil {
+		t.Fatal(err)
+	}
+
+	// open declares the dialog on the tab and returns the controls the page
+	// painted for closing it.
+	open := func() []gfx.Hit {
+		t.Helper()
+		w.view.sftpFolder.selectRow(0, 0)
+		w.selectionChanged(false)
+		w.fileAction(false, hitSFTPProperties)
+		if !w.fileProperties.open {
+			t.Fatal("the file-manager properties dialog did not open")
+		}
+		// The action only queues a repaint; the tab is declared by the page,
+		// which has no window of its own to paint it.
+		if err := preview.Driver().Paint(); err != nil {
+			t.Fatal(err)
+		}
+		var closes []gfx.Hit
+		for _, hit := range preview.Snapshot().Hits {
+			if hit.ID == hitFilePropertiesClose && !hit.Block {
+				closes = append(closes, hit)
+			}
+		}
+		return closes
+	}
+
+	closes := open()
+	if len(closes) < 2 {
+		t.Fatalf("the properties dialog painted %d close controls, want the title bar's and the footer's", len(closes))
+	}
+	for index, hit := range closes {
+		if err := preview.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if w.fileProperties.open {
+			t.Fatalf("close control %d did not close the tab's properties dialog", index)
+		}
+		open()
+	}
+
+	// A press on the dialog's backdrop closes it, and does not reach the list
+	// selection behind it.
+	selected := w.view.sftpFolder.selected
+	if err := preview.Click(10, 700); err != nil {
+		t.Fatal(err)
+	}
+	if w.fileProperties.open {
+		t.Fatal("the backdrop did not close the tab's properties dialog")
+	}
+	if w.view.sftpFolder.selected != selected {
+		t.Fatalf("a press on the backdrop changed the list selection: %d -> %d", selected, w.view.sftpFolder.selected)
+	}
+
+	open()
+	if err := preview.Keys("escape"); err != nil {
+		t.Fatal(err)
+	}
+	if w.fileProperties.open {
+		t.Fatal("Escape did not close the tab's properties dialog")
+	}
+
+	open()
+	rows := len(w.view.rows)
+	if result := state.Key(gfx.KeyEvent{Target: hitFilePropertiesClose, Key: gfx.KeyDelete}); !result.Handled {
+		t.Fatal("a key escaped the tab's properties dialog")
+	}
+	if w.view.dialog != sftpDialogNone || len(w.view.rows) != rows {
+		t.Fatal("a key acted on the file list behind the tab's properties dialog")
+	}
+}
+
 func textBoundsFromSnapshot(snapshot app.Snapshot, value string) (gfx.Rect, bool) {
 	for _, text := range snapshot.Texts {
 		if text.Value == value {
