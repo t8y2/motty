@@ -158,7 +158,11 @@ func Seal(document Document, password string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return SealEnvelope(format, version, plain, password)
+	fileVersion := 2
+	if len(document.Keys) > 0 {
+		fileVersion = version
+	}
+	return SealEnvelope(format, fileVersion, plain, password)
 }
 
 // SealEnvelope encrypts plain under password inside an authenticated envelope
@@ -172,11 +176,7 @@ func SealEnvelope(format string, version int, plain []byte, password string) ([]
 	if len(plain) > MaxSize {
 		return nil, ErrTooLarge
 	}
-	fileVersion := 2
-	if len(document.Keys) > 0 {
-		fileVersion = version
-	}
-	file := envelope{Format: format, Version: fileVersion, KDF: defaultKDF}
+	file := envelope{Format: format, Version: version, KDF: defaultKDF}
 	file.KDF.Salt = make([]byte, saltSize)
 	if _, err := rand.Read(file.KDF.Salt); err != nil {
 		return nil, err
@@ -196,6 +196,8 @@ func SealEnvelope(format string, version int, plain []byte, password string) ([]
 // Open decrypts a backup. A file that is not a backup, or is one of another
 // version, is told apart from a wrong password.
 func Open(data []byte, password string) (Document, error) {
+	var header envelope
+	_ = json.Unmarshal(data, &header)
 	plain, err := OpenEnvelope(format, version, data, password)
 	if err != nil {
 		return Document{}, err
@@ -204,7 +206,7 @@ func Open(data []byte, password string) (Document, error) {
 	if err := json.Unmarshal(plain, &document); err != nil {
 		return Document{}, ErrNotBackup
 	}
-	if file.Version < 3 && len(document.Keys) > 0 {
+	if header.Version < 3 && len(document.Keys) > 0 {
 		return Document{}, ErrNotBackup
 	}
 	if err := document.checkKeys(); err != nil {
