@@ -139,6 +139,16 @@ func (state *State) closeCommandPalette() {
 	state.commandPalette.scroll = 0
 }
 
+// dismissCommandPalette closes the palette on cancellation and returns keyboard
+// focus to the terminal when cancelling from a terminal page rather than
+// leaving focus on the toolbar button that opened the picker.
+func (state *State) dismissCommandPalette() {
+	state.closeCommandPalette()
+	if state.terminalPage() {
+		state.returnKeyboardToTerminal()
+	}
+}
+
 func (state *State) rebuildCommandPalette() {
 	state.ensureWorkspaceDeck()
 	palette := &state.commandPalette
@@ -353,7 +363,7 @@ func (state *State) scrollCommandPalette(event gfx.ScrollEvent) gfx.EventResult 
 func (state *State) clickCommandPalette(id gfx.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
-		state.closeCommandPalette()
+		state.dismissCommandPalette()
 	case hitCommandsBarToggle:
 		// The bar's checkbox is a control of the picker's chrome, not a row of
 		// its searchable list. It switches in place without closing the dialog.
@@ -408,6 +418,9 @@ func (state *State) executeCommandPalette(visible int) {
 	// The entry stands for the row rather than being it, so the row's icon stays
 	// still: only a click on the row itself plays its motion.
 	state.click(target, false)
+	if state.modal == modalNone && state.terminalPage() && state.pendingFocus.IsZero() {
+		state.returnKeyboardToTerminal()
+	}
 }
 
 func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
@@ -451,8 +464,8 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	state.refreshCommandPalette()
 	palette := &state.commandPalette
 	if event.Key == gfx.KeyEscape {
-		state.closeCommandPalette()
-		return gfx.EventResult{Handled: true, Repaint: true}, true
+		state.dismissCommandPalette()
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalReturnFocus()}, true
 	}
 	// WindowConfig gives the controls the workbench page declares their own keys:
 	// the sort switch's arrows are the page's roving, and the rest of its keys
@@ -482,11 +495,11 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	}
 	if inSearch && event.Key == gfx.KeyEnter && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
-		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalReturnFocus()}, true
 	}
 	if inItems && (event.Key == gfx.KeyEnter || event.Key == gfx.KeySpace) && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
-		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalSearchFocus()}, true
+		return gfx.EventResult{Handled: true, Repaint: true, Focus: state.modalReturnFocus()}, true
 	}
 	row := palette.selected
 	if palette.snippets && !event.Repeat && row >= 0 && row < len(palette.visible) {
@@ -573,11 +586,14 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 	return gfx.EventResult{}, false
 }
 
-// modalSearchFocus is where the keyboard goes when a palette command has opened
-// a picker with a search field of its own; otherwise it asks for nothing.
-func (state *State) modalSearchFocus() gfx.ID {
+// modalReturnFocus resolves where keyboard focus should land once a command
+// palette action or dismissal finishes.
+func (state *State) modalReturnFocus() gfx.ID {
 	if state.modal == modalHistory {
 		return hitHistorySearch
+	}
+	if state.modal == modalNone && state.terminalPage() {
+		return state.pendingFocus
 	}
 	return gfx.ID{}
 }

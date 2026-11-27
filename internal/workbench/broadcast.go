@@ -464,6 +464,9 @@ func (state *State) clickTerminalTools(id gfx.ID) bool {
 		state.askDeleteHighlightRule(item(id))
 	case id.Scope() == hitSnippetSendList:
 		state.sendSnippet(item(id))
+		if state.modal == modalNone {
+			state.returnKeyboardToTerminal()
+		}
 	default:
 		return false
 	}
