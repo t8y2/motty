@@ -481,7 +481,7 @@ func (w *sftpWindow) paintTabDetails(canvas *gfx.Canvas, bounds gfx.Rect) {
 	if w.drag.active {
 		w.paintDrag(canvas)
 	}
-	w.notices.paint(canvas, state.Theme(), bounds)
+	w.notices.paintAt(canvas, state.Theme(), bounds, state.toastPlacement.position())
 	if !w.ui.profileQuickOpen {
 		w.ui.tooltip.Paint(canvas, state.Theme(), bounds, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}

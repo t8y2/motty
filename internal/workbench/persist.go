@@ -114,6 +114,7 @@ type savedState struct {
 	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
 	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
 	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
+	ToastPlacement          string              `json:"toast_position,omitempty"`
 	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
 	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
 	TerminalPasteConfirmOff bool                `json:"terminal_paste_confirm_off,omitempty"`
@@ -626,6 +627,7 @@ func (state *State) snapshot() savedState {
 		TerminalShowLatency:        state.terminalShowLatency,
 		TerminalToolbarPosition:    state.terminalToolbarPosition.String(),
 		TerminalToolbarSize:        state.terminalToolbarSize.String(),
+		ToastPlacement:             state.toastPlacement.String(),
 		TerminalBellOff:            state.terminalBellOff,
 		TerminalPasteConfirmOff:    state.pasteConfirmOff,
 		TerminalInputClickOff:      state.terminalInputClickOff,
@@ -1250,6 +1252,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.toolbars.restore(saved.Toolbars)
 	state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.TerminalToolbarPosition)
 	state.terminalToolbarSize = terminalToolbarSizeFromString(saved.TerminalToolbarSize)
+	state.toastPlacement = toastPlacementFromString(saved.ToastPlacement)
 	if saved.Toolbars != nil {
 		if saved.Toolbars.Position != "" {
 			state.terminalToolbarPosition = terminalToolbarPositionFromString(saved.Toolbars.Position)

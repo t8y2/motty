@@ -120,7 +120,7 @@ func (d *fileDocument) paint(canvas *gfx.Canvas, size gfx.Size) {
 		d.ui.editorBounds = d.ui.contentBox.Rect()
 		d.paintCodeEditor(canvas, theme, d.ui.contentBox.Rect())
 	}
-	d.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
+	d.notices.paintAt(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, d.owner.toastPlacement.position())
 	d.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 }
 

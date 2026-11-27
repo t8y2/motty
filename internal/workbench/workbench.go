@@ -934,6 +934,7 @@ type State struct {
 	// The shared terminal tool rail is a device-local presentation choice.
 	// Its zero value keeps the historical right-edge placement.
 	terminalToolbarPosition terminalToolbarPosition
+	toastPlacement          toastPlacement
 	terminalToolbarSize     terminalToolbarSize
 	// terminalBellOff silences the terminal bell, and terminalLinkPlainClick
 	// opens a link on a click without the modifier key (see terminalLinkOpens).

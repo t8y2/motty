@@ -216,7 +216,7 @@ func (w *sftpWindow) paint(canvas *gfx.Canvas, size gfx.Size) {
 	} else if w.foreign.active {
 		w.paintForeignDrag(canvas)
 	}
-	w.notices.paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height})
+	w.notices.paintAt(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, w.owner.toastPlacement.position())
 	w.ui.tooltip.Paint(canvas, theme, gfx.Rect{Width: size.Width, Height: size.Height}, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	if !w.pendingFocus.IsZero() {
 		canvas.RequestFocus(w.pendingFocus)
