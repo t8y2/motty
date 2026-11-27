@@ -165,6 +165,11 @@ type Client struct {
 	credsspVersion   int    // CredSSP version to advertise; 0 = use MaxCredSSPVersion
 	rawNTLM          bool   // raw NTLM fallback for the current CredSSP attempt
 
+	// extendedClientData is whether the server's RDP_NEG_RSP set
+	// EXTENDED_CLIENT_DATA_SUPPORTED. A server that sends no RDP_NEG_RSP, as
+	// Windows Server 2003 does, has not set it.
+	extendedClientData bool
+
 	// MCS/GCC parameters
 	userChannelID    uint16
 	ioChannelID      uint16
@@ -859,6 +864,7 @@ func (c *Client) negotiateX224(requestedProtos uint32) error {
 	}
 
 	c.selectedProtocol = cc.SelectedProto
+	c.extendedClientData = cc.Type == x224.TypeRDPNegRsp && cc.Flags&x224.ExtendedClientDataSupported != 0
 	c.logX224.LogAttrs(context.Background(), slog.LevelDebug, "server selected protocol",
 		slog.String("protocol", x224.ProtocolName(c.selectedProtocol)))
 
@@ -1116,7 +1122,8 @@ func (c *Client) mcsConnect() error {
 		channelDefOpts[i] = ch.Options
 	}
 
-	// TS_UD_CS_MONITOR (0xC005) — multi-monitor topology
+	// TS_UD_CS_MONITOR (0xC005) — multi-monitor topology. It is an extended
+	// client data block, sent only to a server that announced support for them.
 	var monitorBlock []byte
 	if len(c.opts.Monitors) > 1 {
 		n := len(c.opts.Monitors)
@@ -1165,11 +1172,15 @@ func (c *Client) mcsConnect() error {
 	clientData = append(clientData, clusterData.EncodeBlock()...)
 	clientData = append(clientData, secData.EncodeBlock()...)
 	clientData = append(clientData, netData.EncodeBlock()...)
-	if monitorBlock != nil {
+	if monitorBlock != nil && c.extendedClientData {
 		clientData = append(clientData, monitorBlock...)
 	}
-	// TS_UD_CS_MCS_MSGCHANNEL: flags are reserved and must be zero.
-	clientData = append(clientData, 0x06, 0xC0, 0x08, 0x00, 0, 0, 0, 0)
+	if c.extendedClientData {
+		// TS_UD_CS_MCS_MSGCHANNEL: flags are reserved and must be zero. A server
+		// that did not set EXTENDED_CLIENT_DATA_SUPPORTED, Windows Server 2003
+		// among them, resets the connection on seeing it.
+		clientData = append(clientData, 0x06, 0xC0, 0x08, 0x00, 0, 0, 0, 0)
+	}
 
 	// Build GCC Conference Create Request
 	gccRequest := mcs.EncodeGCCConferenceCreateRequest(clientData)

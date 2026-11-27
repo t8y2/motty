@@ -47,6 +47,14 @@ const (
 	ProtocolHybridEx uint32 = 0x00000008 // CredSSP with Early User Auth
 )
 
+// RDP_NEG_RSP flags (MS-RDPBCGR 2.2.1.2.1)
+const (
+	// ExtendedClientDataSupported: the server accepts the extended client data
+	// blocks of the GCC Conference Create Request (2.2.1.3), among them the
+	// monitor and message channel blocks.
+	ExtendedClientDataSupported byte = 0x01
+)
+
 // Negotiation failure codes (MS-RDPBCGR 2.2.1.2.2)
 const (
 	FailSSLRequiredByServer     uint32 = 0x00000001
