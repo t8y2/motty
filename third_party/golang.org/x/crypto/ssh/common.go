@@ -102,6 +102,7 @@ var (
 		KeyExchangeECDHP384,
 		KeyExchangeECDHP521,
 		KeyExchangeDH14SHA256,
+		KeyExchangeDHGEXSHA256,
 		InsecureKeyExchangeDH14SHA1,
 	}
 	// insecureKexAlgos specifies key-exchange algorithms implemented by this

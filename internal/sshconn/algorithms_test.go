@@ -188,3 +188,26 @@ func TestACustomListLimitsWhatIsOffered(t *testing.T) {
 		t.Fatalf("negotiated %+v", connected.Negotiated)
 	}
 }
+
+// A default connection must reach a server that only speaks
+// diffie-hellman-group-exchange-sha256. The library implements that
+// algorithm as supported, but used to leave it out of the default offer
+// list, so the handshake stopped with "no common algorithm for key exchange".
+func TestADefaultConnectionReachesAServerThatOnlyOffersGroupExchangeSHA256(t *testing.T) {
+	server := startServer(t, func(s *testServer) {
+		s.password = "pw"
+		s.algorithms = &ssh.Config{KeyExchanges: []string{ssh.KeyExchangeDHGEXSHA256}}
+	})
+	h := dial(t, server, nil)
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(true)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("pw")
+	connected := h.phase(PhaseConnected)
+	if connected.Negotiated.KeyExchange != ssh.KeyExchangeDHGEXSHA256 {
+		t.Fatalf("negotiated %+v", connected.Negotiated)
+	}
+	if len(connected.Negotiated.Weak()) != 0 {
+		t.Fatalf("weak = %v", connected.Negotiated.Weak())
+	}
+}
