@@ -48,9 +48,7 @@ func startBackend(config Config) (backend, error) {
 		program = defaultShell()
 	}
 	environment := userEnvironment()
-	isWSL := false
 	if distro, ok := WSLDistro(program); ok {
-		isWSL = true
 		var err error
 		if program, config, err = prepareWSL(config, distro, environmentValue(environment, "WSLENV")); err != nil {
 			return backend{}, err
@@ -151,8 +149,17 @@ func startBackend(config Config) (backend, error) {
 	output := os.NewFile(uintptr(outRead), "conpty-out")
 	input := os.NewFile(uintptr(inWrite), "conpty-in")
 	var reader io.Reader = output
-	if needsLegacyPSReadLineColorFix(consoleBackend.passthrough, isWSL, windowsBuildNumber()) {
-		reader = newPSReadLineColorFilter(output)
+	var closeReader func()
+	if needsLegacyPSReadLineColorFix(consoleBackend.passthrough, program, windowsBuildNumberFn()) {
+		filter := newPSReadLineColorFilter(output, func() bool {
+			args, ok := windowsForeground(shellPID, shellCreated)
+			if !ok || len(args) == 0 {
+				return true
+			}
+			return isWindowsPowerShell(args[0])
+		})
+		reader = filter
+		closeReader = filter.Close
 	}
 	var consoleMu sync.Mutex
 	consoleClosed := false
@@ -169,7 +176,7 @@ func startBackend(config Config) (backend, error) {
 		consoleBackend.close(console)
 	}
 	return backend{
-		io:         &consoleIO{reader: reader, output: output, input: input, closeConsole: closeConsole},
+		io:         &consoleIO{reader: reader, closeReader: closeReader, output: output, input: input, closeConsole: closeConsole},
 		foreground: func() ([]string, bool) { return windowsForeground(shellPID, shellCreated) },
 		// ConPTY sizes its console in cells only: Windows' console API has no
 		// pixel size to carry, so the size's pixel fields stop here.
@@ -206,6 +213,7 @@ func startBackend(config Config) (backend, error) {
 // consoleIO is the two pipe ends of a pseudo console as one stream.
 type consoleIO struct {
 	reader        io.Reader
+	closeReader   func()
 	output, input *os.File
 	closeConsole  func()
 }
@@ -217,6 +225,9 @@ func (stream *consoleIO) Write(p []byte) (int, error) { return stream.input.Writ
 // so it runs beside the closing of the pipes rather than before.
 func (stream *consoleIO) Close() error {
 	go stream.closeConsole()
+	if stream.closeReader != nil {
+		stream.closeReader()
+	}
 	_ = stream.input.Close()
 	return stream.output.Close()
 }

@@ -5,6 +5,10 @@ package localshell
 import (
 	"bytes"
 	"io"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
@@ -20,9 +24,17 @@ import (
 // terminals (issue #1737).
 const legacyPSReadLineBuild = 20348
 
+// defaultPSReadLineFlushTimeout is how long a trailing prefix of
+// legacyPSReadLineDefaultColor (such as a bare ESC or "\x1b[37m") waits for the
+// rest of a split sequence before being released untouched.
+const defaultPSReadLineFlushTimeout = 10 * time.Millisecond
+
 var (
 	legacyPSReadLineDefaultColor = []byte("\x1b[37m\x1b[40m")
 	fixedPSReadLineDefaultColor  = []byte("\x1b[39;49m")
+	// windowsBuildNumberFn is overridden by tests so the filter activation path
+	// can be exercised on newer Windows builds (such as Windows 11 CI runners).
+	windowsBuildNumberFn = windowsBuildNumber
 )
 
 func windowsBuildNumber() uint32 {
@@ -32,16 +44,34 @@ func windowsBuildNumber() uint32 {
 	return 0
 }
 
-func needsLegacyPSReadLineColorFix(passthrough, isWSL bool, build uint32) bool {
-	return passthrough && !isWSL && build > 0 && build < legacyPSReadLineBuild
+func isWindowsPowerShell(program string) bool {
+	return strings.EqualFold(filepath.Base(program), "powershell.exe")
+}
+
+func needsLegacyPSReadLineColorFix(passthrough bool, program string, build uint32) bool {
+	return passthrough && isWindowsPowerShell(program) && build > 0 && build < legacyPSReadLineBuild
+}
+
+type filterChunk struct {
+	data []byte
+	err  error
 }
 
 // psReadLineColorFilter rewrites Windows 10 PSReadLine 2.0.0-beta2's split
 // default-color pair ("\x1b[37m\x1b[40m") into default foreground/background
 // ("\x1b[39;49m") across arbitrary Read chunk boundaries.
+//
+// When a chunk ends with a partial prefix of legacyPSReadLineDefaultColor, it
+// waits at most flushTimeout for the next chunk before releasing those bytes
+// unchanged, so a trailing ESC or "\x1b[37m" is never held indefinitely when
+// the program goes idle.
 type psReadLineColorFilter struct {
-	src      io.Reader
-	raw      []byte
+	chunks        chan filterChunk
+	done          chan struct{}
+	closeOnce     sync.Once
+	flushTimeout  time.Duration
+	shouldRewrite func() bool
+
 	work     []byte
 	pending  []byte
 	ready    []byte
@@ -49,8 +79,53 @@ type psReadLineColorFilter struct {
 	err      error
 }
 
-func newPSReadLineColorFilter(src io.Reader) *psReadLineColorFilter {
-	return &psReadLineColorFilter{src: src}
+func newPSReadLineColorFilter(src io.Reader, shouldRewrite func() bool) *psReadLineColorFilter {
+	return newPSReadLineColorFilterWithTimeout(src, shouldRewrite, defaultPSReadLineFlushTimeout)
+}
+
+func newPSReadLineColorFilterWithTimeout(src io.Reader, shouldRewrite func() bool, flushTimeout time.Duration) *psReadLineColorFilter {
+	if flushTimeout <= 0 {
+		flushTimeout = defaultPSReadLineFlushTimeout
+	}
+	f := &psReadLineColorFilter{
+		chunks:        make(chan filterChunk, 1),
+		done:          make(chan struct{}),
+		flushTimeout:  flushTimeout,
+		shouldRewrite: shouldRewrite,
+	}
+	go f.pump(src)
+	return f
+}
+
+func (f *psReadLineColorFilter) Close() {
+	f.closeOnce.Do(func() { close(f.done) })
+}
+
+func (f *psReadLineColorFilter) pump(src io.Reader) {
+	defer close(f.chunks)
+	buf := make([]byte, 32<<10)
+	for {
+		n, err := src.Read(buf)
+		if n > 0 {
+			chunk := filterChunk{data: append([]byte(nil), buf[:n]...), err: err}
+			select {
+			case f.chunks <- chunk:
+			case <-f.done:
+				return
+			}
+			if err != nil {
+				return
+			}
+			continue
+		}
+		if err != nil {
+			select {
+			case f.chunks <- filterChunk{err: err}:
+			case <-f.done:
+			}
+			return
+		}
+	}
 }
 
 func (f *psReadLineColorFilter) Read(p []byte) (int, error) {
@@ -65,22 +140,29 @@ func (f *psReadLineColorFilter) Read(p []byte) (int, error) {
 			f.err = nil
 			return 0, err
 		}
-		if len(f.raw) < len(p) {
-			f.raw = make([]byte, len(p))
-		}
-		n, err := f.src.Read(f.raw[:len(p)])
-		if n > 0 {
-			f.process(f.raw[:n], err != nil)
-		} else if err != nil {
-			f.flushPending()
-		}
-		if err != nil {
-			f.err = err
-			if f.readyOff == len(f.ready) {
-				f.err = nil
-				return 0, err
+		if len(f.pending) > 0 {
+			timer := time.NewTimer(f.flushTimeout)
+			select {
+			case chunk, ok := <-f.chunks:
+				timer.Stop()
+				if !ok {
+					f.flushPending()
+					if f.readyOff == len(f.ready) {
+						return 0, io.EOF
+					}
+					break
+				}
+				f.consume(chunk)
+			case <-timer.C:
+				f.flushPending()
 			}
+			continue
 		}
+		chunk, ok := <-f.chunks
+		if !ok {
+			return 0, io.EOF
+		}
+		f.consume(chunk)
 	}
 	copied := copy(p, f.ready[f.readyOff:])
 	f.readyOff += copied
@@ -91,20 +173,38 @@ func (f *psReadLineColorFilter) Read(p []byte) (int, error) {
 	return copied, nil
 }
 
+func (f *psReadLineColorFilter) consume(chunk filterChunk) {
+	if len(chunk.data) > 0 {
+		f.process(chunk.data, chunk.err != nil)
+	} else if chunk.err != nil {
+		f.flushPending()
+	}
+	if chunk.err != nil {
+		f.err = chunk.err
+	}
+}
+
 func (f *psReadLineColorFilter) process(chunk []byte, eof bool) {
 	f.work = append(f.work[:0], f.pending...)
 	f.work = append(f.work, chunk...)
 	f.pending = f.pending[:0]
 
 	rest := f.work
-	for {
-		index := bytes.Index(rest, legacyPSReadLineDefaultColor)
-		if index < 0 {
-			break
+	if bytes.Contains(rest, legacyPSReadLineDefaultColor) {
+		if f.shouldRewrite == nil || f.shouldRewrite() {
+			for {
+				index := bytes.Index(rest, legacyPSReadLineDefaultColor)
+				if index < 0 {
+					break
+				}
+				f.ready = append(f.ready, rest[:index]...)
+				f.ready = append(f.ready, fixedPSReadLineDefaultColor...)
+				rest = rest[index+len(legacyPSReadLineDefaultColor):]
+			}
+		} else {
+			f.ready = append(f.ready, rest...)
+			return
 		}
-		f.ready = append(f.ready, rest[:index]...)
-		f.ready = append(f.ready, fixedPSReadLineDefaultColor...)
-		rest = rest[index+len(legacyPSReadLineDefaultColor):]
 	}
 	if eof {
 		f.ready = append(f.ready, rest...)
