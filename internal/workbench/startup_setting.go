@@ -8,6 +8,7 @@ import (
 
 	"motty/internal/localshell"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
@@ -260,7 +261,11 @@ func (state *State) resolvePreparedLocalSessions() {
 			choice := state.resolveStartupShell()
 			s.host.localShell = choice.Path
 			s.host.Label = state.messages.LocalTerminalTitle
-			if choice.Path != "" {
+			if choice.Path == "" {
+				// Text entered for the named program must not go to its fallback.
+				s.term.startupText = nil
+				s.term.preedit = app.TextState{}
+			} else {
 				s.host.Label = choice.Name
 			}
 			if !s.customTitle {

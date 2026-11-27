@@ -63,14 +63,12 @@ func (state *State) connectRestoredSessions() {
 	if state.restoreConnect == restoreConnectOff {
 		return
 	}
-	// "Active" means what is in front: every pane of the active tab, not just the
-	// focused one, since a split tab shows them all.
+	// A startup local tab may already be in front. Restore every pane of the
+	// tab that was active when the window was saved.
 	var visible map[uint32]bool
 	if state.restoreConnect == restoreConnectActive {
-		workspaceID := state.deck.ActiveWorkspace()
-		panes := state.deck.Panes(workspaceID, nil)
-		visible = make(map[uint32]bool, len(panes)+1)
-		visible[state.activeSessionID] = true
+		panes := state.deck.Panes(state.savedActiveWorkspace, nil)
+		visible = make(map[uint32]bool, len(panes))
 		for _, pane := range panes {
 			visible[uint32(pane.SessionID)] = true
 		}

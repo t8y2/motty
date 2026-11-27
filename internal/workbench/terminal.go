@@ -15,6 +15,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/charset"
@@ -1228,6 +1229,9 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t := session.term
 	earlyText := t.startupText
 	t.startupText = nil
+	if state.startupTextSession == session.ID {
+		state.startupTextSession = 0
+	}
 	if err != nil && session.shared && session.containerCommand == "" {
 		// A server limits how many shells one connection may carry. Where the
 		// borrowed connection is full, connect separately instead of failing.
@@ -2032,6 +2036,18 @@ func (state *State) acceptsStartupText(session *Session) bool {
 		!session.term.ended && !session.term.transferHoldsInput
 }
 
+// Once the keyboard leaves the terminal, coming back starts a new batch.
+func (state *State) discardBlurredStartupText(focus gfx.ID) {
+	id := state.startupTextSession
+	if id == 0 || id == state.activeSessionID && !focus.IsZero() && focus == state.activeTerminalFocusHit() {
+		return
+	}
+	if session, ok := state.sessionByIDPointer(id); ok && session.term != nil {
+		session.term.startupText = nil
+	}
+	state.startupTextSession = 0
+}
+
 // terminalText applies a text-system event to a session's terminal.
 func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.TextState {
 	var session *Session
@@ -2072,6 +2088,7 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 			if len(event.Text) <= maxStartupText-len(t.startupText) && utf8.ValidString(event.Text) &&
 				strings.IndexFunc(event.Text, unicode.IsControl) < 0 {
 				t.startupText = append(t.startupText, event.Text...)
+				state.startupTextSession = session.ID
 			}
 			return app.TextState{Redraw: true}
 		}
@@ -2202,6 +2219,12 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		return state.copySelection(session)
 	}
 	if t.shell == nil {
+		if event.Key == gfx.KeyBackspace && event.Modifiers == 0 && !event.Release &&
+			!t.preedit.Composing && len(t.startupText) > 0 && state.acceptsStartupText(session) {
+			end := text.PreviousGraphemeBoundary(string(t.startupText), len(t.startupText))
+			t.startupText = t.startupText[:end]
+			return handled
+		}
 		// Nothing is listening: Enter starts the session again.
 		if event.Key == gfx.KeyEnter && !event.Repeat && state.canReconnect(session) {
 			state.reconnect(session)

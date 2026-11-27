@@ -30,8 +30,12 @@ composition at the cursor before the shell is attached. Shell discovery and
 saving a newly opened tab wait until the first window wake. The local shell
 opens in the background; attaching it uses the same terminal so an unfinished
 composition can continue. Printable text committed early can reach that same
-focused local shell once it attaches. Enter, paste and broadcast input are not
-queued for startup. Local tabs opened later keep their usual startup path.
+focused local shell once it attaches. Backspace edits this pending text.
+Moving focus away discards it, as does falling back from a missing shell to
+the default. Enter, paste and broadcast input are not queued for startup.
+The option to reconnect the last active tab still uses the saved workspace,
+even if a new local tab is shown first. Local tabs opened later keep their
+usual startup path.
 
 ### Windows Pinyin cold-start check
 

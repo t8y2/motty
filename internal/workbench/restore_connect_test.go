@@ -64,6 +64,22 @@ func TestRestoreConnectsOnlyTheActiveTabWhenChosen(t *testing.T) {
 	}
 }
 
+func TestRestoreActiveStillDialsTheSavedTabWhenStartupOpensALocalTab(t *testing.T) {
+	world, options := restoredWorld(t, restoreConnectActive, false)
+	state := newTestState(t, options)
+	closeShells(t, state)
+	savedActive := state.activeSessionID
+	state.startupEnabled, state.startupLocal = true, true
+	before := len(world.conns)
+	state.PrepareInitialLocalSessions()
+	state.Wake()
+	remote, _ := state.sessionByIDPointer(savedActive)
+	current, _ := state.sessionByIDPointer(state.activeSessionID)
+	if !current.isLocal() || remote.conn == nil || len(world.conns)-before != 1 {
+		t.Fatalf("local startup active=%t, saved tab connected=%t, remote dials=%d; want true, true, 1", current.isLocal(), remote.conn != nil, len(world.conns)-before)
+	}
+}
+
 // A state saved before the setting existed has no policy: reopening must not
 // dial, and every tab must wait on its page for the user.
 func TestRestoreDoesNotDialByDefault(t *testing.T) {

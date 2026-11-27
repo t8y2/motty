@@ -914,8 +914,10 @@ type State struct {
 	shareConnections        shareConnectionsPolicy
 	tooltip                 components.HoverTooltip
 	selectTypeahead         selectTypeahead
-	restorePending          bool // restored tabs have not yet been connected (see connectRestoredSessions)
-	preparingInitialLocal   bool // local startup sessions use the background shell path
+	restorePending          bool                   // restored tabs have not yet been connected (see connectRestoredSessions)
+	savedActiveWorkspace    layoutcore.WorkspaceID // the tab that was active in the saved window
+	preparingInitialLocal   bool                   // local startup sessions use the background shell path
+	startupTextSession      uint32                 // the one terminal holding early input for the focused control
 	terminalClipboard       terminalClipboardPolicy
 	terminalIntense         terminalIntense
 
@@ -1425,6 +1427,7 @@ func (state *State) loadApplicationProfile() {
 	// connection's wake-ups would have nowhere to go and its progress would
 	// never reach the screen.
 	state.restorePending = state.startupWanted()
+	state.savedActiveWorkspace = state.deck.ActiveWorkspace()
 	switch {
 	case err != nil:
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
