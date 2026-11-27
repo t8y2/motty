@@ -2963,7 +2963,6 @@ var englishTools = ToolsMessages{
 	BgRemove:                          "Remove",
 	BgPickerTitle:                     "Choose a background image",
 	BgEnabled:                         "Enable terminal background image",
-	BgEnabledDescription:              "Keep the selected image when disabled and restore it when enabled again.",
 	BgHideApplication:                 "Hide application backgrounds",
 	BgHideApplicationDescription:      "Show the image through application color blocks. This may affect menus and highlights in some applications.",
 	BgVisibility:                      "Image visibility",

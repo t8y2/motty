@@ -1126,7 +1126,6 @@ type ToolsMessages struct {
 	BgRemove                          string
 	BgPickerTitle                     string
 	BgEnabled                         string
-	BgEnabledDescription              string
 	BgHideApplication                 string
 	BgHideApplicationDescription      string
 	BgVisibility                      string

@@ -393,7 +393,7 @@ func (state *State) paintBackgroundSettings(page *settingsPage) {
 	}
 	description := bg.text
 	page.group(m.BgGroup, func() {
-		page.toggleRow(m.BgEnabled, m.BgEnabledDescription, bg.set && !bg.disabled, hitBgEnabled)
+		page.toggleRow(m.BgEnabled, "", bg.set && !bg.disabled, hitBgEnabled)
 		page.actionRow(m.BgRow, description, false,
 			components.ButtonAction{ID: hitBgChoose, Label: m.BgChoose, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitBgRemove, Label: m.BgRemove, Variant: components.ButtonOutline})
@@ -402,7 +402,7 @@ func (state *State) paintBackgroundSettings(page *settingsPage) {
 			ui.Row(page.c).Grow(1).Gap(8).Items(ui.Center).Children(func() {
 				slider := &bg.visibility
 				wasDragging := slider.Dragging()
-				control := ui.Slider(page.c, slider).Range(0, 100).Step(1).Label(m.BgVisibility).Hit(hitBgVisibility, m.BgVisibility).Disabled(!bg.set).Grow(1).Shrink(1)
+				control := ui.Slider(page.c, slider).Range(0, 100).Step(1).Label(m.BgVisibility).Hit(hitBgVisibility, m.BgVisibility).Disabled(!bg.set || bg.disabled).Grow(1).Shrink(1)
 				slider.ID = hitBgVisibility
 				changed := control.Changed()
 				if !slider.Dragging() && (wasDragging || changed) {

@@ -2963,7 +2963,6 @@ var traditionalTools = ToolsMessages{
 	BgRemove:                          "移除",
 	BgPickerTitle:                     "選擇背景圖片",
 	BgEnabled:                         "啟用終端背景圖",
-	BgEnabledDescription:              "關閉後保留已選圖片，再次啟用時自動恢復。",
 	BgHideApplication:                 "隱藏應用底色",
 	BgHideApplicationDescription:      "讓背景圖透過應用的色塊區域顯示，可能影響部分應用的選單和醒目提示。",
 	BgVisibility:                      "圖片可見度",
