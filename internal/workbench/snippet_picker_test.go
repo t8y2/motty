@@ -329,7 +329,7 @@ func TestSnippetPickerReturnsKeyboardToTerminal(t *testing.T) {
 	t.Run("click snippet row", func(t *testing.T) {
 		state, shell, view := setup(t, snippet{Name: "Disk usage", Command: "df -h"})
 		openViaToolbar(t, state, view)
-		row := dualHit(t, view, hitCommandPaletteItems.At(0))
+		row := dualHit(t, view, state.commandPalette.rowID(0))
 		if err := view.Click(row.X+row.Width/2, row.Y+row.Height/2); err != nil {
 			t.Fatal(err)
 		}
