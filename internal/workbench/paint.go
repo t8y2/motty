@@ -3873,10 +3873,13 @@ func (state *State) declarePasswordDialog(c ui.C) {
 	viewport := dialogViewport(c)
 	bodyHeight := state.passwordBodyHeight()
 	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, state.passwordDescription, bodyHeight)
+	// No scrim dismiss: a press beside the dialog must not discard typed
+	// credentials or cancel an active MFA/password prompt. Cancel, the close
+	// button and Escape still cancel it.
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.PasswordTitle, Description: state.passwordDescription,
 		Width: 460, Height: height, Layer: dialogLayer,
-		Scope: dialogScope, DismissID: hitPasswordDismiss, CloseID: hitPasswordClose, InitialFocusID: hitPasswordField,
+		Scope: dialogScope, CloseID: hitPasswordClose, InitialFocusID: hitPasswordField,
 	})
 	dialog.Body(func() { state.declarePasswordBody(c) })
 	dialog.Footer(func() {

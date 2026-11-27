@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/autofill"
+	"motty/internal/sshconn"
 )
 
 func modalEventDriver(t *testing.T, state *State) *app.Driver {
@@ -382,4 +383,79 @@ func TestVaultUnlockBodyTakesRealPointerAndText(t *testing.T) {
 	if got := state.secrets.unlock.String(); got != "master password" {
 		t.Fatalf("typing reached %q", got)
 	}
+}
+
+// The password/MFA prompt is not a menu: losing focus or clicking beside the
+// dialog (for example when switching back from an authenticator app) must not
+// discard typed input or cancel the connection. Cancel, close and Escape still
+// cancel it explicitly.
+func TestPasswordDialogKeepsInputAndConnectionWhenPressedOutside(t *testing.T) {
+	t.Run("outside click keeps MFA input and submits", func(t *testing.T) {
+		world, options := newWorld(t)
+		state := newTestState(t, options)
+		fake := connect(t, state, world)
+		fake.set(func(s *sshconn.Status) {
+			s.Phase, s.Attempt = sshconn.PhasePasswordPrompt, 1
+			s.Questions = []sshconn.Question{{Text: "Verification code: ", Secret: true}}
+		})
+		state.Wake()
+		if state.modal != modalPassword {
+			t.Fatalf("modal = %d, want modalPassword", state.modal)
+		}
+
+		driver := modalEventDriver(t, state)
+		clickPaintedHit(t, driver, hitPasswordField)
+		if err := driver.Type("123"); err != nil {
+			t.Fatal(err)
+		}
+		if err := driver.LoseFocus(); err != nil {
+			t.Fatal(err)
+		}
+		if err := driver.DeactivateWindow(); err != nil {
+			t.Fatal(err)
+		}
+		x, y := dialogOutsidePoint(t, driver)
+		if err := driver.Click(x, y); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalPassword || fake.canceled != 0 {
+			t.Fatalf("pressing beside the MFA dialog canceled the connection: modal=%d canceled=%d", state.modal, fake.canceled)
+		}
+		if editor := state.EditorFor(hitPasswordField); editor == nil || editor.String() != "123" {
+			t.Fatalf("pressing beside the MFA dialog lost typed input: %v", editor)
+		}
+
+		clickPaintedHit(t, driver, hitPasswordField)
+		if err := driver.Type("456"); err != nil {
+			t.Fatal(err)
+		}
+		if err := driver.Key(gfx.KeyEnter, 0); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalNone || fake.canceled != 0 {
+			t.Fatalf("submitting MFA failed: modal=%d canceled=%d", state.modal, fake.canceled)
+		}
+		if len(fake.answers) != 1 || len(fake.answers[0]) != 1 || fake.answers[0][0] != "123456" {
+			t.Fatalf("submitted MFA answers = %v, want [[123456]]", fake.answers)
+		}
+	})
+
+	t.Run("escape still cancels explicitly", func(t *testing.T) {
+		world, options := newWorld(t)
+		state := newTestState(t, options)
+		fake := connect(t, state, world)
+		fake.set(func(s *sshconn.Status) {
+			s.Phase, s.Attempt = sshconn.PhasePasswordPrompt, 1
+			s.Questions = []sshconn.Question{{Text: "Verification code: ", Secret: true}}
+		})
+		state.Wake()
+
+		driver := modalEventDriver(t, state)
+		if err := driver.Key(gfx.KeyEscape, 0); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalNone || fake.canceled != 1 {
+			t.Fatalf("Escape did not cancel the password prompt: modal=%d canceled=%d", state.modal, fake.canceled)
+		}
+	})
 }

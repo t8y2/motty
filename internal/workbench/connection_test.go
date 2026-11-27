@@ -733,7 +733,7 @@ func TestEnterOutsideThePasswordFieldDoesNotSubmit(t *testing.T) {
 }
 
 func TestDismissingThePasswordDialogCancelsTheConnection(t *testing.T) {
-	for _, hit := range []gfx.ID{hitPasswordCancel, hitPasswordClose, hitPasswordDismiss} {
+	for _, hit := range []gfx.ID{hitPasswordCancel, hitPasswordClose} {
 		world, options := newWorld(t)
 		state := newTestState(t, options)
 		fake := connect(t, state, world)
