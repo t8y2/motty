@@ -176,6 +176,7 @@ type aiState struct {
 	panelWidth     float32
 	composerHeight float32
 	items          []aiItem
+	suggestions    aiSuggestionsState
 	history        []llm.Message
 	conv           int64
 	// session names the conversation to providers that route on it; it is
@@ -257,6 +258,7 @@ func (state *State) initAI() {
 }
 
 func (state *State) closeAI() {
+	state.aiInvalidateSuggestions()
 	if state.ai.inbox == nil {
 		return
 	}
@@ -307,6 +309,12 @@ func (state *State) aiStore() (*store.Store, error) {
 
 // reloadAI reads providers, models and settings from the database.
 func (state *State) reloadAI() {
+	suggestionKey := state.aiSuggestionContextKey()
+	defer func() {
+		if suggestionKey != state.aiSuggestionContextKey() {
+			state.aiInvalidateSuggestions()
+		}
+	}()
 	ai := &state.ai
 	if ai.store == nil {
 		return
@@ -379,6 +387,15 @@ func (state *State) reloadAISettings() {
 		}
 	})
 	read("ai.history", func(v string) { settings.keepHistory = v != "off" })
+	read(aiSuggestionStoreKey, func(value string) {
+		var library aiSuggestionLibrary
+		if json.Unmarshal([]byte(value), &library) == nil {
+			if !ai.suggestions.library.equal(library) {
+				state.aiInvalidateSuggestions()
+			}
+			ai.suggestions.library = library
+		}
+	})
 	read("ai.mcp.enabled", func(v string) { settings.mcpEnabled = v == "on" })
 	read("ai.mcp.mode", func(v string) { settings.mcpMode = mcpModeFromSetting(v) })
 	read(agentModeSetting, func(v string) { settings.agentMode = mcpModeFromSetting(v) })
@@ -833,6 +850,7 @@ func (state *State) setAIMode(mode agent.Mode) {
 	if state.ai.mode == mode {
 		return
 	}
+	state.aiInvalidateSuggestions()
 	state.ai.mode = mode
 	name := "ask"
 	if mode == agent.ModeAgent {
@@ -863,6 +881,10 @@ func (state *State) dropEscalationApprovals() {
 // aiSend starts a request with the text in the input box. While a request runs
 // the box is an interjection instead; see aiInterject.
 func (state *State) aiSend() bool {
+	return state.aiSendWithSuggestion(nil)
+}
+
+func (state *State) aiSendWithSuggestion(selection *aiArmedSuggestion) bool {
 	ai := &state.ai
 	if ai.run != nil {
 		return state.aiInterject()
@@ -899,7 +921,7 @@ func (state *State) aiSend() bool {
 		return false
 	}
 	ai.target, ai.extras, ai.targetSet = target, extras, true
-	provider, ready := state.aiKeyedProvider(provider, func() { state.aiSend() })
+	provider, ready := state.aiKeyedProvider(provider, func() { state.aiSendWithSuggestion(selection) })
 	if !ready {
 		return true // keep both the question and target while the vault is unlocked
 	}
@@ -938,6 +960,11 @@ func (state *State) aiSend() bool {
 		ai.notice = fmt.Sprintf(state.messages.AIPanel.MessageTooLargeFmt, formatBytes(store.MaxTextBytes))
 		return false
 	}
+	boundCommand := ""
+	if selection != nil && selection == state.aiBoundSuggestion() {
+		boundCommand = selection.entry.Command
+	}
+	state.aiInvalidateSuggestions()
 	ai.notice = ""
 	ai.needLogin = ""
 	ai.retry = false
@@ -1028,9 +1055,22 @@ func (state *State) aiSend() bool {
 	}
 	go func() {
 		defer backend.closeAll()
-		messages, err := agent.Run(ctx, config, history, sent, func(event agent.Event) {
+		emit := func(event agent.Event) {
 			state.aiPost(func(s *State) { s.aiEvent(run, event) })
-		})
+		}
+		var prelude []llm.Message
+		if boundCommand != "" {
+			var err error
+			prelude, err = aiRunBoundSuggestion(ctx, config, target.ID, boundCommand, sent, emit)
+			if err != nil {
+				state.aiPost(func(s *State) { s.aiFinished(run, prelude, err) })
+				return
+			}
+			config.UserInHistory = true
+			history = append(history, prelude...)
+		}
+		messages, err := agent.Run(ctx, config, history, sent, emit)
+		messages = append(prelude, messages...)
 		state.aiPost(func(s *State) { s.aiFinished(run, messages, err) })
 	}()
 	return true
@@ -1417,6 +1457,8 @@ func (state *State) aiNewConversation() {
 	if ai.run != nil {
 		return
 	}
+	state.aiInvalidateSuggestions()
+	ai.suggestions.page++
 	ai.target, ai.extras, ai.targetSet = gate.SessionInfo{}, nil, false
 	ai.panel.targetOpen = false
 	ai.panel.autoMenu = false
@@ -1442,6 +1484,7 @@ func (state *State) aiOpenConversation(id int64) {
 	if ai.run != nil || ai.store == nil {
 		return
 	}
+	state.aiInvalidateSuggestions()
 	stored, err := ai.store.Messages(id)
 	if err != nil {
 		ai.notice = err.Error()

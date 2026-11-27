@@ -104,10 +104,23 @@ var (
 	hitAISetProbeStart     = tree.ID(aiSettingsHits, "ai-set-probe-start")
 	hitAISetModelProbe     = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-probe"))
 
-	hitAISetModelReasoning  = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-reasoning"))
-	hitAISetReasoningSave   = tree.ID(aiSettingsHits, "ai-set-reasoning-save")
-	hitAISetReasoningCancel = tree.ID(aiSettingsHits, "ai-set-reasoning-cancel")
-	hitAISetReasoningClose  = tree.ID(aiSettingsHits, "ai-set-reasoning-close")
+	hitAISetModelReasoning   = tree.Sub(aiSettingsHits, tree.Name("ai-set-model-reasoning"))
+	hitAISetReasoningSave    = tree.ID(aiSettingsHits, "ai-set-reasoning-save")
+	hitAISetReasoningCancel  = tree.ID(aiSettingsHits, "ai-set-reasoning-cancel")
+	hitAISetReasoningClose   = tree.ID(aiSettingsHits, "ai-set-reasoning-close")
+	hitAISetSuggestIdle      = tree.ID(aiSettingsHits, "ai-set-suggest-idle")
+	hitAISetSuggestConnected = tree.ID(aiSettingsHits, "ai-set-suggest-connected")
+	hitAISetSuggestAdd       = tree.ID(aiSettingsHits, "ai-set-suggest-add")
+	hitAISetSuggestText      = tree.ID(aiSettingsHits, "ai-set-suggest-text")
+	hitAISetSuggestCommand   = tree.ID(aiSettingsHits, "ai-set-suggest-command")
+	hitAISetSuggestSave      = tree.ID(aiSettingsHits, "ai-set-suggest-save")
+	hitAISetSuggestCancel    = tree.ID(aiSettingsHits, "ai-set-suggest-cancel")
+	hitAISetSuggestEdit      = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-edit"))
+	hitAISetSuggestDisable   = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-disable"))
+	hitAISetSuggestMoveUp    = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-up"))
+	hitAISetSuggestMoveDown  = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-down"))
+	hitAISetSuggestReset     = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-reset"))
+	hitAISetSuggestDelete    = tree.Sub(aiSettingsHits, tree.Name("ai-set-suggest-delete"))
 )
 
 // aiDialogKind is which of the section's dialogs is up.
@@ -124,6 +137,7 @@ const (
 	aiDialogAgentAllowAll
 	aiDialogProbe
 	aiDialogModelReasoning
+	aiDialogSuggestionEdit
 )
 
 // aiModelFilter specifies the filtering condition for models of a provider.
@@ -180,7 +194,13 @@ const (
 // dialog, the selected provider and the outcome of the last action. The saved
 // choices themselves are in aiState.settings.
 type aiSettingsUI struct {
-	dialog aiDialogKind
+	dialog                                      aiDialogKind
+	suggestionContext                           aiSuggestionContext
+	suggestionEdit                              aiSuggestion
+	suggestionText                              text.Editor
+	suggestionCommand                           text.Editor
+	suggestionError                             string
+	suggestionTextField, suggestionCommandField ui.Field
 
 	// The provider dialog. editID is empty when a provider is being added.
 	editID string
@@ -431,6 +451,24 @@ func (state *State) aiSettingsClick(id gfx.ID) bool {
 	}
 	cfg.clearedDone, cfg.copied, cfg.tokenReset, cfg.notice = false, aiCopyIdle, false, ""
 	switch {
+	case id == hitAISetSuggestIdle:
+		cfg.suggestionContext = aiSuggestionIdle
+	case id == hitAISetSuggestConnected:
+		cfg.suggestionContext = aiSuggestionConnected
+	case id == hitAISetSuggestAdd:
+		state.aiOpenSuggestionEditor(aiSuggestion{})
+	case id.Scope() == hitAISetSuggestEdit:
+		state.aiSuggestionEditAt(item(id))
+	case id.Scope() == hitAISetSuggestDisable:
+		state.aiSuggestionDisableAt(item(id))
+	case id.Scope() == hitAISetSuggestMoveUp:
+		state.aiSuggestionMoveAt(item(id), -1)
+	case id.Scope() == hitAISetSuggestMoveDown:
+		state.aiSuggestionMoveAt(item(id), 1)
+	case id.Scope() == hitAISetSuggestReset:
+		state.aiSuggestionResetAt(item(id))
+	case id.Scope() == hitAISetSuggestDelete:
+		state.aiSuggestionDeleteAt(item(id))
 	case id == hitAISetStepsMinus:
 		state.aiStepBy(-1)
 	case id == hitAISetStepsPlus:
@@ -558,6 +596,13 @@ func onOff(on bool) string {
 func (state *State) aiDialogClick(id gfx.ID) {
 	cfg := &state.ai.cfg
 	switch cfg.dialog {
+	case aiDialogSuggestionEdit:
+		switch id {
+		case hitAISetFormClose, hitAISetSuggestCancel:
+			state.aiCloseDialog()
+		case hitAISetSuggestSave:
+			state.aiSubmitSuggestion()
+		}
 	case aiDialogCLILogin:
 		if id == hitAISetFormDismiss || id == hitAISetFormClose || id == hitAISetFormCancel {
 			state.aiStopCLILogin()
@@ -753,6 +798,9 @@ func (state *State) aiSettingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	}
 	if event.Key == gfx.KeyEnter && !event.Repeat {
 		switch {
+		case cfg.dialog == aiDialogSuggestionEdit && (event.Target == hitAISetSuggestText || event.Target == hitAISetSuggestCommand):
+			state.aiSubmitSuggestion()
+			return gfx.EventResult{Handled: true, Repaint: true}, true
 		case cfg.dialog == aiDialogProvider && (event.Target == hitAISetFormName || event.Target == hitAISetFormURL || event.Target == hitAISetFormModelsURL || event.Target == hitAISetFormProxy || event.Target == hitAISetFormKey || event.Target == hitAISetFormCLIPath):
 			state.aiSubmitProvider()
 			return gfx.EventResult{Handled: true, Repaint: true}, true
@@ -770,6 +818,10 @@ func (state *State) aiSettingsEditor(hit gfx.ID) *text.Editor {
 	}
 	cfg := &state.ai.cfg
 	switch {
+	case cfg.dialog == aiDialogSuggestionEdit && hit == hitAISetSuggestText:
+		return &cfg.suggestionText
+	case cfg.dialog == aiDialogSuggestionEdit && hit == hitAISetSuggestCommand && cfg.suggestionEdit.Context == aiSuggestionConnected:
+		return &cfg.suggestionCommand
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormName:
 		return &cfg.name
 	case cfg.dialog == aiDialogProvider && hit == hitAISetFormCLIPath && store.IsCLIKind(cfg.kind):

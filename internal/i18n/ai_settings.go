@@ -221,6 +221,24 @@ type AISettingsMessages struct {
 
 	// Behaviour.
 	BehaviourTitle          string
+	SuggestionTitle         string
+	SuggestionCategory      string
+	SuggestionConnected     string
+	SuggestionIdle          string
+	SuggestionAdd           string
+	SuggestionEdit          string
+	SuggestionEditTitle     string
+	SuggestionPrompt        string
+	SuggestionCommand       string
+	SuggestionCommandDesc   string
+	SuggestionSave          string
+	SuggestionInvalid       string
+	SuggestionDisable       string
+	SuggestionEnable        string
+	SuggestionReset         string
+	SuggestionDelete        string
+	SuggestionUp            string
+	SuggestionDown          string
 	AutoRun                 string
 	AutoRunDesc             string
 	RiskLow                 string

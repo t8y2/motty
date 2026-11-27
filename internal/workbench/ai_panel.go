@@ -27,6 +27,15 @@ import (
 var aiPanelHits = tree.Feature("ai-panel")
 
 var (
+	hitAIExamplesRefresh         = tree.ID(aiPanelHits, "ai-examples-refresh")
+	hitAIManageSuggestions       = tree.ID(aiPanelHits, "ai-manage-suggestions")
+	hitAIPreviewSuggestions      = tree.ID(aiPanelHits, "ai-preview-suggestions")
+	hitAIGenerateSuggestions     = tree.ID(aiPanelHits, "ai-generate-suggestions")
+	hitAICancelSuggestionPreview = tree.ID(aiPanelHits, "ai-cancel-suggestion-preview")
+	hitAIBoundCommand            = tree.ID(aiPanelHits, "ai-bound-command")
+)
+
+var (
 	hitAIToggle        = tree.ID(aiPanelHits, "ai-toggle")
 	hitAIClose         = tree.ID(aiPanelHits, "ai-close")
 	hitAINew           = tree.ID(aiPanelHits, "ai-new")
@@ -563,6 +572,7 @@ func (state *State) setAIPanelOpen(open bool) {
 	}
 	ai.open = open
 	if !open {
+		state.aiInvalidateSuggestions()
 		if ai.panel.messageScroll != nil {
 			// The panel's List stops being declared, so the page drops its offset;
 			// remember where the reader was for the next open.
@@ -611,6 +621,7 @@ func (state *State) toggleAIPanel() {
 // sending it, after whatever the user had already typed.
 func (state *State) openAIPanelWith(prompt string) {
 	ai := &state.ai
+	ai.suggestions.disarm()
 	if !state.aiPanelVisible() {
 		state.toggleAIPanel()
 	}
@@ -728,10 +739,27 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 	case id == hitAIToEnd:
 		state.aiMessagesToEnd()
 	case id.Scope() == hitAIExamples:
-		_, _, examples := state.aiEmptyTexts()
-		index, _ := id.In(hitAIExamples)
-		ai.input = text.Editor{}
-		ai.input.Insert(examples[index])
+		index, ok := id.In(hitAIExamples)
+		suggestions := &ai.suggestions
+		key := state.aiSuggestionContextKey()
+		if ok && index >= 0 && index < len(suggestions.visible) && suggestions.visibleKey == key && state.aiCanGenerateSuggestions() {
+			entry := suggestions.visible[index]
+			ai.input = text.Editor{}
+			ai.input.Insert(entry.Text)
+			suggestions.disarm()
+			if entry.Command != "" && entry.Context == aiSuggestionConnected && key.terminal != nil && ai.mode == agent.ModeAgent {
+				suggestions.armed = &aiArmedSuggestion{entry: entry, key: key}
+			}
+		}
+	case id == hitAIExamplesRefresh:
+		state.aiInvalidateSuggestions()
+		ai.suggestions.page++
+	case id == hitAIManageSuggestions:
+		state.aiInvalidateSuggestions()
+		state.openSettingsCategory(settingsAssistant)
+		state.settings.jump = state.messages.AISettings.SuggestionTitle
+	case id == hitAIPreviewSuggestions:
+		state.aiOpenSuggestionPreview()
 	case id.Scope() == hitAIMentions:
 		if index, _ := id.In(hitAIMentions); index < len(panel.mentions) {
 			state.acceptMention(panel.mentions[index].name)
@@ -800,6 +828,7 @@ func (state *State) toggleAIHistory() {
 	panel.history = !panel.history
 	panel.clearAITextSelection()
 	if panel.history {
+		state.aiInvalidateSuggestions()
 		state.aiPanelLoadHistory()
 	}
 }
@@ -824,7 +853,7 @@ func (state *State) aiCopyAnswer() {
 // aiPanelSend sends the message box; the model line is read from the settings,
 // so a send without a model only tells the user how to get one.
 func (state *State) aiPanelSend() {
-	state.aiSend()
+	state.aiSendWithSuggestion(state.aiBoundSuggestion())
 }
 
 // aiPanelLoadHistory reads the saved conversations for the history list.
@@ -1313,6 +1342,7 @@ func (state *State) aiPanelKeyGesture(event gfx.KeyEvent) (gfx.EventResult, bool
 				return handled, true
 			}
 			if event.Modifiers&gfx.ModifierShift != 0 {
+				ai.suggestions.disarm()
 				ai.input.Insert("\n")
 				return handled, true
 			}
@@ -1369,6 +1399,7 @@ func (state *State) aiPanelShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) 
 		return gfx.EventResult{}, false
 	}
 	if !event.Repeat {
+		state.ai.suggestions.disarm()
 		state.ai.input.Insert("\n")
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}, true
@@ -1456,7 +1487,11 @@ func (state *State) aiPanelText(event app.TextEvent) app.TextState {
 			return result
 		}
 	}
+	before := ai.input.String()
 	event.Apply(&ai.input)
+	if _, marked := ai.input.Composition(); marked || ai.input.String() != before {
+		ai.suggestions.disarm()
+	}
 	return app.TextStateOf(&ai.input)
 }
 

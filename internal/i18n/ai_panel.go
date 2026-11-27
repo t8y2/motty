@@ -101,13 +101,27 @@ type AIPanelMessages struct {
 	MessageTooLargeFmt       string // takes the saved-message size limit
 	HistorySaveFailedFmt     string // takes the system's reason
 
-	EmptyTitle     string
-	EmptyHint      string
-	Example1       string
-	Example2       string
-	Example3       string
-	ScrollToEnd    string
-	ScrollbarLabel string
+	EmptyTitle            string
+	EmptyHint             string
+	Example1              string
+	Example2              string
+	Example3              string
+	Example4              string
+	Example5              string
+	Example6              string
+	RefreshSuggestions    string
+	GeneratingSuggestions string
+	NoSuggestions         string
+	ManageSuggestions     string
+	BoundCommandFmt       string
+	SuggestionPreview     string
+	SuggestionAIAction    string
+	SuggestionPreviewFmt  string
+	SuggestionGenerate    string
+	SuggestionFailed      string
+	SuggestionUnsupported string
+	ScrollToEnd           string
+	ScrollbarLabel        string
 	// ListLabel names the scrolling conversation or history list, the control the
 	// messages are painted in.
 	ListLabel string
@@ -119,6 +133,9 @@ type AIPanelMessages struct {
 	IdleExample1 string
 	IdleExample2 string
 	IdleExample3 string
+	IdleExample4 string
+	IdleExample5 string
+	IdleExample6 string
 
 	Thinking    string
 	ThinkingNow string // the same while the model is still at it

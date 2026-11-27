@@ -759,6 +759,7 @@ func (state *State) declareShell(c ui.C) {
 	state.declareHistory(c)
 	// The workbench's modal dialogs are overlays of this same page.
 	state.declareAIDialogs(c)
+	state.declareAISuggestionPreview(c)
 	state.declareCredentialDialog(c)
 	state.declareImportSessions(c)
 	state.declareMobaEncoding(c)

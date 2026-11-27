@@ -1009,6 +1009,9 @@ func (state *State) paintSnippetsWorkspace(canvas *gfx.Canvas) {
 // setActiveSection switches the active workbench section and flushes any
 // pending inline snippet edits when leaving the Snippets page.
 func (state *State) setActiveSection(section uint8) {
+	if state.activeSection != section && !state.ai.targetSet && (state.activeSection == sectionTerminal || section == sectionTerminal) {
+		state.aiInvalidateSuggestions()
+	}
 	if state.activeSection == sectionSnippets && section != sectionSnippets {
 		state.leaveSnippetsSection()
 	}

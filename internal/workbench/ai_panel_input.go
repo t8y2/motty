@@ -151,6 +151,10 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 	ai, panel, pal := &state.ai, &state.ai.panel, state.pal
 	bottom := ui.Column(c)
 	extrasHeight := float32(0)
+	armed := state.aiBoundSuggestion()
+	if armed != nil {
+		extrasHeight += aiSizes.smallLine + 8
+	}
 	if text := state.aiNoticeText(); text != "" {
 		lines := c.Canvas().WrapLines(nil, text, aiSizes.small, gfx.WeightRegular, max(panel.rect.Width-2*aiPad-20, 1), 6)
 		extrasHeight += 12 + float32(len(lines))*aiSizes.smallLine + 8
@@ -188,6 +192,11 @@ func (state *State) declareAIBottom(c ui.C, body *aiBody, boxHeight float32) {
 				state.declareAIApproval(c, body)
 			}
 			extras := func() {
+				if armed != nil {
+					label := fmt.Sprintf(state.messages.AIPanel.BoundCommandFmt, armed.entry.Command)
+					ui.Text(c, label).FontSize(aiSizes.small).Color(pal.muted).Ellipsis().
+						HitWith(hitAIBoundCommand, label, gfx.HitOptions{Role: gfx.RoleGroup, Hint: label, SkipTab: true}).Tooltip(label)
+				}
 				if text := state.aiNoticeText(); text != "" {
 					ui.Column(c).PadSides(6, 10, 6, 10).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
 						ui.Paragraph(c, text, 6).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.danger).LineHeight(aiSizes.smallLine)
@@ -844,6 +853,9 @@ func (state *State) aiChooseModel(providerIndex, n int) {
 	model := provider.models[n].name
 	if !state.aiModelAvailable(provider.id, model) {
 		return
+	}
+	if state.ai.modelProvider != provider.id || state.ai.modelName != model {
+		state.aiInvalidateSuggestions()
 	}
 	state.ai.modelProvider, state.ai.modelName = provider.id, model
 	state.ai.modelPinned = true

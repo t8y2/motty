@@ -640,6 +640,7 @@ func (state *State) setLanguage(language i18n.Language) bool {
 	if state.language == language {
 		return false
 	}
+	state.aiInvalidateSuggestions()
 	state.language = language
 	state.applyLanguage()
 	return true

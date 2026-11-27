@@ -893,7 +893,8 @@ func historyStyle(open bool) iconButtonStyle {
 // below.
 func (state *State) declareAIEmpty(c ui.C) ui.Box {
 	pal := state.pal
-	title, hint, texts := state.aiEmptyTexts()
+	title, hint, examples := state.aiEmptyTexts()
+	m, suggestions := state.messages.AIPanel, &state.ai.suggestions
 	return ui.Column(c).Grow(1).FillWidth().PadX(aiPad).Clip().Children(func() {
 		ui.Spacer(c).MinHeight(8)
 		ui.Column(c).Shrink(0).Children(func() {
@@ -901,9 +902,24 @@ func (state *State) declareAIEmpty(c ui.C) ui.Box {
 			ui.Text(c, title).FontSize(aiSizes.title).Bold().Color(pal.text).LineHeight(aiSizes.titleLine).TextCenter().MarginSides(14, 0, 0, 0)
 			ui.Paragraph(c, hint, 4).FontSize(aiSizes.small).Weight(gfx.WeightRegular).Color(pal.muted).LineHeight(aiSizes.smallLine).TextCenter().MarginSides(8, 12, 0, 12)
 			ui.Column(c).Gap(6).MarginSides(16, 0, 6, 0).Children(func() {
-				for index, example := range texts {
-					state.declareAIExample(c, index, example)
+				for index, example := range examples {
+					state.declareAIExample(c, index, example.Text)
 				}
+				if len(examples) == 0 {
+					ui.Text(c, m.NoSuggestions).FontSize(aiSizes.small).Color(pal.muted)
+				}
+				if suggestions.request != nil {
+					ui.Text(c, m.GeneratingSuggestions).FontSize(aiSizes.small).Color(pal.muted)
+				} else if suggestions.failed {
+					ui.Paragraph(c, m.SuggestionFailed, 2).FontSize(aiSizes.small).Color(pal.muted)
+				}
+				ui.Row(c).Gap(4).Items(ui.Center).Children(func() {
+					ui.Spacer(c)
+					state.declareIconButton(c, hitAIManageSuggestions, iconSettings, m.ManageSuggestions, false, iconButtonQuiet)
+					state.declareIconButton(c, hitAIExamplesRefresh, iconRefresh, m.RefreshSuggestions, false, iconButtonQuiet)
+					ui.Button(c, m.SuggestionAIAction).Small().Outline().Hit(hitAIPreviewSuggestions, m.SuggestionAIAction).
+						Tooltip(m.SuggestionPreview).Disabled(suggestions.request != nil)
+				})
 			})
 		})
 		ui.Spacer(c).Grow(2)
@@ -932,12 +948,25 @@ func (state *State) declareAIExample(c ui.C, index int, example string) {
 
 // aiEmptyTexts are the words of the empty panel: about the terminal when there
 // is one to look at, and about getting one when there is not.
-func (state *State) aiEmptyTexts() (title, hint string, examples [aiExamples]string) {
+func (state *State) aiEmptyTexts() (title, hint string, examples []aiSuggestion) {
 	m := state.messages.AIPanel
-	if _, err := state.aiTargetSession(); err != nil {
-		return m.IdleTitle, m.IdleHint, [aiExamples]string{m.IdleExample1, m.IdleExample2, m.IdleExample3}
+	suggestions, key := &state.ai.suggestions, state.aiSuggestionContextKey()
+	if (suggestions.visibleKey != (aiSuggestionKey{}) && suggestions.visibleKey != key) ||
+		(suggestions.request != nil && suggestions.request.key != key) ||
+		(suggestions.preview != nil && suggestions.preview.key != key) {
+		state.aiInvalidateSuggestions()
 	}
-	return m.EmptyTitle, m.EmptyHint, [aiExamples]string{m.Example1, m.Example2, m.Example3}
+	category := aiSuggestionConnected
+	title, hint = m.EmptyTitle, m.EmptyHint
+	if key.terminal == nil {
+		category, title, hint = aiSuggestionIdle, m.IdleTitle, m.IdleHint
+	}
+	examples = suggestions.generated
+	if len(examples) == 0 {
+		examples = state.aiSuggestionVisible(category, suggestions.page)
+	}
+	suggestions.visible, suggestions.visibleKey = examples, key
+	return title, hint, examples
 }
 
 // The history list: a title above rows of aiHistoryRow, two pixels of which are the
