@@ -39,12 +39,17 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 	// both shows the buttons as their icons, whose tooltips name them.
 	const (
 		titleLeast = float32(220)
+		buttonGap  = float32(10)
 		// The key page carries more actions than the other section pages; a
 		// tighter gap keeps all nine icon buttons inside a narrow card.
-		gap = float32(2)
+		iconGap = float32(2)
 	)
-	labeled := toolbarButtonWidth(canvas, messages.KeyCopyPublic, true) + gap + toolbarButtonWidth(canvas, messages.KeyCopyPrivate, true) + gap + toolbarButtonWidth(canvas, messages.KeyEdit, true) + gap + toolbarButtonWidth(canvas, messages.KeyExport, true) + gap + keysToolbarIconButton + gap + toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + gap + toolbarButtonWidth(canvas, messages.KeyCertificate, true) + gap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + gap + toolbarButtonWidth(canvas, messages.KeyAdd, true) + gap + titleLeast
+	labeled := toolbarButtonWidth(canvas, messages.KeyCopyPublic, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyCopyPrivate, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyEdit, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyExport, true) + buttonGap + keysToolbarIconButton + buttonGap + toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyCertificate, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + buttonGap + toolbarButtonWidth(canvas, messages.KeyAdd, true) + buttonGap + titleLeast
 	condensed := labeled > bounds.Width-36
+	gap := buttonGap
+	if condensed {
+		gap = iconGap
+	}
 	copyWidth, copyIcon := keysToolbarButtonLayout(canvas, messages.KeyCopyPublic, iconCopy, iconCopy, condensed)
 	copyPrivateWidth, copyPrivateIcon := keysToolbarButtonLayout(canvas, messages.KeyCopyPrivate, iconCopy, iconCopy, condensed)
 	editWidth, editIcon := keysToolbarButtonLayout(canvas, messages.KeyEdit, iconPencil, iconPencil, condensed)
