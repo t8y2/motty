@@ -2221,6 +2221,7 @@ var englishTools = ToolsMessages{
 	ImportWarningCleartextFmt:    "%d sessions contain readable passwords or key material in this export. Protect or delete the source file when you are done.",
 	ImportWarningLoopback:        "A session points at this computer (127.0.0.1 / localhost). That is usually a one-shot tunnel from another client; it stops working when the tunnel closes. Prefer opening the .xsh file directly, or type the current port by hand.",
 	ImportPasswordPreviewTitle:   "Import saved passwords?",
+	ImportConnectionsBodyFmt:     "Import %d new hosts. Hosts already saved are skipped.",
 	ImportPasswordPreviewBodyFmt: "Import %d new hosts; %d readable SSH passwords found, %d can be saved. Existing passwords will not be replaced.",
 	ImportConnectionsOnly:        "Connections only",
 	ImportSavePasswords:          "Save passwords",

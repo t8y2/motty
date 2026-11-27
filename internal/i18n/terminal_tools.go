@@ -409,6 +409,9 @@ type ToolsMessages struct {
 	ImportWarningLoopback        string // a session aimed at 127.0.0.1 / localhost
 	ImportPasswordPreviewTitle   string
 	ImportPasswordPreviewBodyFmt string
+	// ImportConnectionsBodyFmt is the preview text for a source that carries no
+	// passwords: the host count and what stays out.
+	ImportConnectionsBodyFmt     string
 	ImportConnectionsOnly        string
 	ImportSavePasswords          string
 	ImportPasswordsSavedFmt      string
