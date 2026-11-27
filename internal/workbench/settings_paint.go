@@ -163,7 +163,12 @@ func (state *State) declareSettingsWorkspace(c ui.C) {
 		ui.Row(c).Fill().Children(func() {
 			page.nav(navWidth, searching)
 			ui.Column(c).Width(1).FillHeight().Background(withAlpha(pal.line, 0.8))
-			page.scroll = ui.ScrollAt(c, view.pageShown).Grow(1).Basis(0).Items(ui.Center)
+			// The page draws its own bar, and the press on the page's empty room
+			// is the viewport's: the arrows and Home/End page it from there.
+			page.scroll = ui.ScrollAt(c, view.pageShown).Grow(1).Basis(0).Items(ui.Center).
+				Scrollbars().ScrollbarSize(catalogBarGutter).
+				ScrollbarIDs(hitSettingsPageBar, gfx.ID{}).ScrollbarLabels(title, "").
+				HitWith(hitSettingsViewport, title, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
 			page.scroll.Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(settingsColumnMax).MarginSides(settingsPageTop, 32, settingsPageBottom, 32).Children(func() {
 					page.header(title, searching)
@@ -208,6 +213,11 @@ func (state *State) paintSettingsDetails(canvas *gfx.Canvas) {
 		view.navMotion = gfx.Motion{}
 		canvas.RequestFrame()
 	}
+	// A press on a bar moved the area's own offset, which the page owns and
+	// would otherwise overwrite from its target on the next declaration: take
+	// the offset the pointer gave it, so the thumb and the page stay together.
+	state.adoptSettingsBarDrag(canvas, page.scroll, &state.settingsScroll, &view.pageMotion)
+	state.adoptSettingsBarDrag(canvas, page.navList, &view.navScroll, &view.navMotion)
 	state.paintSettingsControls(canvas)
 
 	if page.anchored {
@@ -223,6 +233,23 @@ func (state *State) paintSettingsDetails(canvas *gfx.Canvas) {
 		view.jumped = false
 		canvas.RequestFrame()
 	}
+}
+
+// adoptSettingsBarDrag takes the offset a press on one of the page's bars gave
+// its scroll area, for a page that keeps its own offsets: without it the next
+// declaration would put the bar back where the page was. A drag is the reader's
+// own placement, so it lands at once rather than as a wheel's glide.
+func (state *State) adoptSettingsBarDrag(canvas *gfx.Canvas, area ui.Box, target *float32, motion *gfx.Motion) {
+	if !area.Valid() {
+		return
+	}
+	bar := area.ScrollState()
+	if !bar.Dragging() || bar.Offset == *target {
+		return
+	}
+	*target = bar.Offset
+	*motion = gfx.Motion{}
+	canvas.RequestFrame()
 }
 
 // paintSettingsControls paints the controls the page recorded into their slots,

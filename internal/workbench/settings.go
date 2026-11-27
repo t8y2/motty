@@ -479,6 +479,65 @@ func (state *State) scrollSettings(event gfx.ScrollEvent) gfx.EventResult {
 	return gfx.EventResult{Handled: true, Repaint: state.settingsScroll != before}
 }
 
+// settingsKeyStep is how far an arrow moves the settings page: a line of its
+// text, as the scroll areas of Viva move by.
+const settingsKeyStep = float32(32)
+
+// settingsScrollKey scrolls the settings page from the keyboard, as the monitor
+// dashboard and the host form's body do. PageUp and PageDown page it from any of
+// its controls, so a long page is read without first finding its viewport; the
+// arrows and Home/End move it while the viewport itself has the keyboard, which
+// a press on the page's empty room gives it. A key step lands where it lands: only
+// a wheel notch glides. A text field keeps the page keys, as it does on the
+// dashboard.
+func (state *State) settingsScrollKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if event.Release || event.Modifiers != 0 || state.schemeBrowserOpen {
+		return gfx.EventResult{}, false
+	}
+	view := &state.settings
+	maxScroll := max(state.settingsContent-view.pageView, 0)
+	if maxScroll <= 0 {
+		return gfx.EventResult{}, false
+	}
+	before := state.settingsScroll
+	scroll := before
+	switch event.Key {
+	case gfx.KeyPageDown, gfx.KeyPageUp:
+		if state.EditorFor(event.Target) != nil {
+			return gfx.EventResult{}, false
+		}
+		if event.Key == gfx.KeyPageDown {
+			scroll += max(view.pageView*0.9, settingsKeyStep)
+		} else {
+			scroll -= max(view.pageView*0.9, settingsKeyStep)
+		}
+	case gfx.KeyDown, gfx.KeyUp, gfx.KeyHome, gfx.KeyEnd:
+		// The arrows and the ends belong to the control that has the keyboard,
+		// as a text field's do: they reach the page once it has the keyboard.
+		if event.Target != hitSettingsViewport {
+			return gfx.EventResult{}, false
+		}
+		switch event.Key {
+		case gfx.KeyDown:
+			scroll += settingsKeyStep
+		case gfx.KeyUp:
+			scroll -= settingsKeyStep
+		case gfx.KeyHome:
+			scroll = 0
+		case gfx.KeyEnd:
+			scroll = maxScroll
+		}
+	default:
+		return gfx.EventResult{}, false
+	}
+	state.settingsScroll = min(max(scroll, 0), maxScroll)
+	if state.settingsScroll == before {
+		return gfx.EventResult{Handled: true}, true
+	}
+	view.pageMotion = gfx.Motion{}
+	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
 // chooseLanguage is the user picking a language: it sticks, so the system's
 // setting no longer decides. Choosing the language already showing still counts
 // (and is saved), which is how someone keeps English on a Chinese system.
@@ -938,5 +997,5 @@ func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 		state.localShellMenu.open = true
 		return gfx.EventResult{Handled: true, Repaint: true}, true
 	}
-	return gfx.EventResult{}, false
+	return state.settingsScrollKey(event)
 }

@@ -34,10 +34,24 @@ var hitSettingsCategoryList = tree.Sub(settingsNavHits, tree.Name("settings-cate
 // hitSettingsPageScroll and hitSettingsNavScroll name the two scrolling areas
 // to the canvas's transitions: the wheel writes their targets, and the
 // declaration asks what to lay out on the way there. Neither is a pointer
-// target.
+// target; the page's viewport names itself below.
 var (
 	hitSettingsPageScroll = tree.ID(settingsNavHits, "settings-page-scroll")
 	hitSettingsNavScroll  = tree.ID(settingsNavHits, "settings-nav-scroll")
+)
+
+// hitSettingsViewport is the page's scroll viewport as a region: a press on the
+// page's empty room gives it the keyboard, and the arrows and Home/End then page
+// it, as the host form's body does. It is no Tab stop: the page keys work from
+// any control of the page, and a region that draws no focus ring would be an
+// invisible stop in the ring.
+var hitSettingsViewport = tree.ID(settingsHits, "viewport")
+
+// hitSettingsPageBar and hitSettingsNavBar name the bars of the two scrolling
+// areas, so a handler or a test watches the one it means.
+var (
+	hitSettingsPageBar = tree.ID(settingsHits, "page-bar")
+	hitSettingsNavBar  = tree.ID(settingsHits, "nav-bar")
 )
 
 const settingsNavWidthMax = float32(208)
@@ -153,7 +167,9 @@ func (page *settingsPage) nav(width float32, searching bool) {
 		}
 		ui.TextField(c, &view.searchField, m.Tools.SearchPlaceholder, m.Tools.SearchPlaceholder, ui.WithID(hitSettingsSearch)).
 			Icon(lucideIcons[iconSearch]).Height(38).MarginSides(0, 12, 12, 12).Shrink(0)
-		page.navList = ui.ScrollAt(c, view.navShown).FillWidth().Grow(1).Basis(0)
+		page.navList = ui.ScrollAt(c, view.navShown).FillWidth().Grow(1).Basis(0).
+			Scrollbars().ScrollbarSize(catalogBarGutter).
+			ScrollbarIDs(hitSettingsNavBar, gfx.ID{}).ScrollbarLabels(m.SettingsTitle, "")
 		page.navList.Children(func() {
 			ui.Column(c).Gap(settingsNavEntryGap).MarginSides(0, 0, 8, 0).Shrink(0).Children(func() {
 				for category := settingsCategory(0); category < settingsCategoryCount; category++ {
