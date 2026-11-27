@@ -23,6 +23,45 @@ func (state *State) declareTransferRow(row ui.ListRow) {
 	state.declareTransferTaskRow(c, row.Element, row.ID, item.entry, width, &center.details, false)
 }
 
+func (state *State) declareTransferCompactRow(row ui.ListRow) {
+	center, c := &state.transfers, row.C
+	entry := &center.entries[center.compactRows[row.Index]]
+	pal := state.pal
+	// A row leaves the scrollbar's track clear, when the card has one.
+	gutter := float32(6)
+	if center.compactScrolls() {
+		gutter += compactTransferScrollbar + 4
+	}
+	row.Element.Height(compactTransferRowHeight).FillWidth().PadSides(0, gutter, 0, 6).Items(ui.Center).
+		HitWith(hitTransfersCompactRow.At(entry.id), entry.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: entry.outcome})
+	row.Element.Children(func() {
+		ui.Column(c).FillWidth().Gap(3).Children(func() {
+			ui.Row(c).Height(20).Shrink(0).FillWidth().Gap(6).Items(ui.Center).Children(func() {
+				state.declareTransferDirection(c, transferDirectionOf(entry.snapshot.Operation), true)
+				ui.Text(c, entry.title).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).Grow(1).MinWidth(0).Ellipsis()
+				if entry.percent != "—" {
+					ui.Text(c, entry.percent).FontSize(metrics.FontSizeS).Weight(gfx.WeightBold).Color(pal.text).Shrink(0)
+				}
+			})
+			ui.Row(c).Height(15).Shrink(0).FillWidth().Gap(6).Items(ui.Center).Children(func() {
+				_, tint := state.transferGroupLook(transferEntryGroup(entry))
+				switch entry.snapshot.State {
+				case sftpclient.TransferCanceled:
+					tint = pal.muted
+				case sftpclient.TransferInterrupted:
+					tint = pal.warning
+				}
+				ui.Text(c, entry.status).FontSize(metrics.FontSizeS).Color(tint).Grow(1).MinWidth(0).Ellipsis()
+				ui.Text(c, entry.amount).FontSize(metrics.FontSizeS).Color(pal.muted).Shrink(0).Ellipsis()
+			})
+			if entry.snapshot.BytesTotal > 0 || entry.snapshot.State == sftpclient.TransferCompleted {
+				state.declareTransferProgress(c, transferFraction(entry.snapshot), 4, 0)
+			}
+		})
+		ui.Slot(c).Absolute().Bottom(0).Left(6).Right(gutter).Height(1).Background(withAlpha(pal.line, 0.6))
+	})
+}
+
 func (state *State) declareTransferTaskRow(c ui.C, row ui.Box, rowID gfx.ID, index int, width float32, details *transferDetails, queue bool) {
 	pal, entry := state.pal, &state.transfers.entries[index]
 	trigger, status := hitTransfersDetails, hitTransfersStatus

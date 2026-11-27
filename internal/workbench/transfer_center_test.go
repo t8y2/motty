@@ -56,6 +56,51 @@ func populateTransferPreview(state *State) {
 	state.describeTransferSummary()
 }
 
+func TestCompactTransferRowsIncludeEveryTaskRegardlessOfSavedFilters(t *testing.T) {
+	state := transferPreviewState(t)
+	state.transfers.filter = transferFilterFailed
+	state.transfers.direction = transferUpload
+	state.transfers.query = "not-present"
+	state.describeTransferSummary()
+
+	want := []int{4, 3, 2, 1} // running, waiting, failed, completed
+	if len(state.transfers.compactRows) != len(want) {
+		t.Fatalf("compact rows = %d, want %d", len(state.transfers.compactRows), len(want))
+	}
+	for index, id := range want {
+		entry := &state.transfers.entries[state.transfers.compactRows[index]]
+		if entry.id != id {
+			t.Fatalf("compact row %d = task %d, want %d", index, entry.id, id)
+		}
+	}
+
+	state.transfers.entries[1].removed = true
+	state.describeTransferSummary()
+	if len(state.transfers.compactRows) != 3 {
+		t.Fatalf("removed task remains in compact rows: %v", state.transfers.compactRows)
+	}
+}
+
+// TestCompactTransferHeightGrowsWithTasksUpToThree keeps the notice from growing
+// with the history: each task adds a row until three show, and no more after.
+func TestCompactTransferHeightGrowsWithTasksUpToThree(t *testing.T) {
+	state := transferPreviewState(t)
+	var heights []float32
+	for count := 1; count <= len(state.transfers.entries); count++ {
+		state.transfers.entries = state.transfers.entries[:count]
+		state.describeTransferSummary()
+		heights = append(heights, state.transfers.compactPreferredHeight())
+	}
+	for i := 1; i < len(heights); i++ {
+		if i < compactTransferVisibleRows && heights[i] <= heights[i-1] {
+			t.Fatalf("%d tasks are no taller than %d: %v", i+1, i, heights)
+		}
+		if i >= compactTransferVisibleRows && heights[i] != heights[i-1] {
+			t.Fatalf("task %d changed the height past the %d rows that show: %v", i+1, compactTransferVisibleRows, heights)
+		}
+	}
+}
+
 func TestTransferCenterUsesReadableUnitsAndKeepsOtherConnections(t *testing.T) {
 	state := transferPreviewState(t)
 	entry := state.transfers.entries[3]

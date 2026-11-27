@@ -3,8 +3,11 @@
 package workbench
 
 import (
+	"errors"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/vivaui/viva/app"
@@ -64,6 +67,79 @@ func TestSFTPPanelBackgroundMenuOpensNewFolder(t *testing.T) {
 			t.Fatal("missing enabled New Folder menu item")
 		})
 	}
+}
+
+// The docked panel shows one side at a time, so its title row carries the entry
+// that opens the manager with both sides, on the directories the panel is
+// already on. A computer's own files have no server to browse, so that entry is
+// not offered there.
+func TestSFTPPanelTitleOffersTheFileManager(t *testing.T) {
+	t.Run("server", func(t *testing.T) {
+		state, session, _, _ := openTestSFTP(t)
+		files, worker := session.files, session.files.worker
+		state.sftpOpenMode = sftpOpenTab
+		preview, err := headless.Open(app.Config{
+			Title: "File panel manager entry", Width: 1400, Height: 900, Tree: Tree(),
+			Paint: state.Paint, OnPointer: state.Pointer, OnResize: state.Resize,
+		}, nil, headless.Options{Scale: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer preview.Close()
+		if err := preview.Rest(); err != nil {
+			t.Fatal(err)
+		}
+		snapshot := preview.Snapshot()
+		if dir := os.Getenv("MOTTY_SFTP_SCREENSHOT_DIR"); dir != "" {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := preview.Screenshot(filepath.Join(dir, "panel-file-manager-entry.png")); err != nil && !errors.Is(err, headless.ErrNoRenderer) {
+				t.Fatal(err)
+			}
+		}
+		entry, ok := findSnapshotHit(snapshot, contextID(hitSFTPDetachPanel))
+		side, _ := findSnapshotHit(snapshot, contextID(hitSFTPPanelSide))
+		if !ok || entry.Disabled {
+			t.Fatal("the panel title has no enabled file-manager entry")
+		}
+		if entry.Label != state.messages.SFTPWindow.Open {
+			t.Fatalf("the entry is named %q, want %q", entry.Label, state.messages.SFTPWindow.Open)
+		}
+		if entry.Bounds.Y != side.Bounds.Y || entry.Bounds.X+entry.Bounds.Width > side.Bounds.X {
+			t.Fatalf("file-manager entry is not on the title row, left of docking: entry=%+v side=%+v", entry.Bounds, side.Bounds)
+		}
+		if err := preview.Click(entry.Bounds.X+entry.Bounds.Width/2, entry.Bounds.Y+entry.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		w := state.activeSFTPWindow()
+		if len(state.sftpTabs) != 1 || w == nil || state.activeSection != sectionSFTP {
+			t.Fatalf("the entry did not open the manager as a tab: tabs=%d, section=%v", len(state.sftpTabs), state.activeSection)
+		}
+		if state.sftpWindows[session.ID] != w || w.session.ID != session.ID {
+			t.Fatalf("the manager is not the panel's session: %v", w)
+		}
+		waitSFTPTab(t, state, w, func() bool { return !w.view.busy && len(w.view.rows) == 2 })
+		if w.view.path != files.path {
+			t.Fatalf("the manager opened at %q, not where the panel was (%q)", w.view.path, files.path)
+		}
+		if session.files != files || files.worker != worker {
+			t.Fatal("opening the manager took the panel's view or its connection")
+		}
+	})
+	t.Run("local", func(t *testing.T) {
+		dir := localFixture(t)
+		t.Setenv("HOME", dir)
+		t.Setenv("USERPROFILE", dir)
+		state, _ := openLocal(t)
+		state.Wake()
+		state.Click(hitSFTPOpen)
+		var canvas gfx.Canvas
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+		if _, ok := hitByID(&canvas, contextID(hitSFTPDetachPanel)); ok {
+			t.Fatal("this computer's files offer a manager they have no server to fill")
+		}
+	})
 }
 
 func TestSFTPPanelDockingThroughNativeInputAtDisplayScales(t *testing.T) {

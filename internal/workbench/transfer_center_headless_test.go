@@ -295,7 +295,63 @@ func TestTransferCenterCompactCardExpandsAndFitsSmallWindows(t *testing.T) {
 	}
 }
 
-func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
+func TestTransferCenterCompactCardShowsThreeTasksAndScrolls(t *testing.T) {
+	state := transferPreviewState(t)
+	if state.deck.ActiveWorkspace() == 0 {
+		if _, _, err := state.deck.Create("transfer test"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	state.activeSection = sectionTerminal
+	state.transfers.compact = true
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Title: "Motty", Width: 900, Height: 600, Tree: Tree(),
+		Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll,
+	}), nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	list, ok := findSnapshotHit(view.Snapshot(), hitTransfersCompactList)
+	if !ok || list.Bounds.Width <= 0 || list.Bounds.Height <= 0 {
+		t.Fatalf("compact card has no scrollable task list: %+v", list)
+	}
+	visible := compactRowIDs(view.Snapshot(), state)
+	if len(visible) != compactTransferVisibleRows {
+		t.Fatalf("compact card shows %d tasks, want %d", len(visible), compactTransferVisibleRows)
+	}
+	for index := range compactTransferVisibleRows {
+		id := state.transfers.entries[state.transfers.compactRows[index]].id
+		if !visible[id] {
+			t.Fatalf("task %d is not in the first three rows", id)
+		}
+	}
+	fourth := state.transfers.entries[state.transfers.compactRows[compactTransferVisibleRows]].id
+	if visible[fourth] {
+		t.Fatal("fourth task is visible before scrolling")
+	}
+	if err := view.Scroll(gfx.ScrollEvent{
+		X: list.Bounds.X + list.Bounds.Width/2, Y: list.Bounds.Y + list.Bounds.Height/2,
+		DeltaY: 10000, Precise: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	visible = compactRowIDs(view.Snapshot(), state)
+	if !visible[fourth] {
+		t.Fatal("scrolling did not reveal the fourth task")
+	}
+	if len(visible) != compactTransferVisibleRows {
+		t.Fatalf("scrolled card shows %d tasks, want %d", len(visible), compactTransferVisibleRows)
+	}
+}
+
+func TestTransferCenterCompactCardKeepsHistoryAndShrinksWhenCleared(t *testing.T) {
 	state := transferPreviewState(t)
 	if state.deck.ActiveWorkspace() == 0 {
 		if _, _, err := state.deck.Create("transfer test"); err != nil {
@@ -337,37 +393,46 @@ func TestTransferCenterCompactCardShrinksAfterCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer view.Close()
 	if err := view.Wait(300 * time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
 	card := state.transfers.surface
-	if card.Width <= 0 || card.Height <= 0 || card.X < area.X || card.Y < windowBarHeight ||
-		card.X+card.Width > area.X+area.Width || card.Y+card.Height > area.Y+area.Height {
-		t.Fatalf("completed card outside terminal area: card=%+v area=%+v", card, area)
+	if card.Height != activeCard.Height {
+		t.Fatalf("completion changed the three-row viewport: active=%+v completed=%+v", activeCard, card)
 	}
-	if card.Height >= activeCard.Height {
-		t.Fatalf("completed card did not become shorter: active=%+v completed=%+v", activeCard, card)
-	}
-	want := fmt.Sprintf("%s · %d", state.messages.Transfers.Completed, state.transfers.completed)
-	found := false
-	for _, text := range view.Snapshot().Texts {
-		if text.Value == want {
-			found = true
-		}
-		if text.Value == fmt.Sprintf("%s · %d", state.messages.Transfers.Ended, state.transfers.ended) {
-			t.Fatalf("completed card still reports generic ended state: %q", text.Value)
-		}
-	}
-	if !found {
-		t.Fatalf("completed card is missing %q", want)
-	}
-	expand, ok := findSnapshotHit(view.Snapshot(), hitTransfersExpand)
-	if !ok || expand.Bounds.X < card.X || expand.Bounds.X+expand.Bounds.Width > card.X+card.Width ||
-		expand.Bounds.Y < card.Y || expand.Bounds.Y+expand.Bounds.Height > card.Y+card.Height {
-		t.Fatalf("completed card clipped its expand control: hit=%+v card=%+v", expand, card)
+	visible := compactRowIDs(view.Snapshot(), state)
+	if len(visible) != compactTransferVisibleRows {
+		t.Fatalf("completed card shows %d tasks, want %d", len(visible), compactTransferVisibleRows)
 	}
 	writeTransferPreview(t, view, card, "transfer-compact-completed.png")
+	view.Close()
+
+	state.transfers.entries = nil
+	state.describeTransferSummary()
+	view, err = headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Wait(300 * time.Millisecond); err != nil {
+		t.Fatal(err)
+	}
+	if empty := state.transfers.surface; empty.Height >= card.Height {
+		t.Fatalf("clearing history did not shrink the card: empty=%+v populated=%+v", empty, card)
+	}
+}
+
+func compactRowIDs(snapshot app.Snapshot, state *State) map[int]bool {
+	visible := map[int]bool{}
+	for _, hit := range snapshot.Hits {
+		for index := range state.transfers.entries {
+			entry := &state.transfers.entries[index]
+			if hit.ID == contextID(hitTransfersCompactRow.At(entry.id)) {
+				visible[entry.id] = true
+			}
+		}
+	}
+	return visible
 }
 
 func TestTransferCenterCompactCardReportsTerminalOutcomes(t *testing.T) {
@@ -393,6 +458,7 @@ func TestTransferCenterCompactCardReportsTerminalOutcomes(t *testing.T) {
 				entry := &state.transfers.entries[index]
 				entry.snapshot.State = phase
 				entry.owner = nil
+				state.describeTransfer(entry)
 			}
 			state.describeTransferSummary()
 			if state.transfers.active != 0 || state.transfers.ended != len(test.states) {
@@ -420,20 +486,17 @@ func TestTransferCenterCompactCardReportsTerminalOutcomes(t *testing.T) {
 				"Canceled": state.messages.Transfers.Canceled, "Interrupted": state.messages.Transfers.Interrupted,
 				"Completed": state.messages.Transfers.Completed,
 			}
-			var status string
+			counts := map[string]int{}
 			for _, text := range view.Snapshot().Texts {
-				if strings.Contains(text.Value, " · ") {
-					status = text.Value
-				}
+				counts[text.Value]++
 			}
 			for _, label := range test.want {
-				want := fmt.Sprintf("%s · 1", labels[label])
-				if !strings.Contains(status, want) {
-					t.Fatalf("compact card status %q does not report %q", status, want)
+				if counts[labels[label]] != 1 {
+					t.Fatalf("compact card reports %q %d times, want once", labels[label], counts[labels[label]])
 				}
 			}
-			if strings.Contains(status, state.messages.Transfers.Ended) {
-				t.Fatalf("terminal outcomes still report generic ended state: %q", status)
+			if counts[state.messages.Transfers.Ended] != 0 {
+				t.Fatalf("terminal outcomes still report generic ended state: %q", state.messages.Transfers.Ended)
 			}
 			if dir := os.Getenv("MOTTY_TRANSFER_SCREENSHOTS"); dir != "" {
 				if err := os.MkdirAll(dir, 0o755); err != nil {

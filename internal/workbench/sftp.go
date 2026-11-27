@@ -512,7 +512,9 @@ func (state *State) clickSFTP(id gfx.ID) {
 		state.showFilesPanel(session)
 		return
 	}
-	if id == hitSFTPDetach {
+	// The rail and the panel's title row both open the manager; only the control
+	// they paint differs.
+	if id == hitSFTPDetach || id == hitSFTPDetachPanel {
 		state.openSFTPWindow(session)
 		return
 	}

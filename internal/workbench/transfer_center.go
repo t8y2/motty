@@ -43,11 +43,22 @@ var (
 	hitTransfersStatus    = tree.Sub(transferCenterHits, tree.Name("status"))
 )
 
+var (
+	hitTransfersCompactList = tree.ID(transferCenterHits, "compact-list")
+	hitTransfersCompactRow  = tree.Sub(transferCenterHits, tree.Name("compact-row"))
+)
+
 const maxTransferHistory = 500
 
 // gfx.Index names list rows with numbers from 0, so the server headings keep
 // their keys far above the task ids.
 const transferHostHeaderKeyBase = 1 << 30
+
+const (
+	compactTransferVisibleRows = 3
+	compactTransferRowHeight   = float32(58)
+	compactTransferScrollbar   = float32(8)
+)
 
 // Keep the saved indices of the original four filters. Waiting is displayed
 // between Running and Ended, regardless of its persisted value.
@@ -150,6 +161,9 @@ type transferCenter struct {
 
 	compact bool // a newly queued transfer opens the small progress card first
 
+	compactRows      []int
+	compactListState ui.ListState
+
 	host                        *transferHost
 	hosts                       []*transferHost
 	hostChoices                 []*transferHost // nil (all hosts) followed by hosts
@@ -199,6 +213,7 @@ func (center *transferCenter) handlers(state *State) {
 		return
 	}
 	center.listState.Key = center.keyOf
+	center.compactListState.Key = center.compactKeyOf
 	center.rowDecl = state.declareTransferRow
 	center.bodyDraw = state.paintTransferCenterBody
 }
@@ -213,6 +228,18 @@ func (center *transferCenter) keyOf(index int) int {
 		return row.group
 	}
 	return center.entries[row.entry].id + transferFilterCount
+}
+
+// compactScrolls reports whether the compact card has more tasks than it shows.
+func (center *transferCenter) compactScrolls() bool {
+	return len(center.compactRows) > compactTransferVisibleRows
+}
+
+func (center *transferCenter) compactKeyOf(index int) int {
+	if index < 0 || index >= len(center.compactRows) || center.compactRows[index] >= len(center.entries) {
+		return -1 - index
+	}
+	return center.entries[center.compactRows[index]].id
 }
 
 // hostHeaderKey gives each server header a stable key, so collapsing and
@@ -718,10 +745,46 @@ func (state *State) describeTransferSummary() {
 		overview.title = fmt.Sprintf(m.WaitingCountFmt, center.active)
 	}
 	center.overview = overview
+	center.rebuildCompactRows()
 	state.describeTransferScope()
 	// Every change to a transfer ends here, so this is where the desktop hears
 	// about it: the icon it draws stands for the window and for its siblings.
 	state.reportTransferProgress()
+}
+
+// rebuildCompactRows keeps the corner notice independent of the full center's
+// saved filters. Every live record is present; running work leads, then waiting
+// and conflicted work, followed by failures and completed history.
+func (center *transferCenter) rebuildCompactRows() {
+	center.compactRows = center.compactRows[:0]
+	for index := range center.entries {
+		if !center.entries[index].removed {
+			center.compactRows = append(center.compactRows, index)
+		}
+	}
+	slices.SortFunc(center.compactRows, func(a, b int) int {
+		left, right := &center.entries[a], &center.entries[b]
+		leftGroup, rightGroup := transferEntryGroup(left), transferEntryGroup(right)
+		if leftGroup != rightGroup {
+			return compactTransferGroupRank(leftGroup) - compactTransferGroupRank(rightGroup)
+		}
+		return compareTransferOrder(leftGroup, left, right)
+	})
+}
+
+func compactTransferGroupRank(group int) int {
+	switch group {
+	case transferFilterRunning:
+		return 0
+	case transferFilterWaiting:
+		return 1
+	case transferFilterPending:
+		return 2
+	case transferFilterFailed:
+		return 3
+	default:
+		return 4
+	}
 }
 
 func (state *State) removeTransfer(index int) {

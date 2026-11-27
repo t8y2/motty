@@ -1,9 +1,6 @@
 package workbench
 
 import (
-	"strconv"
-	"strings"
-
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -35,10 +32,7 @@ func (state *State) declareTransferCenter(c ui.C) {
 	if center.compact {
 		area := state.transferCenterArea()
 		anchor.X, anchor.Width = area.X+area.Width-transferCenterInset-1, 1
-		width, preferredHeight = max(0, min(360, area.Width-2*transferCenterInset)), 148
-		if center.active == 0 {
-			preferredHeight = 108
-		}
+		width, preferredHeight = max(0, min(360, area.Width-2*transferCenterInset)), center.compactPreferredHeight()
 		roomArea, margin = area, transferCenterInset
 	}
 	padding := c.Theme().Metrics.PadSurface
@@ -81,6 +75,16 @@ func (center *transferCenter) preferredHeight() float32 {
 	return min(540, height+max(76, float32(len(center.rows))*transferRowHeight))
 }
 
+// compactPreferredHeight shows at most three tasks. The list keeps every record
+// and scrolls when there are more, so the notice never grows with the history.
+func (center *transferCenter) compactPreferredHeight() float32 {
+	visible := min(len(center.compactRows), compactTransferVisibleRows)
+	if visible == 0 {
+		return 108
+	}
+	return 86 + float32(visible)*compactTransferRowHeight
+}
+
 // transferCenterArea bounds the progress notice's width, right edge and bottom.
 // On the terminal page it excludes the pane header, side panels and assistant;
 // file-manager tabs and section pages use their own visible content instead.
@@ -101,53 +105,10 @@ func (state *State) transferCenterArea() gfx.Rect {
 	return area
 }
 
-// declareTransferCompact keeps a queued transfer visible without covering the
-// workspace with the full history. The body is one button; closing and expanding
-// stay separate so the card remains usable with the keyboard.
+// declareTransferCompact keeps transfers visible without opening the full
+// history. Three rows fit in the notice; the list scrolls through every record.
 func (state *State) declareTransferCompact(c ui.C, height float32) {
 	center, m, pal := &state.transfers, state.messages.Transfers, state.pal
-	overview := center.overview
-	status, detail, ink := center.summary, overview.amount, pal.text
-	if center.active == 0 {
-		status, detail = m.Idle, ""
-		outcomes := []struct {
-			label string
-			count int
-		}{
-			{m.Pending, center.pending},
-			{m.Failed, center.failed},
-			{m.Interrupted, center.interrupted},
-			{m.Canceled, center.canceled},
-			{m.Completed, center.completed},
-		}
-		parts := make([]string, 0, len(outcomes))
-		for _, outcome := range outcomes {
-			if outcome.count > 0 {
-				parts = append(parts, outcome.label+" · "+strconv.Itoa(outcome.count))
-			}
-		}
-		known := center.failed + center.interrupted + center.canceled + center.completed
-		if known < center.ended {
-			parts = append(parts, m.Ended+" · "+strconv.Itoa(center.ended-known))
-		}
-		if len(parts) > 0 {
-			status = strings.Join(parts, " · ")
-		}
-		switch {
-		case center.failed > 0:
-			ink = pal.danger
-		case center.pending > 0:
-			ink = pal.warning
-		case center.interrupted > 0:
-			ink = pal.warning
-		case center.completed > 0:
-			ink = pal.success
-		case center.canceled > 0:
-			ink = pal.muted
-		}
-	} else if detail == "" {
-		detail = overview.title
-	}
 	padding := c.Theme().Metrics.PadSurface
 	center.list = gfx.Rect{}
 	ui.Column(c).FillWidth().Height(height).Gap(8).Children(func() {
@@ -157,28 +118,25 @@ func (state *State) declareTransferCompact(c ui.C, height float32) {
 			ui.Spacer(c)
 			state.declareIconButton(c, hitTransfersClose, iconClose, m.Close, false, iconButtonQuiet).Size(26, 26)
 		})
-		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Pad(10).Gap(6).Radius(radius.surface).
-			Border(1, pal.line).Background(withAlpha(pal.surfaceHot, 0.28)).
-			Hover(ui.Look{}.Background(withAlpha(pal.surfaceHot, 0.5).Over(pal.surface))).
-			Focus(ui.Look{}.Ring(1.5, pal.accent)).
+		ui.Column(c).FillWidth().Grow(1).MinHeight(0).Pad(8).Gap(4).Radius(radius.surface).
+			Border(1, pal.line).Background(withAlpha(pal.surfaceHot, 0.28)).Children(func() {
+			if len(center.compactRows) == 0 {
+				ui.Text(c, m.Empty).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().FillWidth()
+				return
+			}
+			list := ui.List(c, &center.compactListState, len(center.compactRows), state.declareTransferCompactRow).
+				Grow(1).MinHeight(0).FillWidth().Label(m.Title).ScrollbarSize(compactTransferScrollbar).
+				HitWith(hitTransfersCompactList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+			// The track shows only when there is more to scroll to.
+			if center.compactScrolls() {
+				_ = list.AlwaysScrollbars()
+			}
+		})
+		ui.Row(c).Height(26).Shrink(0).FillWidth().Gap(4).Items(ui.Center).
+			Radius(radius.control).Focus(ui.Look{}.Ring(1.5, pal.accent)).
 			HitWith(hitTransfersExpand, m.Details, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.Details}).Children(func() {
-			ui.Row(c).Height(22).Shrink(0).FillWidth().Gap(6).Items(ui.Center).Children(func() {
-				ui.Text(c, status).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(ink).Grow(1).MinWidth(0).Ellipsis()
-				if overview.amount != "" && center.active > 0 {
-					ui.Text(c, overview.percent).FontSize(metrics.FontSizeM).Weight(gfx.WeightBold).Color(ink).Shrink(0)
-				}
-			})
-			if detail != "" {
-				ui.Text(c, detail).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().FillWidth()
-			}
-			if overview.amount != "" && center.active > 0 {
-				state.declareTransferProgress(c, overview.fraction, 6, 40)
-			}
-			ui.Spacer(c)
-			ui.Row(c).Height(18).Shrink(0).FillWidth().Gap(4).Items(ui.Center).Children(func() {
-				ui.Text(c, m.Details).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Grow(1)
-				ui.Icon(c, lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
-			})
+			ui.Text(c, m.Details).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Grow(1)
+			ui.Icon(c, lucideIcons[iconChevronRight]).Size(14, 14).Color(pal.muted).Shrink(0)
 		})
 	}).DrawOver(func(d *ui.DrawContext) {
 		center.surface = gfx.Rect{X: d.Rect.X - padding, Y: d.Rect.Y - padding, Width: d.Rect.Width + 2*padding, Height: d.Rect.Height + 2*padding}
