@@ -61,6 +61,37 @@ func (state *State) clickHostColor(id gfx.ID) bool {
 	return true
 }
 
+// randomHostColor creates a vivid colour at a random hue while keeping its
+// saturation and lightness in a range that stays clear on the host list.
+func randomHostColor(exclude string) string {
+	for {
+		hue := float64(rand.IntN(360))
+		saturation, lightness := 0.72, 0.56
+		chroma := (1 - math.Abs(2*lightness-1)) * saturation
+		secondary := chroma * (1 - math.Abs(math.Mod(hue/60, 2)-1))
+		offset := lightness - chroma/2
+		var red, green, blue float64
+		switch int(hue / 60) {
+		case 0:
+			red, green = chroma, secondary
+		case 1:
+			red, green = secondary, chroma
+		case 2:
+			green, blue = chroma, secondary
+		case 3:
+			green, blue = secondary, chroma
+		case 4:
+			red, blue = secondary, chroma
+		default:
+			red, blue = chroma, secondary
+		}
+		color := fmt.Sprintf("#%02x%02x%02x", int(math.Round((red+offset)*255)), int(math.Round((green+offset)*255)), int(math.Round((blue+offset)*255)))
+		if !strings.EqualFold(color, exclude) {
+			return color
+		}
+	}
+}
+
 // declareHostColorChoice declares the colour row in the page: the palette's
 // swatches and the picker that stages a custom colour. A swatch click writes the
 // preset; the picker writes what it applied.
