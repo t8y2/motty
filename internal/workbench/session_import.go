@@ -46,6 +46,7 @@ var (
 	hitImportXterminal       = tree.ID(sessionImportHits, "import-xterminal")
 	hitImportXPipe           = tree.ID(sessionImportHits, "import-xpipe")
 	hitImportTabby           = tree.ID(sessionImportHits, "import-tabby")
+	hitImportWinSCP          = tree.ID(sessionImportHits, "import-winscp")
 	hitImportGuide           = tree.ID(sessionImportHits, "import-guide")
 	hitImportPreviewCancel   = tree.ID(sessionImportHits, "import-preview-cancel")
 	hitImportPreviewClose    = tree.ID(sessionImportHits, "import-preview-close")
@@ -125,6 +126,9 @@ func (state *State) clickImportSessions(id gfx.ID) {
 		state.importSessions(sessionimport.XPipe)
 	case hitImportTabby:
 		state.importTabby()
+	case hitImportWinSCP:
+		state.modal = modalNone
+		state.importWinSCP()
 	case hitImportGuide:
 		state.openExternal(state.messages.Tools.ImportGuideURL)
 	case hitImportSessionsCancel, hitImportSessionsClose, hitImportSessionsDismiss:
@@ -370,6 +374,7 @@ func (state *State) declareImportSessions(c ui.C) {
 		{hitImportXterminal, "Xterminal"},
 		{hitImportXPipe, "XPipe"},
 		{hitImportTabby, "Tabby"},
+		{hitImportWinSCP, "WinSCP"},
 	}
 	const columns = 2
 	gap := theme.Metrics.GapItem
