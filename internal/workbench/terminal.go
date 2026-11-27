@@ -2138,6 +2138,11 @@ func (t *terminal) consumeAcceptedKey(event gfx.KeyEvent) bool {
 func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventResult {
 	t := session.term
 	handled := gfx.EventResult{Handled: true}
+	if event.Key == gfx.KeyCapsLock {
+		// Caps Lock is the platform's lock state, not typing: the program gets
+		// the characters it types, and no terminal protocol encodes the key.
+		return handled
+	}
 	if t.preedit.Composing && event.Key == gfx.KeyEnter && event.Modifiers == 0 && !t.screen.Modes().AltScreen {
 		return handled
 	}
