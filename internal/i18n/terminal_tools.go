@@ -175,7 +175,9 @@ type ToolsMessages struct {
 	CommandsClose string
 	// CommandsResize is the tooltip of the strip along the bar's inner edge that
 	// drags its width.
-	CommandsResize                      string
+	CommandsResize string
+	// CommandsMoveLeft and CommandsMoveRight are the tooltips of the side bar's
+	// arrow, which moves it to the other side.
 	CommandsMoveLeft, CommandsMoveRight string
 	// CommandsBarShow is the label of the picker's quiet checkbox for that strip;
 	// CommandsBarHidden is that checkbox's tooltip while unticked. Neither names

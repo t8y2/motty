@@ -104,7 +104,10 @@ type commandsUI struct {
 	shown bool
 	// placement is where the bar docks while shown; the zero value is the
 	// bottom strip.
-	placement   commandsPlacement
+	placement commandsPlacement
+	// sidebarLeft docks the side bar between the hosts panel and the terminals
+	// instead of at the window's right edge. It is one global preference, not
+	// kept per workspace.
 	sidebarLeft bool
 	// filterOpen is whether the group-filter dropdown is showing.
 	filterOpen bool
