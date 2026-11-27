@@ -188,11 +188,7 @@ func (state *State) pressPasteWhenOffered(view *desktopView) bool {
 
 // pasteChord presses Ctrl+V on the remote side and lets go of it.
 func (view *desktopView) pasteChord() {
-	for _, event := range [...]desktop.KeyEvent{
-		{Key: desktop.KeyControl, Down: true}, {Rune: 'v', Down: true}, {Rune: 'v'}, {Key: desktop.KeyControl},
-	} {
-		_ = view.session.SendKey(event)
-	}
+	view.remoteControlChord('v')
 }
 
 // offerDesktopFiles makes the list of files and gives it to the remote on a

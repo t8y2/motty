@@ -2,10 +2,12 @@ package workbench
 
 import (
 	"bytes"
+	"slices"
 	"sync"
 	"testing"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
 	"motty/internal/desktop"
 )
 
@@ -254,3 +256,215 @@ var (
 	_ desktop.Session        = (*clippingDesktop)(nil)
 	_ desktop.ImageClipboard = (*imagingDesktop)(nil)
 )
+
+// vncProtocolDesktop wraps fileDesktop while reporting the VNC protocol.
+type vncProtocolDesktop struct {
+	*fileDesktop
+}
+
+func (s *vncProtocolDesktop) Info() desktop.Info { return desktop.Info{Protocol: "VNC"} }
+
+// TestRDPPasteWithClipboardSharingUsesRemoteClipboardAndReleasesMeta reproduces
+// the macOS Cmd+V multiline paste bug: holding Command left desktop.KeyMeta
+// down on the remote while desktopText typed characters via SendText, turning
+// every Enter into Win+Enter and flattening multiline text into one line.
+// With clipboard sharing enabled on RDP, TextPaste syncs the clipboard and
+// presses remote Ctrl+V while cleanly releasing held Meta (masked by Control so
+// the Windows Start menu / GNOME overview does not open).
+func TestRDPPasteWithClipboardSharingUsesRemoteClipboardAndReleasesMeta(t *testing.T) {
+	multiline := "line1\nline2\nline3"
+	remote := newFileDesktop()
+	state, session := fileDesktopState(t, remote, true, Options{
+		ClipboardText: func() (string, error) { return multiline, nil },
+	})
+	hit := state.activeTerminalFocusHit()
+
+	// User holds Command (Meta) before pressing V.
+	state.Key(gfx.KeyEvent{Key: gfx.KeyMetaLeft, Modifiers: gfx.ModifierMeta, Target: hit})
+	// AppKit performKeyEquivalent delivers TextPaste while Meta is held.
+	state.desktopText(session.ID, pasteEvent(app.TextPaste, multiline))
+
+	if typed := remote.typedTexts(); len(typed) != 0 {
+		t.Fatalf("multiline paste typed %v instead of pasting via remote clipboard", typed)
+	}
+	if offered := remote.sentTexts(); len(offered) != 1 || offered[0] != multiline {
+		t.Fatalf("remote clipboard offered %v, want [%q]", offered, multiline)
+	}
+	wantKeys := []desktop.KeyEvent{
+		{Key: desktop.KeyMeta, Down: true},
+		{Key: desktop.KeyControl, Down: true},
+		{Key: desktop.KeyMeta, Down: false},
+		{Rune: 'v', Down: true},
+		{Rune: 'v', Down: false},
+		{Key: desktop.KeyControl, Down: false},
+	}
+	if !slices.Equal(remote.keys, wantKeys) {
+		t.Fatalf("remote keys = %+v, want %+v", remote.keys, wantKeys)
+	}
+
+	// Releasing the physical Command key sends no duplicate Meta up.
+	state.Key(gfx.KeyEvent{Key: gfx.KeyMetaLeft, Release: true, Target: hit})
+	if len(remote.keys) != len(wantKeys) {
+		t.Fatalf("physical Meta release sent extra keys: %+v", remote.keys[len(wantKeys):])
+	}
+
+	// TextPasteNoText with a clipboard image offers the picture and presses Ctrl+V.
+	picture := redSquarePNG(t)
+	state.options.ClipboardText = func() (string, error) { return "", nil }
+	state.options.ClipboardImagePNG = func() ([]byte, error) { return picture, nil }
+	beforeKeys := len(remote.keys)
+	state.desktopText(session.ID, pasteEvent(app.TextPasteNoText, ""))
+	if images := remote.offeredImages(); len(images) != 1 || !bytes.Equal(images[0], picture) {
+		t.Fatalf("offered images = %d, want 1", len(images))
+	}
+	if !remote.pasted() || len(remote.keys) != beforeKeys+4 {
+		t.Fatalf("image paste keys = %+v, want Ctrl+V", remote.keys[beforeKeys:])
+	}
+
+	// TextPasteNoText with an empty clipboard does not press Ctrl+V.
+	state.options.ClipboardImagePNG = func() ([]byte, error) { return nil, app.ErrNoImage }
+	beforeKeys = len(remote.keys)
+	state.desktopText(session.ID, pasteEvent(app.TextPasteNoText, ""))
+	if len(remote.keys) != beforeKeys {
+		t.Fatalf("empty clipboard paste pressed keys: %+v", remote.keys[beforeKeys:])
+	}
+}
+
+// TestRDPPasteWithoutClipboardSharingReleasesMetaBeforeTyping guards the
+// typing fallback when clipboard sharing is disabled: held Meta must still be
+// released before SendText runs so Enter keys are not sent as Win+Enter.
+func TestRDPPasteWithoutClipboardSharingReleasesMetaBeforeTyping(t *testing.T) {
+	multiline := "alpha\nbeta"
+	remote := newFileDesktop()
+	state, session := fileDesktopState(t, remote, false, Options{
+		ClipboardText: func() (string, error) { return multiline, nil },
+	})
+	hit := state.activeTerminalFocusHit()
+
+	state.Key(gfx.KeyEvent{Key: gfx.KeyMetaLeft, Modifiers: gfx.ModifierMeta, Target: hit})
+	state.desktopText(session.ID, pasteEvent(app.TextPaste, multiline))
+
+	if typed := remote.typedTexts(); len(typed) != 1 || typed[0] != multiline {
+		t.Fatalf("typed = %v, want [%q]", typed, multiline)
+	}
+	wantKeys := []desktop.KeyEvent{
+		{Key: desktop.KeyMeta, Down: true},
+		{Key: desktop.KeyControl, Down: true},
+		{Key: desktop.KeyMeta, Down: false},
+		{Key: desktop.KeyControl, Down: false},
+	}
+	if !slices.Equal(remote.keys, wantKeys) {
+		t.Fatalf("remote keys = %+v, want %+v", remote.keys, wantKeys)
+	}
+	if len(session.desk.held) != 0 {
+		t.Fatalf("held keys remained after paste: %+v", session.desk.held)
+	}
+	state.Key(gfx.KeyEvent{Key: gfx.KeyMetaLeft, Release: true, Target: hit})
+	if len(remote.keys) != len(wantKeys) {
+		t.Fatalf("physical Meta release sent extra keys: %+v", remote.keys[len(wantKeys):])
+	}
+}
+
+// TestMacOSCommandCInRDPCopiesViaRemoteControlC reproduces the macOS Cmd+C
+// bug: previously desktopShortcut left Cmd+C unhandled so the macOS Edit->Copy
+// menu fell through to terminal copySelection (empty) and the remote desktop
+// never received Ctrl+C. On macOS, Cmd+C on a focused RDP session sends remote
+// Ctrl+C (cleanly releasing held Meta) and handles the shortcut so the menu
+// bar does not swallow it; on Windows/Linux Win+C stays untouched, and VNC
+// keeps Meta+C for macOS VNC servers.
+func TestMacOSCommandCInRDPCopiesViaRemoteControlC(t *testing.T) {
+	savedPrimary := primaryModifier
+	primaryModifier = gfx.ModifierMeta
+	t.Cleanup(func() { primaryModifier = savedPrimary })
+
+	remote := newFileDesktop()
+	state, session := fileDesktopState(t, remote, true, Options{})
+	hit := state.activeTerminalFocusHit()
+
+	// User holds Command, then presses C.
+	state.Key(gfx.KeyEvent{Key: gfx.KeyMetaLeft, Modifiers: gfx.ModifierMeta, Target: hit})
+	cmdC := gfx.KeyEvent{Modifiers: gfx.ModifierMeta, Text: "c", Target: hit}
+	if result := state.Shortcut(cmdC); !result.Handled {
+		t.Fatalf("macOS Cmd+C on RDP was not handled by desktopShortcut: %+v", result)
+	}
+	wantKeys := []desktop.KeyEvent{
+		{Key: desktop.KeyMeta, Down: true},
+		{Key: desktop.KeyControl, Down: true},
+		{Key: desktop.KeyMeta, Down: false},
+		{Rune: 'c', Down: true},
+		{Rune: 'c', Down: false},
+		{Key: desktop.KeyControl, Down: false},
+	}
+	if !slices.Equal(remote.keys, wantKeys) {
+		t.Fatalf("remote keys = %+v, want %+v", remote.keys, wantKeys)
+	}
+
+	// Key repeat is swallowed without sending a second Ctrl+C.
+	repeatCmdC := cmdC
+	repeatCmdC.Repeat = true
+	if result := state.Shortcut(repeatCmdC); !result.Handled || len(remote.keys) != len(wantKeys) {
+		t.Fatalf("repeat Cmd+C = %+v, keys = %d", result, len(remote.keys))
+	}
+
+	// Physical Command release sends nothing extra.
+	state.Key(gfx.KeyEvent{Key: gfx.KeyMetaLeft, Release: true, Target: hit})
+	if len(remote.keys) != len(wantKeys) {
+		t.Fatalf("physical Meta release sent extra keys: %+v", remote.keys[len(wantKeys):])
+	}
+
+	// When keyboard capture is released, Cmd+C is no longer sent to the remote.
+	state.toggleCapture(session.desk)
+	before := len(remote.keys)
+	state.Shortcut(cmdC)
+	if len(remote.keys) != before {
+		t.Fatalf("released desktop still sent Ctrl+C: %+v", remote.keys[before:])
+	}
+
+	// On Windows/Linux (Control primary), Win+C is left alone for the remote.
+	state.toggleCapture(session.desk)
+	primaryModifier = gfx.ModifierControl
+	if result := state.Shortcut(cmdC); result.Handled || len(remote.keys) != before {
+		t.Fatalf("Win+C on non-macOS was intercepted: %+v, keys = %+v", result, remote.keys[before:])
+	}
+
+	// On VNC, Cmd+C stays Meta+C rather than being rewritten to Ctrl+C.
+	primaryModifier = gfx.ModifierMeta
+	vncRemote := &vncProtocolDesktop{fileDesktop: newFileDesktop()}
+	vncState, _ := fileDesktopState(t, vncRemote, true, Options{})
+	vncHit := vncState.activeTerminalFocusHit()
+	if result := vncState.Shortcut(gfx.KeyEvent{Modifiers: gfx.ModifierMeta, Text: "c", Target: vncHit}); result.Handled || len(vncRemote.keys) != 0 {
+		t.Fatalf("Cmd+C on VNC was intercepted: %+v, keys = %+v", result, vncRemote.keys)
+	}
+}
+
+// TestMenuBarCopyAndPasteWorkOnFocusedRDPDesktop checks choosing Edit -> Copy
+// and Edit -> Paste from the macOS menu bar while an RDP session holds the
+// keyboard.
+func TestMenuBarCopyAndPasteWorkOnFocusedRDPDesktop(t *testing.T) {
+	clipboard := "first\nsecond"
+	remote := newFileDesktop()
+	state, _ := fileDesktopState(t, remote, true, Options{
+		ClipboardText: func() (string, error) { return clipboard, nil },
+	})
+
+	// Edit -> Copy sends Ctrl+C to the remote desktop.
+	state.MenuBar()[1].Items[0].OnSelect()
+	wantCopy := []desktop.KeyEvent{
+		{Key: desktop.KeyControl, Down: true},
+		{Rune: 'c', Down: true},
+		{Rune: 'c', Down: false},
+		{Key: desktop.KeyControl, Down: false},
+	}
+	if !slices.Equal(remote.keys, wantCopy) {
+		t.Fatalf("menu Copy keys = %+v, want %+v", remote.keys, wantCopy)
+	}
+
+	// Edit -> Paste syncs clipboard text and sends Ctrl+V to the remote desktop.
+	state.MenuBar()[1].Items[1].OnSelect()
+	if offered := remote.sentTexts(); len(offered) != 1 || offered[0] != clipboard {
+		t.Fatalf("menu Paste offered %v, want [%q]", offered, clipboard)
+	}
+	if !remote.pasted() {
+		t.Fatalf("menu Paste did not press Ctrl+V: %+v", remote.keys)
+	}
+}
