@@ -408,6 +408,9 @@ func (t *Terminal) ClearScreen() bool {
 	// What stays on the line above is gone, so it no longer continues it.
 	lines[0].wrapped = false
 	t.clearHistory()
+	// The row the cursor stood on is now the first row and begins a line of its
+	// own, whatever the last dropped history row continued into it.
+	t.droppedWrapped = false
 	t.cy = 0
 	t.generation++
 	t.version++

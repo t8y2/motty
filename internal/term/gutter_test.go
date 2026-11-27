@@ -442,3 +442,21 @@ func BenchmarkLogicalLineNumbersLargeScrollback(b *testing.B) {
 		}
 	})
 }
+
+// Clearing the screen drops the history, and the row the cursor stands on
+// becomes the first row. It begins a new line even when the history's last row
+// had soft-wrapped into it, so it keeps its number and time.
+func TestClearScreenAfterAWrappedHistoryBoundaryKeepsThePromptNumbered(t *testing.T) {
+	screen := New(10, 4, 20)
+	screen.Write([]byte(strings.Repeat("x", 55) + "\r\nprompt$ "))
+	if !screen.ClearScreen() {
+		t.Fatal("ClearScreen did nothing on the main screen")
+	}
+	numbers, heads := screen.LogicalLineNumbers(nil, nil)
+	if !heads[0] {
+		t.Fatalf("the prompt row lost its line number: numbers %v, heads %v", numbers, heads)
+	}
+	if numbers[0] != 2 {
+		t.Fatalf("prompt number = %d, want 2 (the cleared line was number 1)", numbers[0])
+	}
+}
