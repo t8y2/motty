@@ -13,6 +13,10 @@
   </p>
 
   <p>
+    <a href="https://hellogithub.com/repository/t8y2/motty" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=fbc1633f6fa949a5bd4e360f16e2bb68&claim_uid=p0UjnC1TLtyvWSx&theme=neutral" alt="Featured｜HelloGitHub" width="250" height="54" /></a>
+  </p>
+
+  <p>
     <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="900" alt="Motty 里的真实会话：SFTP 面板、正在跟随部署日志的 shell，以及 AI 助手的回答" /></a>
   </p>
   <p><sub>一次真实会话：文件面板、跟随部署日志的 shell，以及读着同一个终端的助手。</sub></p>

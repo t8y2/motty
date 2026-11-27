@@ -13,6 +13,10 @@
   </p>
 
   <p>
+    <a href="https://hellogithub.com/repository/t8y2/motty" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=fbc1633f6fa949a5bd4e360f16e2bb68&claim_uid=p0UjnC1TLtyvWSx&theme=neutral" alt="Featured｜HelloGitHub" width="250" height="54" /></a>
+  </p>
+
+  <p>
     <a href="assets/readme-hero.png"><img src="assets/readme-hero.png" width="900" alt="Motty running a real session: the SFTP panel, a shell tailing a log, and the AI assistant's answer" /></a>
   </p>
   <p><sub>A real session: the file panel, a shell following a deploy log, and the assistant reading the same terminal.</sub></p>
