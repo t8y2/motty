@@ -141,7 +141,7 @@ func newFilePreviewInput(value string) text.Editor {
 
 func normalizeTerminalScrollback(value int) int {
 	switch value {
-	case 1000, 5000, 10000:
+	case 1000, 5000, 10000, 50000, 100000:
 		return value
 	default:
 		return scrollbackLines
@@ -812,7 +812,7 @@ var (
 	settingsGutterChoices          = [...]terminalGutter{gutterOff, gutterNumbers, gutterTime, gutterBoth}
 	settingsIntenseChoices         = [...]terminalIntense{intenseBoth, intenseBright, intenseBold, intensePlain}
 	settingsCursorThicknessChoices = [...]cursorThickness{cursorThin, cursorNormal, cursorThick}
-	settingsScrollbackChoices      = [...]int{1000, 5000, 10000}
+	settingsScrollbackChoices      = [...]int{1000, 5000, 10000, 50000, 100000}
 	settingsClipboardChoices       = [...]terminalClipboardPolicy{terminalClipboardBlock, terminalClipboardAsk, terminalClipboardAllow}
 	settingsCursorStyleChoices     = [...]terminalCursorStyle{cursorBlock, cursorBar, cursorUnderline}
 	settingsTabTitleChoices        = [...]tabTitleMode{tabTitleConnection, tabTitleTerminal, tabTitleDirectory}
@@ -895,6 +895,10 @@ func (state *State) settingsScrollbackLabel(lines int) string {
 		return "1,000"
 	case 10000:
 		return "10,000"
+	case 50000:
+		return "50,000"
+	case 100000:
+		return "100,000"
 	}
 	return "5,000"
 }

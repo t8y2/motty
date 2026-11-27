@@ -240,6 +240,7 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 					state.messages.Tools.LineHeightCompact, state.messages.Tools.LineHeightRoomy,
 					state.messages.Tools.CursorThin, state.messages.Tools.CursorThick,
 					state.settingsScrollbackLabel(1000), state.settingsScrollbackLabel(10000),
+					state.settingsScrollbackLabel(50000), state.settingsScrollbackLabel(100000),
 					state.messages.SettingsTerminalClipboardBlock, state.messages.SettingsTerminalClipboardAllow,
 				}},
 			{settingsConnection, []string{
@@ -281,6 +282,16 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestSettingsOfferTheLargerScrollbackChoices(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitSettings)
+	// The issue asked for these two: a user with long build or log output can
+	// keep far more history than the old 10,000-line ceiling.
+	for _, lines := range []int{50000, 100000} {
+		settingsChoiceHit(t, state, state.settingsScrollbackLabel(lines))
 	}
 }
 
@@ -469,6 +480,10 @@ func TestSettingsApplyScrollbackToExistingTerminalsAndReliabilityToNewConnection
 	clickSettingsChoice(t, state, state.settingsScrollbackLabel(1000))
 	if terminal.screen.ScrollbackLimit() != 1000 {
 		t.Fatalf("existing terminal scrollback max = %d", terminal.screen.ScrollbackLimit())
+	}
+	clickSettingsChoice(t, state, state.settingsScrollbackLabel(100000))
+	if terminal.screen.ScrollbackLimit() != 100000 || state.terminalScrollback != 100000 {
+		t.Fatalf("existing terminal scrollback max = %d, setting = %d", terminal.screen.ScrollbackLimit(), state.terminalScrollback)
 	}
 	state.selectSettingsCategory(settingsConnection)
 	clickSettingsChoiceInRow(t, state, state.messages.SettingsConnectionTimeout, state.settingsTimeoutLabel(30*time.Second))

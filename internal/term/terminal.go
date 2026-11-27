@@ -25,12 +25,12 @@ const DefaultScrollback = 5000
 const (
 	minHistoryBytes        = 16 << 20
 	historyBytesPerLine    = 10 << 10 // ~600 columns of cells + overhead (or ~500 with links)
-	maxDefaultHistoryBytes = 128 << 20
-	historyLineOverhead    = 112 // the line struct, its slice headers and allocator slack
-	historyCellBytes       = 16  // Cell
-	historyMarkBytes       = 8   // Mark
-	historyLinkBytes       = 4   // one uint32 element of a line's hyperlink slice
-	historyLinkOverhead    = 24  // that slice's header and allocation
+	maxDefaultHistoryBytes = 1 << 30  // holds the largest choice at ~600 columns
+	historyLineOverhead    = 112      // the line struct, its slice headers and allocator slack
+	historyCellBytes       = 16       // Cell
+	historyMarkBytes       = 8        // Mark
+	historyLinkBytes       = 4        // one uint32 element of a line's hyperlink slice
+	historyLinkOverhead    = 24       // that slice's header and allocation
 )
 
 // defaultHistoryBytesFor returns the default memory budget for a terminal
