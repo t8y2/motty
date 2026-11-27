@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
 )
 
@@ -427,5 +428,76 @@ func TestSFTPFilterEscapeClearsThenClosesWithoutClosingThePanel(t *testing.T) {
 	}
 	if result.Focus != sftpListRowID(t, view.active(), 0) {
 		t.Fatalf("closing the filter left focus at %v, want the first file", result.Focus)
+	}
+}
+
+func TestSFTPFilterShortcutIgnoresMountedPaneAndEmptyContextPanelWithoutFiles(t *testing.T) {
+	world, options := newWorld(t)
+	first := newTestState(t, options)
+	openHost(first)
+	openHostInSplit(t, first, 2, layoutcore.Horizontal)
+	first.save()
+
+	state := newTestState(t, options)
+	panes := state.Panes(nil)
+	if len(panes) != 2 {
+		t.Fatalf("restored panes = %+v", panes)
+	}
+	restored, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok || !restored.restored || restored.files != nil {
+		t.Fatalf("setup: active restored session=%v files=%v", ok, restored.files)
+	}
+	var livePane Pane
+	for _, pane := range panes {
+		if uint32(pane.SessionID) != restored.ID {
+			livePane = pane
+		}
+	}
+	live, _ := state.sessionByIDPointer(uint32(livePane.SessionID))
+	state.reconnect(live)
+	liveConn := world.conns[len(world.conns)-1]
+	liveConn.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+	liveConn.shell(t).say("ready")
+	state.Wake()
+
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.Resize(size)
+	driver := paneDriver(t, state, size)
+
+	clickPanePage(t, state, driver, size, restored)
+	retryID := pagedIdentity(state, restored, hitConnRetry)
+	if got := driver.Snapshot().Focused; got != retryID {
+		t.Fatalf("focused = %v, want mounted retry button %v", got, retryID)
+	}
+	if decoded, local, ok := state.decodePaneHit(retryID); !ok || decoded != restored || local != hitConnRetry {
+		t.Fatalf("decodePaneHit(%v) = (%v, %v, %v), want (%v, %v, true)", retryID, decoded, local, ok, restored, hitConnRetry)
+	}
+
+	find := state.shortcuts.chords.Chord(shortcutFind)
+	result := state.Shortcut(gfx.KeyEvent{
+		Target: retryID, Modifiers: find.Modifiers, Text: string(find.Char),
+	})
+	if !result.Handled {
+		t.Fatalf("Ctrl+F on mounted retry button result = %+v, want handled no-op", result)
+	}
+	if restored.files != nil {
+		t.Fatal("Ctrl+F unexpectedly initialized SFTP files on restored pane")
+	}
+
+	// Also cover the empty docked SFTP context panel before files exist.
+	if err := state.deck.SetContext(state.deck.ActiveWorkspace(), layoutcore.ContextState{
+		Kind: layoutcore.ContextSFTP, Open: true, Width: layoutcore.DefaultContextWidth,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var canvas gfx.Canvas
+	state.Paint(&canvas, size)
+	if state.contextPanelScope.IsZero() {
+		t.Fatal("setup: empty context panel did not record its scope")
+	}
+	emptyPanelHit := tree.ID(state.contextPanelScope, "empty-panel-action")
+	if _, handled := state.sftpFilterShortcut(emptyPanelHit); handled {
+		t.Fatal("sftpFilterShortcut handled a hit inside an empty context panel without files")
 	}
 }
