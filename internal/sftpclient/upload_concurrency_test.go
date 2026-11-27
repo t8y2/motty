@@ -528,6 +528,7 @@ func TestOpenRemoteTransferFileFiltersNonLimitErrorsAndCapsRetries(t *testing.T)
 	for _, nonLimit := range []error{
 		&sftp.StatusError{Code: uint32(sftp.ErrSSHFxFailure)},
 		fmt.Errorf("disk quota exceeded: %w", sftp.ErrSSHFxFailure),
+		fmt.Errorf("open file failed: quota exceeded: %w", sftp.ErrSSHFxFailure),
 		io.EOF,
 		sftp.ErrSSHFxConnectionLost,
 		os.ErrPermission,

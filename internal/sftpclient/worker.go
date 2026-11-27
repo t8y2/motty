@@ -2286,7 +2286,6 @@ func isHandleLimitError(err error) bool {
 	lower := strings.ToLower(err.Error())
 	for _, token := range []string{
 		"too many open",
-		"open file",
 		"open handle",
 		"handle limit",
 		"file descriptor",
