@@ -171,7 +171,7 @@ type Terminal struct {
 	histCount  int
 	histBytes  int
 	histMax    int
-	histBudget int
+	histBudget int          // an explicit byte budget; 0 follows the line limit, see historyBudget
 	histSpare  *line        // an evicted line to reuse, so a budget-bound history does not allocate per line
 	view       int          // how many lines the view is scrolled back
 	scrolled   uint64       // lines ever pushed into history, kept or dropped
@@ -263,8 +263,7 @@ type Terminal struct {
 // New returns a terminal of the given size keeping at most scrollback lines of
 // history. A scrollback of 0 keeps none.
 func New(cols, rows, scrollback int) *Terminal {
-	limit := max(scrollback, 0)
-	t := &Terminal{histMax: limit, histBudget: defaultHistoryBytesFor(limit)}
+	t := &Terminal{histMax: max(scrollback, 0)}
 	t.cols = clampInt(cols, 1, maxCols)
 	t.rows = clampInt(rows, 1, maxRows)
 	t.main.lines = t.blankLines(t.rows)
@@ -414,9 +413,6 @@ func (t *Terminal) SetScrollbackLimit(limit int) {
 	if limit == t.histMax {
 		return
 	}
-	if t.histBudget == defaultHistoryBytesFor(t.histMax) {
-		t.histBudget = defaultHistoryBytesFor(limit)
-	}
 	t.histMax = limit
 	if limit == 0 {
 		t.clearHistory()
@@ -549,14 +545,22 @@ func (t *Terminal) dropOldest() {
 	}
 }
 
+// historyBudget is the byte budget of the history: an explicit one if histBudget
+// was set, else the default for the current line limit, so raising the limit
+// raises the budget with it.
+func (t *Terminal) historyBudget() int {
+	if t.histBudget > 0 {
+		return t.histBudget
+	}
+	return defaultHistoryBytesFor(t.histMax)
+}
+
 // trimHistory keeps the ring within its byte budget. The line limit alone
 // cannot: a width change makes the same number of lines cost several times as
 // much, and old lines keep the width they were written at.
 func (t *Terminal) trimHistory() {
-	if t.histBudget <= 0 {
-		return
-	}
-	for t.histBytes > t.histBudget && t.histCount > 0 {
+	budget := t.historyBudget()
+	for t.histBytes > budget && t.histCount > 0 {
 		if t.histSpare == nil {
 			t.histSpare = t.hist[t.histHead]
 		}

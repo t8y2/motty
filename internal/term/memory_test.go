@@ -49,16 +49,16 @@ func TestWideHistoryStaysWithinItsByteBudget(t *testing.T) {
 		term.Write(line)
 	}
 	checkInvariants(t, term)
-	if term.histBytes > term.histBudget {
-		t.Fatalf("history holds %d bytes, budget %d", term.histBytes, term.histBudget)
+	if term.histBytes > term.historyBudget() {
+		t.Fatalf("history holds %d bytes, budget %d", term.histBytes, term.historyBudget())
 	}
 	if lines := term.Scrollback(); lines == 0 || lines >= DefaultScrollback {
 		t.Fatalf("scrollback = %d, want some lines but fewer than the line limit", lines)
 	}
 	// Raising the line limit must not undo the byte bound.
 	term.SetScrollbackLimit(2 * DefaultScrollback)
-	if term.histBytes > term.histBudget || term.Scrollback() > 2*DefaultScrollback {
-		t.Fatalf("after raising the limit: %d lines, %d bytes (budget %d)", term.Scrollback(), term.histBytes, term.histBudget)
+	if term.histBytes > term.historyBudget() || term.Scrollback() > 2*DefaultScrollback {
+		t.Fatalf("after raising the limit: %d lines, %d bytes (budget %d)", term.Scrollback(), term.histBytes, term.historyBudget())
 	}
 }
 
@@ -85,7 +85,7 @@ func TestWideDesktopTerminalsKeepFullConfiguredScrollback(t *testing.T) {
 			}
 			checkInvariants(t, terminal)
 			if got := terminal.Scrollback(); got != tc.limit {
-				t.Fatalf("scrollback = %d, want %d (bytes=%d budget=%d)", got, tc.limit, terminal.histBytes, terminal.histBudget)
+				t.Fatalf("scrollback = %d, want %d (bytes=%d budget=%d)", got, tc.limit, terminal.histBytes, terminal.historyBudget())
 			}
 			if !terminal.Scroll(tc.limit) || terminal.ViewOffset() != tc.limit {
 				t.Fatalf("view offset = %d, want %d", terminal.ViewOffset(), tc.limit)
@@ -106,39 +106,38 @@ func TestSetScrollbackLimitScalesDefaultByteBudget(t *testing.T) {
 	}
 	checkInvariants(t, terminal)
 	if got := terminal.Scrollback(); got != 10000 {
-		t.Fatalf("scrollback = %d, want 10000 (bytes=%d budget=%d)", got, terminal.histBytes, terminal.histBudget)
+		t.Fatalf("scrollback = %d, want 10000 (bytes=%d budget=%d)", got, terminal.histBytes, terminal.historyBudget())
 	}
 }
 
-// Widening a terminal reflows wrapped history lines into fewer, wider rows.
-// Rewrap must allocate exact capacity rather than doubling via append, so a
-// resize does not inflate histBytes and evict lines that fit within the budget.
+// Widening a terminal reflows wrapped history lines into fewer, wider rows. A
+// reflow must not leave those rows holding the capacity they were stitched from,
+// which bills the byte budget for cells nobody wrote and evicts lines that fit.
 func TestReflowWideningDoesNotInflateHistoryCapacityOrEvictLines(t *testing.T) {
-	terminal := New(120, 40, DefaultScrollback)
-	// Give the terminal a tight budget that fits 2500 exact 200-cell lines
-	// (~8.3 MiB) but would evict lines if rewrap doubled slice capacities.
-	terminal.histBudget = 10 << 20
-	line := []byte(strings.Repeat("x", 200) + "\r\n")
-	for range 3000 {
-		terminal.Write(line)
+	widen := func(budget int) *Terminal {
+		terminal := New(120, 40, DefaultScrollback)
+		terminal.histBudget = budget
+		line := []byte(strings.Repeat("x", 125) + "\r\n")
+		for range 3000 {
+			terminal.Write(line)
+		}
+		terminal.Resize(240, 40)
+		checkInvariants(t, terminal)
+		return terminal
 	}
-	if before := terminal.Scrollback(); before != DefaultScrollback {
-		t.Fatalf("before resize scrollback = %d, want %d", before, DefaultScrollback)
+	// A budget that fits the lines as written; the same history under a budget
+	// nothing reaches shows how many lines the line limit alone keeps.
+	tight, unlimited := widen(10<<20), widen(1<<30)
+	if got, want := tight.Scrollback(), unlimited.Scrollback(); got != want {
+		t.Fatalf("a budget that fits the lines kept %d of the %d the line limit allows (bytes=%d budget=%d)", got, want, tight.histBytes, tight.historyBudget())
 	}
-	terminal.Resize(240, 40)
-	checkInvariants(t, terminal)
-	// 5000 wrapped rows at 120 cols rejoin into 2500 logical rows; keeping the
-	// cursor on the bottom row of the 40-row screen pulls 19 of them onto screen.
-	if got := terminal.Scrollback(); got != 2481 {
-		t.Fatalf("after widening scrollback = %d, want 2481 (bytes=%d budget=%d)", got, terminal.histBytes, terminal.histBudget)
+	if tight.histBytes != tight.historyBytes() {
+		t.Fatalf("histBytes = %d, counted %d", tight.histBytes, tight.historyBytes())
 	}
-	if terminal.histBytes != terminal.historyBytes() {
-		t.Fatalf("histBytes = %d, counted %d", terminal.histBytes, terminal.historyBytes())
-	}
-	for i := 0; i < terminal.histCount; i++ {
-		l := terminal.histAt(i)
-		if cap(l.cells) > 256 {
-			t.Fatalf("history line %d has bloated cap %d for len %d", i, cap(l.cells), len(l.cells))
+	for i := range tight.histCount {
+		l := tight.histAt(i)
+		if historyCellCapExcess(cap(l.cells), len(l.cells)) {
+			t.Fatalf("history line %d keeps capacity %d for %d cells", i, cap(l.cells), len(l.cells))
 		}
 	}
 }

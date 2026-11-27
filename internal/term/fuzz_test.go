@@ -43,8 +43,8 @@ func checkInvariants(t testing.TB, term *Terminal) {
 	if term.view < 0 || term.view > term.histCount {
 		t.Fatalf("view offset %d with %d history lines", term.view, term.histCount)
 	}
-	if term.histBudget > 0 && term.histBytes > term.histBudget {
-		t.Fatalf("history holds %d bytes, budget %d", term.histBytes, term.histBudget)
+	if term.histBytes > term.historyBudget() {
+		t.Fatalf("history holds %d bytes, budget %d", term.histBytes, term.historyBudget())
 	}
 	for i := 0; i < term.histCount; i++ {
 		checkLine(t, term.histAt(i), -1)
