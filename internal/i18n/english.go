@@ -2021,6 +2021,8 @@ var englishTools = ToolsMessages{
 	CommandsAdd:         "Add command",
 	CommandsClose:       "Hide snippets (tick the box in the Snippets picker to show them again)",
 	CommandsResize:      "Drag to resize the snippets sidebar",
+	CommandsMoveLeft:    "Move snippets sidebar left",
+	CommandsMoveRight:   "Move snippets sidebar right",
 	CommandsBarHidden:   "Snippets hidden",
 	CommandsBarShow:     "Show snippets bar",
 	CommandsPlacement:   "Snippets position",

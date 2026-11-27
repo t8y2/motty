@@ -2021,6 +2021,8 @@ var traditionalTools = ToolsMessages{
 	CommandsAdd:         "新增命令",
 	CommandsClose:       "隱藏快速指令列（可在快速指令面板重新顯示）",
 	CommandsResize:      "拖曳調整快速指令列寬度",
+	CommandsMoveLeft:    "將快速指令列移到左側",
+	CommandsMoveRight:   "將快速指令列移到右側",
 	CommandsBarHidden:   "快速指令列已隱藏",
 	CommandsBarShow:     "顯示快速指令列",
 	CommandsPlacement:   "快速指令列位置",

@@ -2021,6 +2021,8 @@ var chineseTools = ToolsMessages{
 	CommandsAdd:         "添加命令",
 	CommandsClose:       "隐藏快捷命令栏（可在快捷命令面板重新显示）",
 	CommandsResize:      "拖动调整快捷命令栏宽度",
+	CommandsMoveLeft:    "将快捷命令栏移到左侧",
+	CommandsMoveRight:   "将快捷命令栏移到右侧",
 	CommandsBarHidden:   "快捷命令栏已隐藏",
 	CommandsBarShow:     "显示快捷命令栏",
 	CommandsPlacement:   "快捷命令栏位置",
