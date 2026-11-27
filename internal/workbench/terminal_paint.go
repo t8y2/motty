@@ -453,7 +453,11 @@ func (state *State) paintGridWithID(canvas *gfx.Canvas, session *Session, geomet
 }
 
 func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry terminalGeometry, id gfx.ID, sensitive, focused, declareHit bool) {
-	t, pal := session.term, &state.termPal
+	t := session.term
+	look := state.termPal
+	// 仅背景图实际显示时隐藏应用底色，反显、光标及选区仍独立绘制。
+	look.hideApplicationBackground = !sensitive && state.showsBackground() && state.bg.visibility.Value > 0 && state.bg.hideApplicationBackground
+	pal := &look
 	inactive := state.paneIsInactive(session.ID)
 	t.expireSync()
 	cols, rows := t.presentedSize()

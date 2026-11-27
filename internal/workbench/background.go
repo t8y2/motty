@@ -31,9 +31,11 @@ import (
 var backgroundHits = tree.Feature("background")
 
 var (
-	hitBgVisibility = tree.ID(backgroundHits, "bg-visibility")
-	hitBgChoose     = tree.ID(backgroundHits, "bg-choose")
-	hitBgRemove     = tree.ID(backgroundHits, "bg-remove")
+	hitBgEnabled         = tree.ID(backgroundHits, "bg-enabled")
+	hitBgHideApplication = tree.ID(backgroundHits, "bg-hide-application")
+	hitBgVisibility      = tree.ID(backgroundHits, "bg-visibility")
+	hitBgChoose          = tree.ID(backgroundHits, "bg-choose")
+	hitBgRemove          = tree.ID(backgroundHits, "bg-remove")
 )
 
 const (
@@ -46,9 +48,11 @@ const (
 )
 
 type savedBackground struct {
-	Name       string `json:"name,omitempty"`
-	Strength   string `json:"strength,omitempty"`
-	Visibility *int   `json:"visibility,omitempty"`
+	Disabled                  bool   `json:"disabled,omitempty"`
+	HideApplicationBackground bool   `json:"hideApplicationBackground,omitempty"`
+	Name                      string `json:"name,omitempty"`
+	Strength                  string `json:"strength,omitempty"`
+	Visibility                *int   `json:"visibility,omitempty"`
 }
 
 // backgroundImages numbers decoded pictures so a renderer never mistakes a new
@@ -56,6 +60,8 @@ type savedBackground struct {
 var backgroundImages atomic.Uint64
 
 type backgroundState struct {
+	disabled                  bool
+	hideApplicationBackground bool
 	// set is whether a picture is chosen; name is the original file's name.
 	set        bool
 	name       string
@@ -84,11 +90,11 @@ func (state *State) backgroundPath() string {
 }
 
 func (state *State) savedBackgroundValue() *savedBackground {
-	if !state.bg.set {
+	if !state.bg.set && !state.bg.hideApplicationBackground {
 		return nil
 	}
 	visibility := int(state.bg.visibility.Value)
-	return &savedBackground{Name: state.bg.name, Visibility: &visibility}
+	return &savedBackground{Name: state.bg.name, Visibility: &visibility, Disabled: state.bg.disabled, HideApplicationBackground: state.bg.hideApplicationBackground}
 }
 
 // restoreBackground applies the saved choice and starts decoding the stored
@@ -99,6 +105,8 @@ func (state *State) restoreBackground(saved *savedBackground) {
 	if saved == nil {
 		return
 	}
+	state.bg.disabled = saved.Disabled
+	state.bg.hideApplicationBackground = saved.HideApplicationBackground
 	if _, err := os.Stat(state.backgroundPath()); err != nil {
 		return
 	}
@@ -256,7 +264,7 @@ func (state *State) chooseBackground() {
 	}
 	visibility := state.bg.visibility.Value
 	state.bg.serial++
-	state.bg = backgroundState{serial: state.bg.serial, set: true, name: filepath.Base(paths[0]), visibility: ui.SliderState{Value: visibility}}
+	state.bg = backgroundState{serial: state.bg.serial, hideApplicationBackground: state.bg.hideApplicationBackground, set: true, name: filepath.Base(paths[0]), visibility: ui.SliderState{Value: visibility}}
 	state.decodeBackground(state.bg.serial)
 	state.save()
 }
@@ -268,12 +276,22 @@ func (state *State) removeBackground() {
 	_ = os.Remove(state.backgroundPath())
 	visibility := state.bg.visibility.Value
 	state.bg.serial++
-	state.bg = backgroundState{serial: state.bg.serial, visibility: ui.SliderState{Value: visibility}}
+	state.bg = backgroundState{serial: state.bg.serial, hideApplicationBackground: state.bg.hideApplicationBackground, visibility: ui.SliderState{Value: visibility}}
 	state.save()
 }
 
 func (state *State) clickBackground(id gfx.ID) bool {
 	switch id {
+	case hitBgEnabled:
+		if !state.bg.set {
+			state.chooseBackground()
+		} else {
+			state.bg.disabled = !state.bg.disabled
+			state.save()
+		}
+	case hitBgHideApplication:
+		state.bg.hideApplicationBackground = !state.bg.hideApplicationBackground
+		state.save()
 	case hitBgChoose:
 		state.chooseBackground()
 	case hitBgRemove:
@@ -285,7 +303,9 @@ func (state *State) clickBackground(id gfx.ID) bool {
 }
 
 // backgroundOn reports whether a decoded picture is being painted.
-func (state *State) backgroundOn() bool { return state.bg.set && state.bg.pix != nil }
+func (state *State) backgroundOn() bool {
+	return state.bg.set && !state.bg.disabled && state.bg.pix != nil
+}
 
 // ground is the color of a terminal's ground: the color itself, or, while the
 // picture is showing, the color at the picture's visibility.
@@ -373,9 +393,11 @@ func (state *State) paintBackgroundSettings(page *settingsPage) {
 	}
 	description := bg.text
 	page.group(m.BgGroup, func() {
+		page.toggleRow(m.BgEnabled, m.BgEnabledDescription, bg.set && !bg.disabled, hitBgEnabled)
 		page.actionRow(m.BgRow, description, false,
 			components.ButtonAction{ID: hitBgChoose, Label: m.BgChoose, Variant: components.ButtonOutline},
 			components.ButtonAction{ID: hitBgRemove, Label: m.BgRemove, Variant: components.ButtonOutline})
+		page.toggleRow(m.BgHideApplication, m.BgHideApplicationDescription, bg.hideApplicationBackground, hitBgHideApplication)
 		page.lineFor(hitBgVisibility, m.BgVisibility, "", 182, func() {
 			ui.Row(page.c).Grow(1).Gap(8).Items(ui.Center).Children(func() {
 				slider := &bg.visibility
