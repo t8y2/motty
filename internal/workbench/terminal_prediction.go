@@ -65,9 +65,10 @@ type terminalPrediction struct {
 	// blocked withdraws the prompt proof until the shell draws its next prompt:
 	// a proven guess failed on this line, so the line is not what it seemed.
 	blocked bool
-	// sealed keeps a shown guess after Tab: the echoes of what it holds are still
-	// on their way and the completion can only follow them. It takes no more
-	// input, and goes the way every guess goes once the server answers.
+	// sealed keeps a shown guess after Tab or Enter: the echoes of what it holds
+	// are still on their way and the completion or newline can only follow them.
+	// It takes no more input, and goes the way every guess goes once the server
+	// answers.
 	sealed bool
 
 	data   [maxTerminalPredictionBytes]byte
@@ -121,12 +122,12 @@ func (prediction *terminalPrediction) reset() bool {
 	return changed
 }
 
-// tab is the Tab key. What the server does with it happens after the echoes of
-// the text already typed, so a shown guess stays until they arrive instead of
-// vanishing ahead of them and drawing the line back to where the screen is;
-// the completion, being more than the guess holds, then takes it back. Without
-// a shown guess it is any other control key.
-func (prediction *terminalPrediction) tab() bool {
+// seal keeps a shown guess across Tab or Enter. What the server does with that
+// key happens after the echoes of the text already typed, so a shown guess
+// stays until they arrive instead of vanishing ahead of them and drawing the
+// line back to where the screen is; the completion, newline or command output
+// then takes it back. Without a shown guess it is any other control key.
+func (prediction *terminalPrediction) seal() bool {
 	if !prediction.visible() {
 		return prediction.reset()
 	}
@@ -135,9 +136,12 @@ func (prediction *terminalPrediction) tab() bool {
 }
 
 // fail takes a guess back because the server did not do what it predicted. A
-// guess made on a prompt proof also withdraws the proof for this line.
+// guess made on a prompt proof also withdraws the proof for this line, unless
+// the guess was already sealed by Tab or Enter (whose completion or newline is
+// expected to leave the predicted text and may arrive in the same output chunk
+// as the next prompt).
 func (prediction *terminalPrediction) fail() {
-	if prediction.proven {
+	if prediction.proven && !prediction.sealed {
 		prediction.blocked = true
 	}
 	prediction.reset()
@@ -216,6 +220,13 @@ func (prediction *terminalPrediction) input(screen *term.Terminal, input []byte,
 		return false
 	}
 	wasVisible := prediction.visibleAt(now)
+	if prediction.sealed {
+		if prediction.stale(now) {
+			prediction.fail()
+			return wasVisible
+		}
+		return false // a completion or newline may follow: nothing more is known about the line
+	}
 	switch {
 	case prediction.stale(now):
 		prediction.fail()
@@ -223,9 +234,6 @@ func (prediction *terminalPrediction) input(screen *term.Terminal, input []byte,
 		prediction.reset()
 	case prediction.proven && !proof:
 		prediction.reset() // the line was left
-	}
-	if prediction.sealed {
-		return false // a completion may follow: nothing more is known about the line
 	}
 	if !predictionContextSafe(screen) {
 		prediction.reset()
@@ -301,6 +309,10 @@ func (prediction *terminalPrediction) reconcile(screen *term.Terminal, now time.
 	prediction.prefix = predictionRowHash(screen, cursor.Y, cursor.X)
 	prediction.confirmed += utf8.RuneCount(echoed)
 	prediction.trustedUntil = now + terminalPredictionTrust
+	if prediction.sealed && prediction.length == 0 {
+		prediction.reset()
+		return wasVisible
+	}
 	if prediction.phase == terminalPredictionProbe && prediction.confirmed >= terminalPredictionConfirm {
 		prediction.phase = terminalPredictionActive
 	}
