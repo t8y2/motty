@@ -124,9 +124,13 @@ func (state *State) declareTransferCompact(c ui.C, height float32) {
 				ui.Text(c, m.Empty).FontSize(metrics.FontSizeS).Color(pal.muted).Ellipsis().FillWidth()
 				return
 			}
-			ui.List(c, &center.compactListState, len(center.compactRows), state.declareTransferCompactRow).
-				Grow(1).MinHeight(0).FillWidth().Label(m.Title).AlwaysScrollbars().ScrollbarSize(8).
+			list := ui.List(c, &center.compactListState, len(center.compactRows), state.declareTransferCompactRow).
+				Grow(1).MinHeight(0).FillWidth().Label(m.Title).ScrollbarSize(compactTransferScrollbar).
 				HitWith(hitTransfersCompactList, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
+			// The track shows only when there is more to scroll to.
+			if center.compactScrolls() {
+				_ = list.AlwaysScrollbars()
+			}
 		})
 		ui.Row(c).Height(26).Shrink(0).FillWidth().Gap(4).Items(ui.Center).
 			Radius(radius.control).Focus(ui.Look{}.Ring(1.5, pal.accent)).

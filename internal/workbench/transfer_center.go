@@ -56,7 +56,8 @@ const transferHostHeaderKeyBase = 1 << 30
 
 const (
 	compactTransferVisibleRows = 3
-	compactTransferRowHeight   = float32(50)
+	compactTransferRowHeight   = float32(58)
+	compactTransferScrollbar   = float32(8)
 )
 
 // Keep the saved indices of the original four filters. Waiting is displayed
@@ -229,7 +230,15 @@ func (center *transferCenter) keyOf(index int) int {
 	return center.entries[row.entry].id + transferFilterCount
 }
 
+// compactScrolls reports whether the compact card has more tasks than it shows.
+func (center *transferCenter) compactScrolls() bool {
+	return len(center.compactRows) > compactTransferVisibleRows
+}
+
 func (center *transferCenter) compactKeyOf(index int) int {
+	if index < 0 || index >= len(center.compactRows) || center.compactRows[index] >= len(center.entries) {
+		return -1 - index
+	}
 	return center.entries[center.compactRows[index]].id
 }
 

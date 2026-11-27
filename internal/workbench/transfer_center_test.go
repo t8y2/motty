@@ -81,15 +81,23 @@ func TestCompactTransferRowsIncludeEveryTaskRegardlessOfSavedFilters(t *testing.
 	}
 }
 
-func TestCompactTransferHeightCapsAtThreeRows(t *testing.T) {
+// TestCompactTransferHeightGrowsWithTasksUpToThree keeps the notice from growing
+// with the history: each task adds a row until three show, and no more after.
+func TestCompactTransferHeightGrowsWithTasksUpToThree(t *testing.T) {
 	state := transferPreviewState(t)
-	if got, want := state.transfers.compactPreferredHeight(), float32(86+3*compactTransferRowHeight); got != want {
-		t.Fatalf("four-task height = %v, want %v", got, want)
+	var heights []float32
+	for count := 1; count <= len(state.transfers.entries); count++ {
+		state.transfers.entries = state.transfers.entries[:count]
+		state.describeTransferSummary()
+		heights = append(heights, state.transfers.compactPreferredHeight())
 	}
-	state.transfers.entries = state.transfers.entries[:2]
-	state.describeTransferSummary()
-	if got, want := state.transfers.compactPreferredHeight(), float32(86+2*compactTransferRowHeight); got != want {
-		t.Fatalf("two-task height = %v, want %v", got, want)
+	for i := 1; i < len(heights); i++ {
+		if i < compactTransferVisibleRows && heights[i] <= heights[i-1] {
+			t.Fatalf("%d tasks are no taller than %d: %v", i+1, i, heights)
+		}
+		if i >= compactTransferVisibleRows && heights[i] != heights[i-1] {
+			t.Fatalf("task %d changed the height past the %d rows that show: %v", i+1, compactTransferVisibleRows, heights)
+		}
 	}
 }
 

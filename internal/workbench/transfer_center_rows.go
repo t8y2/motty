@@ -27,7 +27,12 @@ func (state *State) declareTransferCompactRow(row ui.ListRow) {
 	center, c := &state.transfers, row.C
 	entry := &center.entries[center.compactRows[row.Index]]
 	pal := state.pal
-	row.Element.Height(compactTransferRowHeight).FillWidth().PadX(6).Items(ui.Center).
+	// A row leaves the scrollbar's track clear, when the card has one.
+	gutter := float32(6)
+	if center.compactScrolls() {
+		gutter += compactTransferScrollbar + 4
+	}
+	row.Element.Height(compactTransferRowHeight).FillWidth().PadSides(0, gutter, 0, 6).Items(ui.Center).
 		HitWith(hitTransfersCompactRow.At(entry.id), entry.title, gfx.HitOptions{Role: gfx.RoleGroup, SkipFocus: true, Hint: entry.outcome})
 	row.Element.Children(func() {
 		ui.Column(c).FillWidth().Gap(3).Children(func() {
@@ -53,7 +58,7 @@ func (state *State) declareTransferCompactRow(row ui.ListRow) {
 				state.declareTransferProgress(c, transferFraction(entry.snapshot), 4, 0)
 			}
 		})
-		ui.Slot(c).Absolute().Bottom(0).Left(6).Right(6).Height(1).Background(withAlpha(pal.line, 0.6))
+		ui.Slot(c).Absolute().Bottom(0).Left(6).Right(gutter).Height(1).Background(withAlpha(pal.line, 0.6))
 	})
 }
 
