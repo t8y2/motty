@@ -133,6 +133,7 @@ func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
 		want   bool
 	}{
 		{name: "SSH password prompt", prompt: "root@example.com's password:", want: true},
+		{name: "sudo password prompt", prompt: "[sudo] password for root:", want: true},
 		{name: "passphrase prompt", prompt: "Enter passphrase for key '/home/user/.ssh/id_ed25519':", want: true},
 		{name: "Chinese password prompt", prompt: "请输入密码：", want: true},
 		{name: "password status is not a prompt", prompt: "Password expires in 30 days:", want: false},
@@ -593,8 +594,47 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		}
 	})
 
-	t.Run("password prompt sends the configured password", func(t *testing.T) {
-		state, shell, now := loginCommandSession(t, "ssh root@example\nconfigured-password")
+	t.Run("sudo password prompt sends one secret without recording it", func(t *testing.T) {
+		const password = "configured-password"
+		state, shell, now := loginCommandSession(t, "sudo -i\n"+password+"\necho after")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		shell.say("\x1b]133;A;motty=" + token + "\x07\r\n[sudo] password for root:")
+		state.Wake()
+		*now += loginCommandGrace
+		state.Wake()
+
+		if aborted := session.LoginCommandAborted(); aborted != "" {
+			t.Fatalf("password prompt aborted the configured password: %q", aborted)
+		}
+		if shell.typed() != "sudo -i\r"+password+"\r" {
+			t.Fatalf("configured password was not sent as a secret reply: %q", shell.typed())
+		}
+		if results := session.LoginCommandResults(); len(results) != 0 {
+			t.Fatalf("password handoff recorded a command result before authentication completed: %+v", results)
+		}
+		if strings.Contains(state.status, password) || strings.Contains(string(session.term.screen.AppendRetainedText(nil)), password) {
+			t.Fatal("configured password was displayed in the status bar or terminal")
+		}
+
+		// Authentication opens the root shell. Advance to the next configured
+		// command without reporting the still-open sudo process as successful.
+		shell.say("\x1b]133;A;motty=" + token + "\x07root@host:~# \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		if shell.typed() != "sudo -i\r"+password+"\recho after\r" {
+			t.Fatalf("next command did not run at the authenticated prompt: %q", shell.typed())
+		}
+		if results := session.LoginCommandResults(); len(results) != 0 {
+			t.Fatalf("interactive sudo step was recorded as a successful command: %+v", results)
+		}
+	})
+
+	t.Run("repeated password prompt aborts without trying another line", func(t *testing.T) {
+		const password = "configured-password"
+		state, shell, now := loginCommandSession(t, "ssh root@example\n"+password+"\necho after")
 		session := &state.sessions[0]
 		token := session.term.folderToken
 
@@ -604,12 +644,32 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		state.Wake()
 		*now += loginCommandGrace
 		state.Wake()
-
-		if aborted := session.LoginCommandAborted(); aborted != "" {
-			t.Fatalf("password prompt aborted the configured password: %q", aborted)
+		if shell.typed() != "ssh root@example\r"+password+"\r" {
+			t.Fatalf("first password reply was not sent once: %q", shell.typed())
 		}
-		if shell.typed() != "ssh root@example\rconfigured-password\r" {
-			t.Fatalf("configured password was not sent: %q", shell.typed())
+		*now += loginCommandGrace
+		state.Wake()
+		if session.LoginCommandAborted() != "" || shell.typed() != "ssh root@example\r"+password+"\r" {
+			t.Fatalf("unchanged password prompt retried or aborted unexpectedly: typed=%q aborted=%q", shell.typed(), session.LoginCommandAborted())
+		}
+
+		shell.say("\r\nPermission denied, please try again.\r\nroot@example's password:")
+		state.Wake()
+		*now += loginCommandGrace
+		state.Wake()
+		if session.LoginCommandAborted() == "" {
+			t.Fatal("repeated password prompt should abort the remaining sequence")
+		}
+		if shell.typed() != "ssh root@example\r"+password+"\r" {
+			t.Fatalf("sent another configured line as a password: %q", shell.typed())
+		}
+		if strings.Contains(state.status, password) {
+			t.Fatal("password was exposed in the status bar")
+		}
+		for _, result := range session.LoginCommandResults() {
+			if strings.Contains(result.Command, password) || strings.Contains(result.Output, password) || strings.Contains(result.Aborted, password) {
+				t.Fatalf("password leaked through login result: %+v", result)
+			}
 		}
 	})
 
@@ -673,6 +733,40 @@ func TestMultilineLoginCommandDoesNotAdvanceOnSlowOutputWithColon(t *testing.T) 
 	}
 	if aborted := state.sessions[0].LoginCommandAborted(); aborted != "" {
 		t.Fatalf("aborted while the command was still producing output: %q", aborted)
+	}
+}
+
+func TestMultilineLoginCommandClearsFinalStepAfterIncompletePromptGrace(t *testing.T) {
+	state, shell, now := loginCommandSession(t, "echo first\necho last")
+	session := &state.sessions[0]
+	token := session.term.folderToken
+
+	shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	if shell.typed() != "echo first\r" {
+		t.Fatalf("first step typed %q", shell.typed())
+	}
+
+	shell.say("echo first\r\n\x1b]133;D;0;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+	state.Wake()
+	if shell.typed() != "echo first\recho last\r" {
+		t.Fatalf("last step was not sent: %q", shell.typed())
+	}
+
+	// A final command that emits an incomplete 133;A marker should clear its
+	// tracking state after the grace interval instead of waiting for timeout.
+	shell.say("echo last\r\nstill running\r\n\x1b]133;A;motty=" + token + "\x07")
+	state.Wake()
+	*now += loginCommandGrace
+	state.Wake()
+	if session.LoginCommandAborted() != "" {
+		t.Fatalf("final incomplete marker aborted the sequence: %q", session.LoginCommandAborted())
+	}
+	if session.term.login.running || session.term.login.line != "" {
+		t.Fatal("final incomplete marker did not clear login command tracking after grace")
+	}
+	if results := session.LoginCommandResults(); len(results) != 1 || results[0].Command != "echo first" || !results[0].Success {
+		t.Fatalf("unexpected results after clearing final step: %+v", results)
 	}
 }
 
