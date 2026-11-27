@@ -515,9 +515,6 @@ func (editor *hostEditor) host(id uint32) Host {
 		host.Auth, host.Identity = editor.auth, editor.identity
 		host.IdentitiesOnly = editor.identitiesOnly
 		host.Terminal = editor.terminal
-		if host.Auth != authPrivateKey {
-			host.Identity = ""
-		}
 		host.ForwardX11 = editor.forwardX11
 		host.AgentForward = editor.agentForward
 		host.InteractiveOnly = editor.interactiveOnly

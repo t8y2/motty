@@ -26,6 +26,7 @@ var (
 	hitHostMenuPaste    = tree.ID(hostMenuHits, "host-menu-paste")
 	hitHostMenuMove     = tree.ID(hostMenuHits, "host-menu-move")
 	hitHostMenuSetJump  = tree.ID(hostMenuHits, "host-menu-set-jump")
+	hitHostMenuPassword = tree.ID(hostMenuHits, "host-menu-password")
 	hitHostMenuDelete   = tree.ID(hostMenuHits, "host-menu-delete")
 )
 
@@ -116,6 +117,9 @@ func (state *State) declareHostMenu(c ui.C) {
 	rows.add(components.ContextMenuItem{ID: hitHostMenuCopyEdit, Label: messages.CopyHostAndEdit, Icon: icon(iconPencil), Disabled: several})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuSetJump, Label: messages.HostMenuSetJump, Icon: icon(iconGlobe)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuMove, Label: messages.MoveHostGroup, Icon: icon(iconFolderOpen)})
+	if several {
+		rows.add(components.ContextMenuItem{ID: hitHostMenuPassword, Label: messages.BulkPasswordTitle, Icon: icon(iconKey), Disabled: !state.selectedHostsCanEditAuth()})
+	}
 	rows.add(components.ContextMenuItem{ID: hitHostMenuDelete, Label: messages.DeleteHost, Icon: icon(iconTrash), Variant: components.ContextMenuItemDestructive})
 	state.declareRowsMenu(c, &state.hostMenu.open, state.hostMenu.at, hitHostMenuDismiss, &rows, state.chooseHostMenu)
 }
@@ -168,6 +172,9 @@ func (state *State) chooseHostMenu(id gfx.ID) {
 	case hitHostMenuDelete:
 		state.captureHostMenuActionIDs(host.ID)
 		state.openDeleteCapturedHosts()
+	case hitHostMenuPassword:
+		state.captureHostMenuActionIDs(host.ID)
+		state.openBulkHostPassword()
 	}
 }
 

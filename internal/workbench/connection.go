@@ -553,6 +553,7 @@ const (
 	modalDeleteHost
 	modalMoveHostGroup
 	modalHostImportResult
+	modalBulkHostPassword
 	modalSessionImportPreview
 	modalMobaEncoding
 	modalNewForward
@@ -1457,7 +1458,7 @@ func (state *State) showNextPrompt() {
 			state.offerToSave()
 			if session.attempt > 1 {
 				state.keyPassphraseError = state.messages.KeyPassphraseRetry
-				if state.forgetRefusedSecret(session, passphraseSecretName(session.identity)) {
+				if state.forgetRefusedSecret(session, session.filledSecret) {
 					state.keyPassphraseError = state.messages.PasswordSavedRefused
 				}
 			}
@@ -1488,6 +1489,9 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	if state.modal == modalBulkHostPassword {
+		state.bulkPassword = bulkHostPassword{}
+	}
 	if state.modal == modalAppLock {
 		state.lockUI.formFields = [3]appLockFormField{}
 		state.lockUI.formCount = 0
@@ -1701,6 +1705,11 @@ func (state *State) submitKeyPassphrase() {
 	}
 	passphrase := state.keyPassphrase.String()
 	session.conn.SubmitKeyPassphrase(passphrase)
-	state.stageSecret(session, passphraseSecretName(session.identity), passphrase)
+	owner := state.secretOwner(session.host, session.endpoint, session.role)
+	name := savedPassphraseName(state.secrets.vault, owner, session.identity)
+	if passphrase != "" && name == hostPassphraseSecretName(owner) {
+		passphrase = encodeHostPassphrase(session.identity, passphrase)
+	}
+	state.stageSecret(session, name, passphrase)
 	state.answered(session)
 }

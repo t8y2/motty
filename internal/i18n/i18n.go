@@ -510,24 +510,30 @@ type Messages struct {
 	RecordingTruncated                   string
 
 	// Toolbar and host table.
-	NewHost          string
-	NewGroup         string
-	EditHost         string
-	CopyHost         string
-	CopyHostTo       string
-	CopyHostAndEdit  string
-	PasteHost        string
-	DeleteHost       string
-	MoveHostGroup    string
-	HostGroupActions HostGroupMessages
-	HostCatalog      HostCatalogMessages
-	ExportHosts      string
-	ImportCatalog    string
-	ImportMenu       string
-	Connect          string
-	ColumnName       string
-	HostsEmpty       string
-	HostsEmptySub    string
+	NewHost                                                                                       string
+	NewGroup                                                                                      string
+	EditHost                                                                                      string
+	CopyHost                                                                                      string
+	CopyHostTo                                                                                    string
+	CopyHostAndEdit                                                                               string
+	PasteHost                                                                                     string
+	DeleteHost                                                                                    string
+	MoveHostGroup                                                                                 string
+	HostGroupActions                                                                              HostGroupMessages
+	HostCatalog                                                                                   HostCatalogMessages
+	BulkPasswordTitle, BulkPasswordDescriptionFmt, BulkPasswordEmpty, BulkPasswordNoHosts         string
+	BulkAuthReview, BulkAuthSave, BulkAuthBack, BulkAuthNoFields, BulkAuthNoChanges               string
+	BulkAuthKeyRequired, BulkAuthMissingHost, BulkAuthDuplicate, BulkAuthSaveUnavailable          string
+	BulkAuthSaveFailedFmt, BulkAuthRollbackFailed, BulkAuthSavedFmt, BulkAuthChanged              string
+	BulkAuthImpactFmt, BulkAuthSharedFmt, BulkAuthOverwriteFmt, BulkAuthRemoveFmt, BulkAuthAddFmt string
+	BulkAuthRecovery, BulkAuthForwardEnabled                                                      string
+	ExportHosts                                                                                   string
+	ImportCatalog                                                                                 string
+	ImportMenu                                                                                    string
+	Connect                                                                                       string
+	ColumnName                                                                                    string
+	HostsEmpty                                                                                    string
+	HostsEmptySub                                                                                 string
 
 	// OpenSSH config import.
 	SSHConfigImport             string

@@ -175,7 +175,8 @@ func (state *State) promptSecret(session *Session) (string, secretKind) {
 	case session.phase == sshconn.PhasePasswordPrompt && session.attempt == 1 && isPasswordQuestion(session.questions):
 		return state.passwordName(session), secretPassword
 	case session.phase == sshconn.PhaseKeyPassphrasePrompt && session.attempt == 1 && session.identity != "":
-		return passphraseSecretName(session.identity), secretPassphrase
+		owner := state.secretOwner(session.host, session.endpoint, session.role)
+		return savedPassphraseName(state.secrets.vault, owner, session.identity), secretPassphrase
 	}
 	return "", 0
 }
@@ -209,6 +210,9 @@ func (state *State) autofill(session *Session) autofillResult {
 		return autofillNone
 	}
 	value, found, err := vaultFile.Get(name)
+	if session.phase == sshconn.PhaseKeyPassphrasePrompt && err == nil && found && name == hostPassphraseSecretName(state.secretOwner(session.host, session.endpoint, session.role)) {
+		value, found = decodeHostPassphrase(value, session.identity)
+	}
 	switch {
 	case err != nil || !found:
 		return autofillNone
@@ -243,7 +247,7 @@ func (state *State) canAutofill(session *Session, status sshconn.Status) bool {
 	case status.Phase == sshconn.PhasePasswordPrompt && isPasswordQuestion(status.Questions):
 		name = state.passwordSecret(session.host, status.Endpoint, status.EndpointRole)
 	case status.Phase == sshconn.PhaseKeyPassphrasePrompt && status.IdentityPath != "":
-		name = passphraseSecretName(status.IdentityPath)
+		name = savedPassphraseName(vaultFile, owner, status.IdentityPath)
 	default:
 		return false
 	}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"motty/internal/backup"
+	"motty/internal/vault"
 )
 
 func TestEverySharedRecordKindHasASyncCategory(t *testing.T) {
@@ -24,6 +25,7 @@ func TestEveryVaultSecretFamilyHasASyncCategory(t *testing.T) {
 		want syncCategory
 	}{
 		{"host:abc:password", syncCategoryHosts},
+		{hostPassphraseSecretName("abc"), syncCategoryHosts},
 		{"host:abc:vnc-system-password:alice", syncCategoryHosts},
 		{"host-proxy:abc:deadbeef:password", syncCategoryHosts},
 		{proxyPasswordSecret, syncCategorySettings},
@@ -293,6 +295,17 @@ func TestAClosedSecretCategoryStaysOffTheServer(t *testing.T) {
 	}
 	if !documentSecret(serverDocument(t, dav), "passphrase:a-key") {
 		t.Fatal("reopening the category did not upload this computer's password")
+	}
+}
+
+func TestHostPassphraseOverrideFollowsOnlyTheHostsSyncScope(t *testing.T) {
+	name := hostPassphraseSecretName("catalog-id")
+	secrets := []vault.Secret{{Name: name}, {Name: name, Deleted: true}, {Name: passphraseSecretName("/key")}}
+	if got := newSyncScope([]syncCategory{syncCategoryHosts}).filterSecrets(secrets); !slices.Equal(got, secrets[2:]) {
+		t.Fatal("disabling hosts must exclude the override and its tombstone only")
+	}
+	if got := newSyncScope([]syncCategory{syncCategoryKeys}).filterSecrets(secrets); !slices.Equal(got, secrets[:2]) {
+		t.Fatal("disabling keys must not exclude a host's own records")
 	}
 }
 

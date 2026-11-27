@@ -23,6 +23,11 @@ func (state *State) savedHostSecretName(field hostField) (string, bool) {
 		if !ok {
 			return "", false
 		}
+		if state.hostDialogMode != hostDialogAdd {
+			if host, ok := state.hostByID(state.hostDialogID); ok {
+				return savedPassphraseName(state.secrets.vault, host.CatalogID, identity.Path), true
+			}
+		}
 		return passphraseSecretName(identity.Path), true
 	}
 	return "", false
@@ -42,6 +47,15 @@ func (state *State) loadSavedHostSecret(field hostField) {
 	value, found, err := vaultFile.Get(name)
 	if err != nil || !found {
 		return
+	}
+	if field == fieldPassphrase {
+		if host, ok := state.hostByID(state.hostDialogID); ok && name == hostPassphraseSecretName(host.CatalogID) {
+			identity, _ := state.identityForFingerprint(state.editor.identity)
+			value, found = decodeHostPassphrase(value, identity.Path)
+			if !found {
+				return
+			}
+		}
 	}
 	if editor := state.editor.field(field); editor.String() == "" {
 		editor.Insert(value)

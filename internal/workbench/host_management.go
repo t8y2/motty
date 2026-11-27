@@ -117,6 +117,9 @@ func (state *State) clickHostManagement(id gfx.ID) bool {
 		state.captureHostActionIDs()
 		state.groupMenu.menu = false
 		state.openMoveHostGroupMenu()
+	case hitBulkHostPassword:
+		state.captureHostActionIDs()
+		state.openBulkHostPassword()
 	case hitImportMenu:
 		state.importMenu = true
 		state.hostPrivacy.menu = false
@@ -346,7 +349,7 @@ func (state *State) submitHostDialog() {
 		state.dialogError = failure
 		return
 	}
-	passphraseChanges, failure := state.hostPassphraseChanges()
+	passphraseChanges, failure := state.hostPassphraseChanges(candidate, source)
 	if failure != "" {
 		state.dialogError = failure
 		return
@@ -711,14 +714,23 @@ func (state *State) hostDialogPasswordChanges(host Host, source *Host) (changes 
 	return changes, ""
 }
 
-// hostPassphraseChanges plans the passphrase typed for the key the host is
-// pinned to. It is kept under the key, as the Keychain page keeps it, so every
-// host that uses the key and the page itself see the same one. A passphrase that
-// does not open the key is refused here, as there: it would only fail at the
-// next connection.
-func (state *State) hostPassphraseChanges() (changes []vault.Change, failure string) {
+// hostPassphraseChanges keeps a batch override with its host on edit or copy.
+// A host without a matching override still uses the Keychain's shared value.
+func (state *State) hostPassphraseChanges(host Host, source *Host) (changes []vault.Change, failure string) {
 	typed := state.editor.passphrase.String()
-	if typed == "" || !state.hostAsksKeyPassphrase() {
+	asks := state.hostAsksKeyPassphrase()
+	if !asks && state.hostDialogMode == hostDialogCopy && source != nil && host.isSSH() && host.Identity == source.Identity {
+		if vaultFile := state.secrets.vault; vaultFile != nil && vaultFile.Len() != 0 {
+			encoded, found, err := vaultFile.Get(hostPassphraseSecretName(source.CatalogID))
+			if err != nil {
+				return nil, state.hostPasswordSaveError(err)
+			}
+			if found {
+				return []vault.Change{{Name: hostPassphraseSecretName(host.CatalogID), Value: encoded}}, ""
+			}
+		}
+	}
+	if typed == "" || !asks {
 		return nil, ""
 	}
 	identity, ok := state.identityForFingerprint(state.editor.identity)
@@ -733,6 +745,16 @@ func (state *State) hostPassphraseChanges() (changes []vault.Change, failure str
 	clear(secret)
 	if err != nil {
 		return nil, state.messages.KeyPassphraseWrong
+	}
+	if source != nil {
+		name := hostPassphraseSecretName(source.CatalogID)
+		encoded, found, err := state.secrets.vault.Get(name)
+		if err != nil {
+			return nil, state.hostPasswordSaveError(err)
+		}
+		if _, matches := decodeHostPassphrase(encoded, identity.Path); found && matches {
+			return []vault.Change{{Name: hostPassphraseSecretName(host.CatalogID), Value: encodeHostPassphrase(identity.Path, typed)}}, ""
+		}
 	}
 	return []vault.Change{{Name: passphraseSecretName(identity.Path), Value: typed}}, ""
 }
@@ -852,7 +874,8 @@ func (state *State) confirmDeleteHosts() {
 			}
 			changes = append(changes,
 				vault.Change{Name: hostSecretName(host.CatalogID, hostPasswordPart), Delete: true},
-				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true})
+				vault.Change{Name: hostSecretName(host.CatalogID, hostOTPPart), Delete: true},
+				vault.Change{Name: hostPassphraseSecretName(host.CatalogID), Delete: true})
 			prefix := hostSecretName(host.CatalogID, "vnc-system-password:")
 			for _, name := range names {
 				if strings.HasPrefix(name, prefix) {
