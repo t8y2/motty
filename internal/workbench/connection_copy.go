@@ -432,6 +432,18 @@ func (state *State) clearSecretClipboardIfMatch(serial uint64) {
 	}
 }
 
+// clearSecretClipboardNow verifies and clears the system clipboard immediately
+// if it still holds a pending copied credential, then stops the auto-clear
+// timer and scrubs the stored digest. Called when the window closes so copied
+// plaintext never outlives the window.
+func (state *State) clearSecretClipboardNow() {
+	if state.secretClipboard.active {
+		state.clearSecretClipboardIfMatch(state.secretClipboard.serial)
+		return
+	}
+	state.stopSecretClipboardClear()
+}
+
 // stopSecretClipboardClear cancels any pending credential auto-clear timer and
 // scrubs the stored digest.
 func (state *State) stopSecretClipboardClear() {

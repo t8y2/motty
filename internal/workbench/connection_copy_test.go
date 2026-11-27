@@ -280,6 +280,78 @@ func TestCopiedCredentialAutoClearsClipboardOnlyWhenUnchanged(t *testing.T) {
 	}
 }
 
+func TestCloseClearsPendingCopiedCredentialOnlyWhenUnchanged(t *testing.T) {
+	// 1. Closing the window before TTL clears the clipboard when it still holds
+	// the copied secret.
+	state := newTestState(t, testOptions(t))
+	state.secretClipboardTTL = 30 * time.Second
+	target := state.hosts[1]
+	secretName, _ := hostPasswordSecretName(target)
+	if err := state.secrets.vault.Set(secretName, "close-secret"); err != nil {
+		t.Fatal(err)
+	}
+	clipboard := ""
+	state.options.SetClipboardText = func(value string) error {
+		clipboard = value
+		return nil
+	}
+	state.options.ClipboardText = func() (string, error) {
+		return clipboard, nil
+	}
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	state.Click(hitCopyCredentialConfirmOK)
+	if clipboard != "close-secret" || !state.secretClipboard.active {
+		t.Fatalf("before Close: clipboard=%q active=%v", clipboard, state.secretClipboard.active)
+	}
+	state.Close()
+	if clipboard != "" || state.secretClipboard.active || state.secretClipboard.timer != nil {
+		t.Fatalf("after Close with unchanged clipboard: clipboard=%q active=%v timer=%v", clipboard, state.secretClipboard.active, state.secretClipboard.timer)
+	}
+
+	// 2. Closing the window after another copy replaced the clipboard leaves
+	// the newer clipboard text intact while still disarming the timer.
+	state2 := newTestState(t, testOptions(t))
+	state2.secretClipboardTTL = 30 * time.Second
+	target2 := state2.hosts[1]
+	secretName2, _ := hostPasswordSecretName(target2)
+	if err := state2.secrets.vault.Set(secretName2, "close-secret-2"); err != nil {
+		t.Fatal(err)
+	}
+	clipboard2 := ""
+	state2.options.SetClipboardText = func(value string) error {
+		clipboard2 = value
+		return nil
+	}
+	state2.options.ClipboardText = func() (string, error) {
+		return clipboard2, nil
+	}
+	rightClickHost(state2, target2.ID)
+	chooseCopyInfoSubmenu(t, state2, state2.messages.CopyCredential)
+	state2.Click(hitCopyCredentialConfirmOK)
+	clipboard2 = "unrelated user text"
+	state2.Close()
+	if clipboard2 != "unrelated user text" || state2.secretClipboard.active || state2.secretClipboard.timer != nil {
+		t.Fatalf("after Close with modified clipboard: clipboard=%q active=%v timer=%v", clipboard2, state2.secretClipboard.active, state2.secretClipboard.timer)
+	}
+
+	// 3. Closing a window with no pending secret never touches the clipboard.
+	state3 := newTestState(t, testOptions(t))
+	clipboardCalls := 0
+	state3.options.ClipboardText = func() (string, error) {
+		clipboardCalls++
+		return "keep", nil
+	}
+	state3.options.SetClipboardText = func(string) error {
+		clipboardCalls++
+		return nil
+	}
+	state3.Close()
+	if clipboardCalls != 0 {
+		t.Fatalf("Close without pending secret made %d clipboard calls, want 0", clipboardCalls)
+	}
+}
+
 func TestCopyInfoSubmenuResolvesSharedCredentialAndReportsMissingSecretsOnClick(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	cred := credential{ID: "cred_shared_ops", Name: "Shared Ops", User: "ops-shared"}

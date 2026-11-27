@@ -1253,7 +1253,7 @@ func (state *State) Close() {
 	// save still waiting is dropped rather than fired after the store closes.
 	state.stopTerminalZoomSave()
 	state.stopInlineSnippetSave()
-	state.stopSecretClipboardClear()
+	state.clearSecretClipboardNow()
 	state.closeAI()
 	state.closeHistory()
 	state.stopSyncTimer()
