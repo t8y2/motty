@@ -3212,6 +3212,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 	// valid only until the end of the paint that made it.
 	form.passwordControl = ui.Box{}
 	form.authBox, form.portsBox, form.wslDistroBox = ui.Box{}, ui.Box{}, ui.Box{}
+	form.baudBox = ui.Box{}
 	form.encodingBox, form.iconBox = ui.Box{}, ui.Box{}
 	form.idleIntervalBox, form.idleUnitBox, form.idleInputBox = ui.Box{}, ui.Box{}, ui.Box{}
 	for index := range form.colorSwatchBoxes {
@@ -3433,6 +3434,9 @@ func (state *State) paintHostFormFields(canvas *gfx.Canvas) {
 	}
 	if form.portsBox.Valid() {
 		state.rememberHostPageSelect(canvas, form.portsBox, hitDialogPortsTrigger)
+	}
+	if form.baudBox.Valid() {
+		state.rememberHostPageSelect(canvas, form.baudBox, hitDialogBaud)
 	}
 	if form.wslDistroBox.Valid() {
 		state.rememberHostPageSelect(canvas, form.wslDistroBox, hitDialogWSLDistro)

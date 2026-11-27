@@ -603,6 +603,27 @@ func defaultPortText(protocol hostProtocol) string {
 	return strconv.Itoa(int(Host{Protocol: protocol}.defaultPort()))
 }
 
+// chooseBaud writes a rate the common-rate select chose into the line field,
+// keeping the frame the line names. A line that does not parse keeps what
+// follows its first word, so mistyping the rate does not cost the frame.
+func (editor *hostEditor) chooseBaud(baud string) {
+	rate, err := strconv.Atoi(baud)
+	if err != nil {
+		return
+	}
+	line := editor.value(fieldPort)
+	if settings, err := serial.ParseLine(line, editor.flow); err == nil {
+		settings.Baud = int32(rate)
+		line = settings.String()
+	} else if fields := strings.FieldsFunc(line, serialLineSeparator); len(fields) > 1 {
+		line = baud + " " + strings.Join(fields[1:], " ")
+	} else {
+		line = baud
+	}
+	editor.port = text.Editor{}
+	editor.port.Insert(line)
+}
+
 // setProtocol switches the form to another protocol. A port or line the user has
 // not changed follows the protocol; one they typed stays. A serial form with no
 // device yet offers the first port the machine has.

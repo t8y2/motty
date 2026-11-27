@@ -305,6 +305,45 @@ func TestHostDialogAddsASerialHostWithItsLineAndFlow(t *testing.T) {
 	}
 }
 
+// The serial line offers the rates devices commonly use as a select beside the
+// field. A choice writes the rate and keeps the frame; a rate the line already
+// holds that is no preset is still what the select shows, so it is not lost.
+func TestSerialLineOffersCommonBaudRates(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitAddHost)
+	clickHostChoice(t, state, state.messages.Tools.ProtocolSerial)
+	state.editor.port = text.Editor{}
+	typeInto(state, hitDialogPort, "9600 7E2")
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.Tools.FieldBaudRates)
+	canvas, _ := paintedTexts(state)
+	offered := false
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleOption && hit.Label == "115200" {
+			offered = true
+		}
+	}
+	if !offered {
+		t.Fatal("the open rate list does not offer 115200")
+	}
+	clickPageLabel(t, state, gfx.RoleOption, "115200")
+	if got := state.editor.value(fieldPort); got != "115200 7E2" {
+		t.Fatalf("the chosen rate left the line at %q, want the frame kept", got)
+	}
+
+	state.editor.port = text.Editor{}
+	typeInto(state, hitDialogPort, "250000 8N1")
+	canvas, _ = paintedTexts(state)
+	shown := ""
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleCombobox && hit.Label == state.messages.Tools.FieldBaudRates {
+			shown = hit.Value
+		}
+	}
+	if shown != "250000" {
+		t.Fatalf("the select shows %q for a rate that is no preset, want 250000", shown)
+	}
+}
+
 func TestSwitchingProtocolKeepsWhatTheUserTypedAndChangesWhatTheyDidNot(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitAddHost)

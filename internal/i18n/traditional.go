@@ -2268,6 +2268,7 @@ var traditionalTools = ToolsMessages{
 	FieldDevicePlaceholder: "/dev/ttyUSB0 或 COM3",
 	FieldLine:              "波特率與幀格式",
 	FieldLinePlaceholder:   "115200 8N1",
+	FieldBaudRates:         "常用波特率",
 	FieldFlow:              "流控",
 	FlowNone:               "無",
 	FlowHardware:           "RTS/CTS",

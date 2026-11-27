@@ -464,6 +464,7 @@ type ToolsMessages struct {
 	FieldDevicePlaceholder string
 	FieldLine              string
 	FieldLinePlaceholder   string
+	FieldBaudRates         string
 	FieldFlow              string
 	FlowNone               string
 	FlowHardware           string

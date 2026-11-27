@@ -2268,6 +2268,7 @@ var chineseTools = ToolsMessages{
 	FieldDevicePlaceholder: "/dev/ttyUSB0 或 COM3",
 	FieldLine:              "波特率与帧格式",
 	FieldLinePlaceholder:   "115200 8N1",
+	FieldBaudRates:         "常用波特率",
 	FieldFlow:              "流控",
 	FlowNone:               "无",
 	FlowHardware:           "RTS/CTS",

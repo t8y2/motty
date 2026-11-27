@@ -2,6 +2,9 @@ package workbench
 
 import (
 	"runtime"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
@@ -35,6 +38,7 @@ var (
 	hitDialogEffectCursorShadow   = tree.ID(hostProtocolUiHits, "dialog-effect-cursor-shadow")
 	hitDialogChromeless           = tree.ID(hostProtocolUiHits, "dialog-chromeless")
 	hitDialogPortsTrigger         = tree.ID(hostProtocolUiHits, "dialog-ports-trigger")
+	hitDialogBaud                 = tree.ID(hostProtocolUiHits, "dialog-baud")
 	hitDialogAlgorithms           = tree.ID(hostProtocolUiHits, "dialog-algorithms")
 	hitDialogLoginCommand         = tree.ID(hostProtocolUiHits, "dialog-login-command")
 	hitDialogLoginCommandPolicy   = tree.ID(hostProtocolUiHits, "dialog-login-command-policy")
@@ -275,11 +279,16 @@ func (state *State) declareHostEndpointSlots(c ui.C, parent ui.Box, rowHeight fl
 				slots.picker = ui.Slot(c).WidthPercent(30)
 				state.declareHostPortsSelect(c, slots.picker, rowHeight)
 			})
+			// The common rate list sits beside the line field: the field still
+			// takes any rate and frame, and the list writes the rate it names.
+			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
+				slots.second = ui.Slot(c).Grow(1)
+				state.declareHostTextField(c, slots.second, &form.fieldPort, hitDialogPort, &editor.port, tools.FieldLine, tools.FieldLinePlaceholder, false, rowHeight)
+				state.declareHostBaudSelect(c, ui.Slot(c).Width(hostBaudWidth).Shrink(0), rowHeight)
+			})
 			// The flow control is a three-way choice: it takes the row under
 			// the line settings rather than sharing one with them, where its
 			// labels would be cut.
-			slots.second = ui.Slot(c).Height(rowHeight)
-			state.declareHostTextField(c, slots.second, &form.fieldPort, hitDialogPort, &editor.port, tools.FieldLine, tools.FieldLinePlaceholder, false, rowHeight)
 			slots.third = ui.Slot(c).Height(rowHeight)
 		case protocolTelnet:
 			ui.Row(c).Height(rowHeight).Gap(8).Children(func() {
@@ -418,6 +427,64 @@ func (state *State) declareHostAuthenticationChoice(c ui.C, parent ui.Box, rowHe
 				editor.identityOpen, editor.credentialOpen = false, false
 				state.dialogError = ""
 				c.After(func() { state.prefillKeyPassphrase() })
+			}
+		})
+	})
+}
+
+// hostBaudWidth is the width of the common-rate select beside the line field:
+// six digits and the chevron fit.
+const hostBaudWidth = 126
+
+// serialLineSeparator splits a line into its rate and frame, as serial.ParseLine
+// does.
+func serialLineSeparator(r rune) bool { return r == ' ' || r == ',' || r == '\t' }
+
+// serialBaudPresets are the rates the line field offers beside it. The line
+// takes any rate from 50 to the serial maximum; these are the ones devices
+// commonly use.
+var serialBaudPresets = [...]string{"1200", "2400", "4800", "9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"}
+
+// serialLineBaud is the rate the line field starts with, which the common-rate
+// select shows. It reads only the first word, so a frame still being typed does
+// not empty the select. Empty when the line does not start with a rate.
+func serialLineBaud(line string) string {
+	fields := strings.FieldsFunc(line, serialLineSeparator)
+	if len(fields) == 0 {
+		return ""
+	}
+	rate, err := strconv.Atoi(fields[0])
+	if err != nil || rate < 50 || rate > serial.MaxBaud {
+		return ""
+	}
+	return strconv.Itoa(rate)
+}
+
+// baudChoices lists the common rates and, at the end, the rate the line holds
+// when it is not one of them: a select shows its value only among its choices.
+func baudChoices(choices []string, current string) []string {
+	choices = append(choices, serialBaudPresets[:]...)
+	if current != "" && !slices.Contains(serialBaudPresets[:], current) {
+		choices = append(choices, current)
+	}
+	return choices
+}
+
+// declareHostBaudSelect declares the common baud rates as a page select beside
+// the serial line field. A choice rewrites the rate in the line and keeps the
+// frame it names.
+func (state *State) declareHostBaudSelect(c ui.C, parent ui.Box, rowHeight float32) {
+	editor, form := &state.editor, &state.editor.form
+	form.baudChoice = serialLineBaud(editor.value(fieldPort))
+	form.baudChoices = baudChoices(form.baudChoices[:0], form.baudChoice)
+	label := state.messages.Tools.FieldBaudRates
+	parent.Children(func() {
+		ui.FormField(c, &form.baudField, "").FillWidth().Height(rowHeight).Children(func() {
+			form.baudBox = ui.Select(c, &form.baudChoice, form.baudChoices, nil).
+				Label(label).Placeholder("…")
+			if form.baudBox.Changed() {
+				editor.chooseBaud(form.baudChoice)
+				state.dialogError = ""
 			}
 		})
 	})

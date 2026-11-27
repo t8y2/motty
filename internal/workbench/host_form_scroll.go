@@ -45,6 +45,12 @@ type hostFormScroll struct {
 	// for the form's tab ring.
 	authField, portsField ui.FormFieldState
 	authBox, portsBox     ui.Box
+	// baudField and baudBox are the serial line's common-rate select, baudChoice
+	// the rate it shows, and baudChoices the options, rebuilt each paint.
+	baudField   ui.FormFieldState
+	baudBox     ui.Box
+	baudChoice  string
+	baudChoices []string
 	// encodingField is the remote-encoding combobox's form field, encodingBox
 	// the combobox itself and encodingChoice the value it shows.
 	encodingField  ui.FormFieldState

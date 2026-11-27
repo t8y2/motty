@@ -2268,6 +2268,7 @@ var englishTools = ToolsMessages{
 	FieldDevicePlaceholder: "/dev/ttyUSB0 or COM3",
 	FieldLine:              "Baud rate and frame",
 	FieldLinePlaceholder:   "115200 8N1",
+	FieldBaudRates:         "Common baud rates",
 	FieldFlow:              "Flow control",
 	FlowNone:               "None",
 	FlowHardware:           "RTS/CTS",
