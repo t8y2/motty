@@ -62,10 +62,15 @@ func (state *State) applyTerminalPadding() {
 	state.fitTerminals()
 }
 
-// padding is the margin the terminals are laid out with.
+// padding is the margin a default terminal is laid out with.
 func (state *State) padding() terminalPadding {
+	return state.paddingFor(nil)
+}
+
+// paddingFor is the margin t is laid out with, including its own auto-sized gutter.
+func (state *State) paddingFor(t *terminal) terminalPadding {
 	pad := state.terminalPad.padding()
-	pad.gutter = state.gutterWidth()
+	pad.gutter = state.gutterWidthFor(t)
 	return pad
 }
 

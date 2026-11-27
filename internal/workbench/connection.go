@@ -966,8 +966,9 @@ func (state *State) Wake() {
 		state.advancePasteQueue(session, findNow)
 		state.runLoginCommand(session)
 		state.runIdleKeepAlive(session, findNow)
-		// A session-local charset notice changes the available character grid.
-		// Resize after parsing output, never reentrantly from an OSC callback.
+		// A session-local charset notice or auto-sized line-number gutter can
+		// change the available character grid. Resize after parsing output,
+		// never reentrantly from an OSC callback.
 		state.fitTerminal(session)
 		state.followTerminalDirectory(session)
 		if session.ID == state.activeSessionID && state.activeSection == sectionTerminal && state.monitorShown(state.deck.ActiveWorkspace()) {
