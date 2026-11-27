@@ -8,8 +8,11 @@ import (
 )
 
 // terminalGutter is what the strip at the left of the terminal shows for each
-// line: its number, the time its current content was written, both, or nothing.
-// A program that repaints a line in place (top, a progress bar) moves that
+// line: its number, the time its content was written, both, or nothing. The
+// strip belongs to logical lines: a soft-wrapped run paints its number and
+// time once, on the row that begins it, so a resize that rewraps the text into
+// more or fewer rows skips the extra rows and moves no number or time around
+// it. A program that repaints a line in place (top, a progress bar) moves that
 // line's time forward with every write.
 //
 // The gutter takes its width from the terminal's columns, auto-sizing its
@@ -201,10 +204,16 @@ func gutterStyles(size float32, face gfx.MonoFace, pal *palette) (number, writte
 // paintGutter draws the strip for row. entry is the row's cache entry. The
 // number is right-aligned against the rule's side of its block so the digits
 // line up whatever their count; the time starts after it.
+// A row that continues the line above it shows nothing: the line keeps the number
+// and time of the row that begins it, so rewrapping leaves the strip as it was.
 func (state *State) paintGutter(canvas *gfx.Canvas, entry *rowEntry, t *terminal, geometry terminalGeometry, row int, y float32, number, written gfx.TextStyle) {
+	if !t.gutterHeads[row] {
+		return
+	}
+
 	mode := state.terminalGutter
 	line := t.screen.Row(row)
-	lineNumber := t.screen.LineNumber(row)
+	lineNumber := t.gutterNumbers[row]
 	cached := &entry.gutter
 	if cached.mode != mode || cached.number != lineNumber || cached.at != line.Written || (cached.line == "" && cached.written == "") {
 		cached.number, cached.at, cached.mode = lineNumber, line.Written, mode

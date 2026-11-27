@@ -137,6 +137,100 @@ func (t *Terminal) LogicalLineRange(row, from, to int) (first, last int, ok bool
 	return first, last, true
 }
 
+// logicalNumberCache is the logical line number of one buffer row, kept from one
+// gutter frame to the next so LogicalLineNumbers counts only the rows the view
+// moved over instead of walking the whole scrollback. A write cannot move it:
+// the rows before the first visible row are history rows, which do not change,
+// so only a drop from the oldest end, a reflow or a clear can invalidate it;
+// those paths adjust or clear it. See LogicalLineNumbers.
+type logicalNumberCache struct {
+	row    int    // the buffer row the number is for
+	number uint64 // the logical line number of that row
+	id     uint64 // the row's identity, so a buffer shift invalidates the cache
+	valid  bool
+}
+
+// dropOldest moves the cache down one row after a line left the oldest end of the buffer,
+// or drops it when its own row did. The rows that stay keep their numbers.
+func (c *logicalNumberCache) dropOldest() {
+	if !c.valid {
+		return
+	}
+	if c.row == 0 {
+		c.valid = false
+		return
+	}
+	c.row--
+}
+
+// lineHead reports whether buffer row i begins a logical line:
+// row 0 when the last dropped line did not wrap into it, every other row whose predecessor did not wrap.
+func (t *Terminal) lineHead(i int) bool {
+	return i == 0 && !t.droppedWrapped || i > 0 && !t.bufferLine(i-1).wrapped
+}
+
+// logicalLineNumber returns the number of the logical line buffer row i belongs to,
+// counting every line the buffer has dropped and every line head up to i.
+// It moves the cache to i, so the next frame counts only the rows the view moved
+// over and the cost of a frame does not grow with the scrollback.
+func (t *Terminal) logicalLineNumber(i int) uint64 {
+	cache := &t.logicalNumbers
+	if !cache.valid || cache.row >= t.bufferLineCount() || (cache.row >= 0 && t.bufferLine(cache.row).id != cache.id) {
+		cache.row, cache.number = -1, t.scrolled-uint64(t.histCount)-t.droppedContinuations
+	}
+	for cache.row < i {
+		cache.row++
+		if t.lineHead(cache.row) {
+			cache.number++
+		}
+	}
+	for cache.row > i {
+		if t.lineHead(cache.row) {
+			cache.number--
+		}
+		cache.row--
+	}
+	cache.id, cache.valid = t.bufferLine(cache.row).id, true
+	return cache.number
+}
+
+// LogicalLineNumbers fills numbers and heads for every view row: numbers[row]
+// is the 1-based number of the row's logical line among every line the main
+// buffer has produced, counting a soft-wrapped run as one line, and heads[row]
+// says whether the row begins that line. A continuation row carries its line's
+// number and shows nothing of its own, so rewrapping a line into more or fewer
+// rows moves no number: the rows around it keep what they had. Numbers count
+// past dropped history the way LineNumber does. It returns the slices, grown
+// to the row count. A call costs the rows on screen plus the rows the view
+// moved over since the last call, not the scrollback. On the alternate screen,
+// where the numbers are not meaningful, every row is numbered as LineNumber
+// numbers it.
+func (t *Terminal) LogicalLineNumbers(numbers []uint64, heads []bool) ([]uint64, []bool) {
+	if len(numbers) < t.rows {
+		numbers = make([]uint64, t.rows)
+	}
+	if len(heads) < t.rows {
+		heads = make([]bool, t.rows)
+	}
+	numbers, heads = numbers[:t.rows], heads[:t.rows]
+	if t.onAlt {
+		for row := range numbers {
+			numbers[row], heads[row] = t.LineNumber(row), true
+		}
+		return numbers, heads
+	}
+	top := t.histCount - t.view
+	count := t.logicalLineNumber(top)
+	for i := top; i < top+t.rows; i++ {
+		head := t.lineHead(i)
+		if i > top && head {
+			count++
+		}
+		numbers[i-top], heads[i-top] = count, head
+	}
+	return numbers, heads
+}
+
 // RetainedRow returns a read-only row in the retained buffer.
 func (t *Terminal) RetainedRow(index int) (Row, bool) {
 	if t == nil || index < 0 || index >= t.bufferLineCount() {

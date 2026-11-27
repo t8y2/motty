@@ -198,6 +198,11 @@ type terminal struct {
 	logicalRows  []term.Row
 	logicalView  []logicalViewRow
 	logicalReady bool
+	// gutterNumbers and gutterHeads are the visible rows' logical line numbers
+	// and line beginnings (see term.LogicalLineNumbers), kept between paints so
+	// a gutter frame allocates nothing.
+	gutterNumbers []uint64
+	gutterHeads   []bool
 	// rowIDs are the visible rows' line identities, kept between paints so an
 	// image can find its row without scanning the whole scrollback.
 	rowIDs    []uint64
