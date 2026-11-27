@@ -2,9 +2,13 @@ package workbench
 
 import "sync"
 
-// asyncSleepClaim 将系统电源服务调用移出界面线程，合并各窗口的请求。
+// asyncSleepClaim is one reason the machine has to stay awake, held by the
+// windows that need it. It keeps the call into the system's power service off
+// the goroutine that paints and merges the requests of every window: a service
+// that does not answer must not stall a frame or a tab switch.
 type asyncSleepClaim struct {
 	mu      sync.Mutex
+	reason  string
 	windows int
 	release func()
 	prevent func(string) (func(), error)
@@ -26,7 +30,9 @@ func (claim *asyncSleepClaim) hold(held bool) {
 	go claim.reconcile()
 }
 
-// reconcile 在系统调用期间允许界面继续更新需求，迟到的申请会及时释放。
+// reconcile asks for or releases the system request on its own goroutine. Calls
+// that arrive while the system is answering are applied when it returns, so a
+// claim that was let go meanwhile is released at once instead of being kept.
 func (claim *asyncSleepClaim) reconcile() {
 	claim.mu.Lock()
 	defer func() {
@@ -47,7 +53,7 @@ func (claim *asyncSleepClaim) reconcile() {
 			continue
 		}
 		claim.mu.Unlock()
-		release, err := claim.prevent(transferSleepReason)
+		release, err := claim.prevent(claim.reason)
 		claim.mu.Lock()
 		if err != nil {
 			return

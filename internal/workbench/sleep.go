@@ -1,8 +1,6 @@
 package workbench
 
 import (
-	"sync"
-
 	"github.com/vivaui/viva/app"
 )
 
@@ -13,7 +11,7 @@ const transferSleepReason = "Motty: file transfer"
 // transferSleep is how many windows of this process have a transfer moving
 // bytes. One system request serves them all, and it exists only while the count
 // is above zero, so no timer or goroutine runs when nothing is transferring.
-var transferSleep = asyncSleepClaim{prevent: app.PreventSleep}
+var transferSleep = &asyncSleepClaim{reason: transferSleepReason, prevent: app.PreventSleep}
 
 func holdTransferSleep(held bool) { transferSleep.hold(held) }
 
@@ -35,33 +33,14 @@ const desktopSleepReason = "Motty: remote desktop"
 
 // desktopSleep is how many windows of this process show a remote desktop. One
 // system request serves them all, and it exists only while the count is above
-// zero, so no timer or goroutine runs when none is visible.
-var desktopSleep struct {
-	mu      sync.Mutex
-	windows int
-	release func()
-}
+// zero, so no timer or goroutine runs when none is visible. The system call runs
+// off the goroutine that paints, as transferSleep's does: switching to a
+// desktop tab must not wait for the power service.
+var desktopSleep = &asyncSleepClaim{reason: desktopSleepReason, prevent: app.PreventSleep}
 
 // holdDesktopSleep adds or removes one window's claim, as holdTransferSleep
 // does for transfers.
-func holdDesktopSleep(held bool) {
-	desktopSleep.mu.Lock()
-	defer desktopSleep.mu.Unlock()
-	if held {
-		desktopSleep.windows++
-	} else if desktopSleep.windows > 0 {
-		desktopSleep.windows--
-	}
-	switch {
-	case desktopSleep.windows > 0 && desktopSleep.release == nil:
-		if release, err := app.PreventSleep(desktopSleepReason); err == nil {
-			desktopSleep.release = release
-		}
-	case desktopSleep.windows == 0 && desktopSleep.release != nil:
-		desktopSleep.release()
-		desktopSleep.release = nil
-	}
-}
+func holdDesktopSleep(held bool) { desktopSleep.hold(held) }
 
 // syncDesktopSleep follows the remote desktops the user can see: one that is
 // connected, not ended, and in front of them keeps the machine awake, as a
