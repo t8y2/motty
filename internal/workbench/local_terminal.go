@@ -37,6 +37,8 @@ type localConn struct {
 	wslDirectory      string
 	wslNoGUI          bool
 	backgroundShell   bool
+	prepareOnWake     bool // first-frame screen exists; resolve its shell once the window is available
+	pickedAtStartup   bool // only a new tab chosen by the startup picker needs its title resolved
 	networkProxy      networkProxyMode
 	lookupSystemProxy func() systemproxy.Settings
 }

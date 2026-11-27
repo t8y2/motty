@@ -26,18 +26,64 @@ func TestLocalShellOpeningDoesNotBlockTheWindow(t *testing.T) {
 }
 
 func TestInitialLocalRestorePublishesTextInputBeforeTheFirstWindowWake(t *testing.T) {
-	state := newTestState(t, savedLocalTabs(t, restoreConnectOff, localStartRemember, realTempDir(t)))
+	options := testOptions(t)
+	previous := newTestState(t, options)
+	ids := previous.restoreSessions([]savedSession{{Local: true}}, 1)
+	previous.restoreWorkspaceDeck(nil, ids)
+	previous.activeSection = sectionTerminal
+	previous.save()
+	state := newTestState(t, options)
 	closeShells(t, state)
 	state.PrepareInitialLocalSessions()
 	session := &state.sessions[0]
 	if session.restored || session.term == nil {
 		t.Fatalf("initial local session = restored %v, term %v", session.restored, session.term != nil)
 	}
+	// openWorkbenchWindow prepaints the canvas before passing it to Viva.
 	var canvas gfx.Canvas
-	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	input := state.TerminalInput(app.TextInputContext{ID: terminalTestHit(state, session), Terminal: true})
-	if input == nil || input.OnEvent == nil {
-		t.Fatal("initial local restore did not publish a terminal text input")
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.Paint(&canvas, size)
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Width: 1400, Height: 900, Paint: state.Paint, Tree: Tree(), TextInput: state.TerminalInput,
+	}), &canvas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(driver.Close)
+	if focus := driver.Snapshot().Focused; focus.IsZero() || focus != state.activeTerminalFocusHit() {
+		t.Fatalf("first frame focused %v, want the restored terminal %v", focus, state.activeTerminalFocusHit())
+	}
+	if session.term.shell != nil {
+		t.Fatal("the first frame waited for the shell")
+	}
+	session.term.recording.start(state.now())
+	if err := driver.Compose("ni"); err != nil {
+		t.Fatalf("first frame cannot start composition: %v", err)
+	}
+	if preedit := session.term.preedit; !preedit.Composing || preedit.Value != "ni" {
+		t.Fatalf("first frame composition = %+v", preedit)
+	}
+	waitUntil(t, state, "local shell attachment", func() bool { return session.term.shell != nil || session.err != nil })
+	if session.err != nil {
+		t.Fatal(session.err)
+	}
+	if err := driver.Paint(); err != nil {
+		t.Fatal(err)
+	}
+	if preedit := session.term.preedit; !preedit.Composing || preedit.Value != "ni" {
+		t.Fatalf("shell attachment changed composition: %+v", preedit)
+	}
+	if err := driver.Type("你"); err != nil {
+		t.Fatal(err)
+	}
+	var input strings.Builder
+	for _, e := range session.term.recording.events {
+		if e.direction == terminalRecordingInput {
+			input.Write(e.data)
+		}
+	}
+	if got := input.String(); got != "你" {
+		t.Fatalf("input accepted by the shell = %q, want one committed character", got)
 	}
 }
 

@@ -24,31 +24,32 @@ Remote-desktop status retains its existing lifecycle.
 
 ## Local shell and text input
 
-Starting a local shell can wait on the desktop shell, profile scripts, or a
-system proxy lookup. During startup restoration, Motty opens local shells
-through the background path used for remote shell requests. The terminal screen
-and its native text-input surface are published as soon as the local connection
-is created; the shell is attached by a later window wake. This keeps the first
-Chinese or other IME composition from waiting on process startup while
-preserving the existing shell and output lifecycle. A local terminal opened by
-an explicit user action keeps its existing synchronous path unless it follows
-the system proxy. The first-frame path also avoids synchronously enumerating
-installed shells or writing the session store; the platform default is resolved
-by the background shell start, and startup persistence runs after the window is
-available.
+When Motty restores a local tab or opens one at launch, it prepares the terminal
+for the first paint. If that pane has focus, the text input system can start a
+composition at the cursor before the shell is attached. Shell discovery and
+saving a newly opened tab wait until the first window wake. The local shell
+opens in the background; attaching it uses the same terminal so an unfinished
+composition can continue. Printable text committed early can reach that same
+focused local shell once it attaches. Enter, paste and broadcast input are not
+queued for startup. Local tabs opened later keep their usual startup path.
 
 ### Windows Pinyin cold-start check
 
-Enable a local terminal at startup and select Microsoft Pinyin in Chinese mode.
-Quit Motty completely. Launch it again and, as soon as the local pane appears,
-type `ni` without clicking or waiting for the shell prompt. Check that the
-candidate window appears at the terminal cursor and the composition survives
-the shell becoming ready. Then choose 你 and verify it appears once at the
-prompt. Repeat by restoring a saved local tab, checking that it opens only once.
+Test both ways of getting a local tab: (1) enable a local terminal at startup
+with no saved tabs, and (2) turn that option off and leave a saved local tab
+active. For each case:
 
-For a PR, record the Windows build, IME, local shell and what happened on each
-launch. The automated test checks that the text-input surface exists before the
-first wake; it cannot observe the native candidate window.
+1. Select Microsoft Pinyin in Chinese mode, fully quit Motty, and launch it.
+2. When the pane first appears, type `ni` without clicking or waiting for the
+   prompt. Check whether the candidate window appears at the terminal cursor.
+3. Leave the composition open until the prompt appears, then select 你. Check
+   that the prompt contains exactly one 你 and there is still just one local tab.
+4. On a separate launch with a slow-starting shell, select 你 immediately and
+   leave the tab focused. Check that it appears once when the shell is ready.
+
+Record the Windows build, shell, Motty commit, and the observed result for each
+launch in the PR. The workbench tests can check focus, composition events and
+the saved session. They cannot verify where Windows draws the candidate window.
 
 ## Verification (2026-10-22)
 

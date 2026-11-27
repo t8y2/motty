@@ -2,11 +2,57 @@ package workbench
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 )
+
+func TestPreparedLocalStartupUsesTheShellPickerChoice(t *testing.T) {
+	dir := t.TempDir()
+	detected := localshell.Choice{Name: "Default shell", Path: filepath.Join(dir, "default-shell"), Default: true}
+	picked := localshell.Choice{Name: "My shell", Path: filepath.Join(dir, "picked-shell")}
+	for _, tc := range []struct {
+		name, requested string
+		want            localshell.Choice
+	}{
+		{"detected default", "", detected},
+		{"picked shell", picked.Path, picked},
+		{"removed shell", filepath.Join(dir, "removed"), detected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := newTabState(t)
+			closeShells(t, state)
+			state.startupEnabled, state.startupLocal, state.restorePending = true, tc.requested == "", true
+			state.startupShell, state.localShell = tc.requested, ""
+			state.localShellMenu.loaded = false
+			state.localShellMenu.discover = func() []localshell.Choice { return []localshell.Choice{detected, picked} }
+			state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
+			state.localStartupCommands = map[string]string{localStartupKey(tc.want.Path): "echo ready"}
+			state.PrepareInitialLocalSessions()
+			state.Wake()
+			if len(state.sessions) != 1 {
+				t.Fatalf("got %d local sessions", len(state.sessions))
+			}
+			s := &state.sessions[0]
+			if got := s.conn.(*localConn).shell; got != tc.want.Path {
+				t.Fatalf("program = %q; want %q", got, tc.want.Path)
+			}
+			s.term.armInitialization(state, s)
+			if s.term.login.line != "echo ready" {
+				t.Fatalf("startup command = %q", s.term.login.line)
+			}
+			wantLabel, wantOverride := state.messages.LocalTerminalTitle, ""
+			if tc.want == picked {
+				wantLabel, wantOverride = picked.Name, picked.Path
+			}
+			if s.Title != wantLabel || s.host.localShell != wantOverride {
+				t.Errorf("tab title / saved shell = %q / %q; want %q / %q", s.Title, s.host.localShell, wantLabel, wantOverride)
+			}
+		})
+	}
+}
 
 func TestPreparedLocalStartupIsNotOpenedAgainOnFirstWake(t *testing.T) {
 	state := newTabState(t)
