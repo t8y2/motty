@@ -42,7 +42,9 @@ func (s *State) notesPointer(e gfx.PointerEvent) (result gfx.EventResult) {
 	s.noteContent().view.pointerValid = e.Kind != gfx.PointerExit
 	if pointInRect(e.X, e.Y, s.noteContent().previewBounds) || e.Kind == gfx.PointerExit {
 		result.Repaint = true
-		if s.noteLibraryView() && (e.Kind == gfx.PointerMove || e.Kind == gfx.PointerExit) {
+		// A press held on a control (a splitter being dragged across the
+		// preview) keeps receiving its moves; only hover is swallowed.
+		if s.noteLibraryView() && (e.Kind == gfx.PointerMove && !e.Captured || e.Kind == gfx.PointerExit) {
 			result.Handled = true
 		}
 	}

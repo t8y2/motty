@@ -226,7 +226,10 @@ func (s *State) noteSidebarPointer(e gfx.PointerEvent) gfx.EventResult {
 	}
 	if pointInRect(e.X, e.Y, v.bounds) || e.Kind == gfx.PointerExit {
 		// Native controls activate on an unconsumed pointer-up.
-		return gfx.EventResult{Handled: e.Kind == gfx.PointerMove || e.Kind == gfx.PointerExit || e.Target.IsZero(), Repaint: true}
+		// Moves of a press held on a control (the width splitter dragged back
+		// across the panel) belong to that control; only hover is swallowed so
+		// it does not reach the terminal beneath.
+		return gfx.EventResult{Handled: e.Kind == gfx.PointerMove && !e.Captured || e.Kind == gfx.PointerExit || e.Target.IsZero(), Repaint: true}
 	}
 	return gfx.EventResult{}
 }

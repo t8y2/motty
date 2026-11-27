@@ -313,3 +313,23 @@ func TestNotesSidebarSitsAfterADockedContextPanel(t *testing.T) {
 		t.Fatalf("notes divider centre %v, want the workspace's right edge %v", center, want)
 	}
 }
+
+// A width drag that has gone back across the panel keeps its moves: only hover
+// over the panel is held from the terminal beneath it.
+func TestNotesSidebarLeavesCapturedMovesToTheHeldControl(t *testing.T) {
+	s, _, _, _ := liveSession(t)
+	s.activeSection = sectionTerminal
+	s.Click(hitNotesPanel)
+	size := gfx.Size{Width: 1400, Height: 900}
+	paintAt(s, size)
+	bounds := s.noteSidebarState().bounds
+	at := gfx.Point{X: bounds.X + bounds.Width/2, Y: bounds.Y + bounds.Height/2}
+	hover := s.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: at.X, Y: at.Y, Viewport: size})
+	if !hover.Handled {
+		t.Fatal("hover over the panel reached the terminal beneath it")
+	}
+	held := s.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, X: at.X, Y: at.Y, Viewport: size, Captured: true, Target: hitNoteSidebarSurface})
+	if held.Handled {
+		t.Fatal("a held control lost its move over the panel")
+	}
+}
