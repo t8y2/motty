@@ -644,7 +644,12 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		state.Wake()
 		shell.say("\x1b]133;A;motty=" + token + "\x07\r\n| [root@10.169.156.26:22] Password:")
 		state.Wake()
-		*now += loginCommandGrace
+		*now += time.Second - time.Millisecond
+		state.Wake()
+		if shell.typed() != "ssh root@10.169.156.26:22\r" {
+			t.Fatalf("password was sent before the one-second prompt quiet period: %q", shell.typed())
+		}
+		*now += time.Millisecond
 		state.Wake()
 
 		if aborted := session.LoginCommandAborted(); aborted != "" {

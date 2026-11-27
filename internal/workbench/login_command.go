@@ -177,7 +177,7 @@ const (
 	loginCommandQuiet = 400 * time.Millisecond
 	// loginCommandGrace is how long a shell that should report its prompt is given
 	// to do so before it is treated like one that never will.
-	loginCommandGrace = 4 * time.Second
+	loginCommandGrace = time.Second
 	// loginCommandExecTimeout bounds how long one post-login command step may run
 	// without completing before remaining commands are aborted.
 	loginCommandExecTimeout = 30 * time.Second
