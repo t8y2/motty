@@ -453,6 +453,9 @@ func (state *State) Shortcut(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return gfx.EventResult{Handled: true}
 	}
 	defer state.afterEvent(&outcome)
+	if result, handled := state.terminalMenuKey(event); handled {
+		return result
+	}
 	if result, handled := state.devShortcut(event); handled {
 		return result
 	}
@@ -779,6 +782,9 @@ func (state *State) clearShortcut(action shortcutAction) {
 // shortcut. A release of the key is swallowed too, so a terminal that asked for
 // releases is not sent the end of a press it never saw.
 func (state *State) keyShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if result, handled := state.terminalMenuKey(event); handled {
+		return result, true
+	}
 	chord, ok := keymap.FromEvent(event)
 	if !ok {
 		return gfx.EventResult{}, false

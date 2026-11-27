@@ -2020,6 +2020,11 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 		return app.TextState{}
 	}
 	t := session.term
+	if state.terminalMenu.open && state.modal == modalNone {
+		// Only a key press can invoke a menu mnemonic. A late IME update
+		// must leave the underlying terminal and its composition untouched.
+		return t.preedit
+	}
 	// Text the user supplies, typed or pasted, takes the password offer back:
 	// Enter after it must submit what the user supplied, not the highlighted
 	// saved password.

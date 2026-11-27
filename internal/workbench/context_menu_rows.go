@@ -210,7 +210,7 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 			continue
 		}
 		if entry.submenu != nil {
-			item := menu.Sub(entry.item.Label, entry.submenu).Icon(entry.item.Icon).Disabled(entry.item.Disabled)
+			item := menu.Sub(entry.item.Label, entry.submenu).Mnemonic(entry.item.Mnemonic).Icon(entry.item.Icon).Disabled(entry.item.Disabled)
 			if entry.item.Description != "" {
 				item.Description(entry.item.Description)
 			}
@@ -221,7 +221,7 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 		if row.Shortcut != "" {
 			label += " · " + row.Shortcut
 		}
-		item := menu.Item(label).Icon(row.Icon).Disabled(row.Disabled)
+		item := menu.Item(label).Mnemonic(row.Mnemonic).Icon(row.Icon).Disabled(row.Disabled)
 		if entry.trailing != nil {
 			item = item.Trailing(row.TrailingWidth, entry.trailing)
 		}

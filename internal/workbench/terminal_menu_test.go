@@ -3,6 +3,7 @@ package workbench
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -45,6 +46,207 @@ func TestRightClickOpensTheTerminalMenuAtThePointer(t *testing.T) {
 		if _, ok := hitByID(&canvas, id); !ok {
 			t.Errorf("menu item %d missing", id)
 		}
+	}
+}
+
+func TestTerminalSelectionMenuLabelsAndDisablesSelectionActions(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	session, ok := state.sessionByIDPointer(state.activeSessionID)
+	if !ok {
+		t.Fatal("no active session")
+	}
+	state.Paint(&gfx.Canvas{}, gfx.Size{Width: 1400, Height: 900})
+	rightClick(state, session, 400, 300)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
+	copyItem, copyOK := menuHit(&canvas, state, hitTerminalMenuCopy)
+	pasteSelection, pasteOK := menuHit(&canvas, state, hitTerminalMenuPasteSelection)
+	if !copyOK || copyItem.Label != state.messages.MenuCopy || !copyItem.Disabled {
+		t.Fatalf("copy row = %+v, want disabled %q", copyItem, state.messages.MenuCopy)
+	}
+	if !pasteOK || pasteSelection.Label != state.messages.MenuPasteSelection || !pasteSelection.Disabled {
+		t.Fatalf("paste selection row = %+v, want disabled %q", pasteSelection, state.messages.MenuPasteSelection)
+	}
+}
+
+func TestTerminalMenuCCopiesTheSelection(t *testing.T) {
+	state, session, geometry := selectionState()
+	session.term.screen.Write([]byte("hello world"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
+	)
+	var copied string
+	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
+	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	rightClick(state, session, x, y)
+	result := state.Shortcut(gfx.KeyEvent{Target: terminalTestHit(state, session), Text: "c"})
+	if !result.Handled || copied != "hello" || state.terminalMenu.open {
+		t.Fatalf("C result = %+v, copied=%q, menu=%v", result, copied, state.terminalMenu.open)
+	}
+}
+
+func TestTerminalMenuESendsTheSelectionThroughPasteReview(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("one\r\ntwo"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 1, Column: 2}),
+	)
+	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	rightClick(state, session, x, y)
+	result := state.Shortcut(gfx.KeyEvent{Target: terminalTestHit(state, session), Text: "e"})
+	if !result.Handled || state.modal != modalPasteReview || state.terminalMenu.open || len(shell.input) != 0 {
+		t.Fatalf("E result = %+v, modal=%v, menu=%v, input=%q", result, state.modal, state.terminalMenu.open, shell.input)
+	}
+}
+
+func TestTerminalMenuESendsASingleLineSelection(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("hello"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
+	)
+	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	rightClick(state, session, x, y)
+	result := state.Shortcut(gfx.KeyEvent{Target: terminalTestHit(state, session), Text: "e"})
+	if !result.Handled || string(shell.input) != "hello" || session.term.selection.selected || state.terminalMenu.open {
+		t.Fatalf("E result = %+v, input=%q, selected=%v, menu=%v", result, shell.input, session.term.selection.selected, state.terminalMenu.open)
+	}
+}
+
+func TestTerminalMenuCompositionMessages(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	var copied string
+	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
+	session.term.screen.Write([]byte("hello"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
+	)
+	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	state.terminalText(session.ID, app.TextEvent{Kind: app.TextSetMarked, Text: "ni", MarkedSelection: app.TextRange{Start: 2, End: 2}})
+	rightClick(state, session, x, y)
+	for _, event := range []app.TextEvent{
+		{Kind: app.TextSetMarked, Text: "c"}, {Kind: app.TextInsert, Text: "c"},
+		{Kind: app.TextSetMarked, Text: "e"}, {Kind: app.TextInsert, Text: "e"},
+		{Kind: app.TextUnmark},
+	} {
+		result := state.terminalText(session.ID, event)
+		if !result.Composing || result.Value != "ni" || !state.terminalMenu.open || shell.typed() != "" || copied != "" {
+			t.Fatalf("IME notification %+v changed the menu or composition: ack=%+v open=%v shell=%q copied=%q", event, result, state.terminalMenu.open, shell.typed(), copied)
+		}
+	}
+}
+
+func TestTerminalSelectionMenuWhileTyping(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("the Windows menu captures key presses before the input method")
+	}
+	for _, tc := range []struct {
+		name, composition, letter, wantShell, wantCopy string
+	}{
+		{"send", "", "e", "hello", ""},
+		{"copy", "", "c", "", "hello"},
+		{"send-while-composing", "ni", "e", "hello", ""},
+		{"copy-while-composing", "ni", "c", "", "hello"},
+		{"escape-while-composing", "ni", "Escape", "", ""},
+		{"click-away-while-composing", "ni", "click away", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state, _, _, shell := liveSession(t)
+			session := &state.sessions[0]
+			var copied string
+			state.options.SetClipboardText = func(value string) error { copied = value; return nil }
+			size := gfx.Size{Width: 1400, Height: 900}
+			state.Resize(size)
+			driver := paneDriver(t, state, size)
+			clickPaneGrid(t, state, driver, session)
+			session.term.screen.Write([]byte("\x1b[2J\x1b[Hhello"))
+			session.term.selection.selectRange(session.term.screen.PointAt(term.Position{}),
+				session.term.screen.PointAt(term.Position{Column: 4}))
+			must := func(err error) {
+				t.Helper()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.composition != "" {
+				must(driver.Compose(tc.composition))
+			}
+			focus := terminalOf(state, session)
+			hit := hitOf(t, driver, focus)
+			must(driver.ClickButton(hit.Bounds.X+20, hit.Bounds.Y+40, gfx.PointerButtonSecondary))
+			if !state.terminalMenu.open {
+				t.Fatal("right click did not open the menu")
+			}
+			if session.term.preedit.Value != tc.composition {
+				t.Fatalf("opening the menu changed composition from %q to %q", tc.composition, session.term.preedit.Value)
+			}
+			switch tc.letter {
+			case "Escape":
+				must(driver.Key(gfx.KeyEscape, 0))
+			case "click away":
+				must(driver.Click(hit.Bounds.X+hit.Bounds.Width-16, hit.Bounds.Y+40))
+			default:
+				// Other menu keys cannot become composition text, and holding
+				// the mnemonic must not type a second letter after it closes.
+				must(driver.KeyDown(gfx.KeyUnknown, "x"))
+				must(driver.KeyUp(gfx.KeyUnknown, "x"))
+				must(driver.KeyDown(gfx.KeyUnknown, tc.letter))
+				must(driver.KeyDown(gfx.KeyUnknown, tc.letter))
+				must(driver.KeyUp(gfx.KeyUnknown, tc.letter))
+			}
+			if state.terminalMenu.open || shell.typed() != tc.wantShell || copied != tc.wantCopy {
+				t.Fatalf("after menu key: open=%v shell=%q clipboard=%q", state.terminalMenu.open, shell.typed(), copied)
+			}
+			after := driver.Snapshot()
+			if after.Focused != focus {
+				t.Fatalf("keyboard did not return to the terminal: focus=%v want=%v", after.Focused, focus)
+			}
+			if tc.composition != "" {
+				editor := after.Editor
+				if editor == nil || !editor.Composing || editor.Value != tc.composition {
+					t.Fatalf("original composition after closing the menu: %+v", editor)
+				}
+				must(driver.Compose("nihao"))
+				must(driver.Type("你好"))
+				if shell.typed() != tc.wantShell+"你好" {
+					t.Fatalf("resuming composition wrote %q", shell.typed())
+				}
+			}
+		})
+	}
+}
+
+func TestTerminalMenuSelectionKeysRequireAnUnmodifiedPress(t *testing.T) {
+	state, session, geometry := selectionState()
+	shell := &fakeShell{done: make(chan struct{})}
+	session.term.shell = shell
+	session.term.screen.Write([]byte("hello"))
+	session.term.selection.selectRange(
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 0}),
+		session.term.screen.PointAt(term.Position{Row: 0, Column: 4}),
+	)
+	state.options.SetClipboardText = func(string) error { t.Fatal("modified key copied selection"); return nil }
+	x, y := cellPoint(geometry, 0, 0, state.cellWidth, state.cellHeight)
+	rightClick(state, session, x, y)
+	state.Shortcut(gfx.KeyEvent{Target: terminalTestHit(state, session), Text: "c", Modifiers: gfx.ModifierShift})
+	if !state.terminalMenu.open {
+		t.Fatal("Shift+C closed the menu")
+	}
+	if result := state.Shortcut(gfx.KeyEvent{Target: terminalTestHit(state, session), Text: "e", Repeat: true}); result.Handled {
+		t.Fatalf("repeated E was consumed: %+v", result)
+	}
+	if !state.terminalMenu.open || len(shell.input) != 0 {
+		t.Fatalf("repeated E changed menu/input: menu=%v input=%q", state.terminalMenu.open, shell.input)
 	}
 }
 
