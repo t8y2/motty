@@ -268,7 +268,7 @@ func (state *State) declareTerminalPane(c ui.C, session *Session, bounds gfx.Rec
 		Y:      bounds.Y + chrome.top,
 		Width:  bounds.Width,
 		Height: max(bounds.Height-chrome.top, 0),
-	}, state.cellWidth, state.cellHeight, state.padding())
+	}, state.cellWidth, state.cellHeight, state.paddingFor(t))
 	inactive := state.paneIsInactive(session.ID)
 	inSplit := state.paneInSplit(session.ID)
 	barBackground, barBorder := state.pal.workspace, state.pal.line
@@ -343,7 +343,8 @@ func (state *State) drawTerminalControl(d *ui.DrawContext, sessionID uint32) {
 	if !ok || session.term == nil {
 		return
 	}
-	geometry := terminalGeometryForArea(d.Rect, state.cellWidth, state.cellHeight, state.padding())
+	session.term.expireSync()
+	geometry := terminalGeometryForArea(d.Rect, state.cellWidth, state.cellHeight, state.paddingFor(session.term))
 	state.paintGridControl(d.Canvas, session, geometry, terminalGridFocused(d.Canvas, session, d.State.Focused))
 }
 

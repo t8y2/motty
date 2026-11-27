@@ -43,8 +43,6 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 		gap        = float32(8)
 	)
 	bounds := state.catalogSectionBounds()
-	canAdd := state.canAddJumpRoute()
-	canBatch := state.canBatchAssociateProxies()
 	_, hubSelected := state.selectedBastionHub()
 
 	var (
@@ -123,13 +121,13 @@ func (state *State) declareProxiesWorkspace(c ui.C) {
 					view.hubToggle = state.declareButtonSized(c, hitProxyBatchToggleAll, messages.ProxyHubToggleAll, hubToggleIcon, false, false, true, toolbarFont, condensed).Size(hubToggleWidth, toolbarHeight)
 					view.hubUnbind = state.declareButtonSized(c, hitProxyBatchRemove, messages.ProxyHubUnbindAll, hubUnbindIcon, false, true, true, toolbarFont, condensed).Size(hubUnbindWidth, toolbarHeight)
 				}
-				view.batchAdd = state.declareButtonSized(c, hitProxyBatchAdd, messages.ProxyBatchAssociate, batchAddIcon, false, false, canBatch, toolbarFont, condensed).Size(batchAddWidth, toolbarHeight)
-				view.add = state.declareButtonSized(c, hitProxyAdd, messages.ProxyAdd, addIcon, true, false, canAdd, toolbarFont, condensed).Size(addWidth, toolbarHeight)
+				view.batchAdd = state.declareButtonSized(c, hitProxyBatchAdd, messages.ProxyBatchAssociate, batchAddIcon, false, false, true, toolbarFont, condensed).Size(batchAddWidth, toolbarHeight)
+				view.add = state.declareButtonSized(c, hitProxyAdd, messages.ProxyAdd, addIcon, true, false, true, toolbarFont, condensed).Size(addWidth, toolbarHeight)
 			}
 		})
 
 		if len(state.proxies) == 0 {
-			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd, hitProxyAdd, iconGlobe, canAdd)
+			view.empty = state.reserveEmptyPage(c, bounds, messages.ProxyEmpty, messages.ProxyEmptySub, messages.ProxyAdd, hitProxyAdd, iconGlobe, true)
 		} else {
 			// 中枢切换分段控制器 Tab 栏（Segmented Control 质感）
 			hubs := state.bastionHubs
@@ -452,20 +450,26 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 	column := ui.Column(c).Fill().PadSides(2, 4, 0, 4)
 	column.Children(func() {
 		ui.FormField(c, &editor.targetRow, messages.ProxyFieldTarget).Height(rowHeight).Children(func() {
-			chooser := ui.Combobox(c, &editor.targetChoice, state.proxyTargetChoices(), state.hostPickerName, messages.ProxyFieldTarget).
-				Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).FillWidth()
-			if editor.focusTarget {
-				chooser.AutoFocus()
-				editor.focusTarget = false
-			}
+			ui.Row(c).Fill().Items(ui.Center).Gap(8).Children(func() {
+				chooser := ui.Combobox(c, &editor.targetChoice, state.proxyTargetChoices(), state.hostPickerName, messages.ProxyFieldTarget).
+					Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).Grow(1)
+				if editor.focusTarget {
+					chooser.AutoFocus()
+					editor.focusTarget = false
+				}
+				state.declareProxyNewHostButton(c, hitProxyDialogNewTarget)
+			})
 		})
 		if editor.targetChoice != editor.targetID {
 			state.applyProxyTargetChoice(editor.targetChoice)
 			editor.targetChoice = editor.targetID
 		}
 		ui.FormField(c, &editor.jumpRow, messages.ProxyFieldJump).Height(rowHeight).Children(func() {
-			ui.Combobox(c, &editor.jumpChoice, state.proxyJumpChoices(), state.hostPickerName, messages.ProxyFieldJump).
-				Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).FillWidth()
+			ui.Row(c).Fill().Items(ui.Center).Gap(8).Children(func() {
+				ui.Combobox(c, &editor.jumpChoice, state.proxyJumpChoices(), state.hostPickerName, messages.ProxyFieldJump).
+					Placeholder(messages.HostPickerSearch).Empty(messages.HostPickerNoMatches).Grow(1)
+				state.declareProxyNewHostButton(c, hitProxyDialogNewJump)
+			})
 		})
 		if editor.jumpChoice != editor.jumpID {
 			state.applyProxyJumpChoice(editor.jumpChoice)
@@ -487,6 +491,17 @@ func (state *State) declareProxyDialogBody(c ui.C) {
 		}
 	})
 	column.DrawOver(func(d *ui.DrawContext) { state.paintProxyDialogFields(d.Canvas) })
+}
+
+// declareProxyNewHostButton is the button beside a host combobox that creates
+// the host in place. A dialog opened from a host form has no room to nest
+// another form over the one it came from, so there it offers only saved hosts.
+func (state *State) declareProxyNewHostButton(c ui.C, hit gfx.ID) {
+	if state.proxyEditor.fromHostForm {
+		return
+	}
+	label := state.messages.NewHost
+	ui.Button(c, label).Outline().Shrink(0).Hit(hit, label)
 }
 
 // paintProxyDialogFields paints the route editor's help icon into the slot the

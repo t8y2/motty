@@ -204,6 +204,9 @@ func (state *State) restoreEmptyPaneActive() {
 // open underneath it: a prompt that waited for the dialog, then the connect
 // picker (command palette in connect mode), or nothing.
 func (state *State) restoreAfterHostDialog() {
+	if state.adoptNewProxyHost() {
+		return
+	}
 	state.modal = modalNone
 	// A prompt that arrived while the dialog was up could not open; it takes
 	// precedence over the picker, which the answer may well replace.

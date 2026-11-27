@@ -25,12 +25,12 @@ const DefaultScrollback = 5000
 const (
 	minHistoryBytes        = 16 << 20
 	historyBytesPerLine    = 10 << 10 // ~600 columns of cells + overhead (or ~500 with links)
-	maxDefaultHistoryBytes = 128 << 20
-	historyLineOverhead    = 112 // the line struct, its slice headers and allocator slack
-	historyCellBytes       = 16  // Cell
-	historyMarkBytes       = 8   // Mark
-	historyLinkBytes       = 4   // one uint32 element of a line's hyperlink slice
-	historyLinkOverhead    = 24  // that slice's header and allocation
+	maxDefaultHistoryBytes = 1 << 30  // holds the largest choice at ~600 columns
+	historyLineOverhead    = 112      // the line struct, its slice headers and allocator slack
+	historyCellBytes       = 16       // Cell
+	historyMarkBytes       = 8        // Mark
+	historyLinkBytes       = 4        // one uint32 element of a line's hyperlink slice
+	historyLinkOverhead    = 24       // that slice's header and allocation
 )
 
 // defaultHistoryBytesFor returns the default memory budget for a terminal
@@ -171,13 +171,23 @@ type Terminal struct {
 	histCount  int
 	histBytes  int
 	histMax    int
-	histBudget int          // an explicit byte budget; 0 follows the line limit, see historyBudget
-	histSpare  *line        // an evicted line to reuse, so a budget-bound history does not allocate per line
-	view       int          // how many lines the view is scrolled back
-	scrolled   uint64       // lines ever pushed into history, kept or dropped
-	clock      func() int64 // stamps lines when they are written; nil records nothing
-	clockAt    int64        // clock() for the current Write, see clockNow
-	clockValid bool
+	histBudget int    // an explicit byte budget; 0 follows the line limit, see historyBudget
+	histSpare  *line  // an evicted line to reuse, so a budget-bound history does not allocate per line
+	view       int    // how many lines the view is scrolled back
+	scrolled   uint64 // lines ever pushed into history, kept or dropped
+	// droppedContinuations counts the soft-wrap continuations among the lines
+	// the buffer has dropped, and droppedWrapped remembers whether that last
+	// dropped line continues into the oldest line the buffer now holds. Drops
+	// leave from the oldest end one line at a time, so that last dropped line
+	// is always the predecessor of the oldest retained one; with the two, the
+	// logical line numbers the gutter shows keep counting as if nothing had
+	// been dropped. See LogicalLineNumbers.
+	droppedContinuations uint64
+	droppedWrapped       bool
+	logicalNumbers       logicalNumberCache // logicalNumbers caches the line number of one buffer row between gutter frames; see LogicalLineNumbers.
+	clock                func() int64       // stamps lines when they are written; nil records nothing
+	clockAt              int64              // clock() for the current Write, see clockNow
+	clockValid           bool
 
 	cx, cy   int
 	pend     bool // a character was written in the last column; wrap on the next
@@ -398,6 +408,9 @@ func (t *Terminal) ClearScreen() bool {
 	// What stays on the line above is gone, so it no longer continues it.
 	lines[0].wrapped = false
 	t.clearHistory()
+	// The row the cursor stood on is now the first row and begins a line of its
+	// own, whatever the last dropped history row continued into it.
+	t.droppedWrapped = false
 	t.cy = 0
 	t.generation++
 	t.version++
@@ -417,6 +430,8 @@ func (t *Terminal) SetScrollbackLimit(limit int) {
 		return
 	}
 	t.histMax = limit
+	// The ring is rebuilt below, so a cached row number no longer names a row.
+	t.logicalNumbers.valid = false
 	if limit == 0 {
 		t.clearHistory()
 		t.version++
@@ -432,9 +447,12 @@ func (t *Terminal) SetScrollbackLimit(limit int) {
 		kept[i] = t.histAt(start + i)
 	}
 	for i := 0; i < start; i++ {
+		l := t.histAt(i)
 		if t.images != nil {
-			t.images.dropLine(t.histAt(i).id)
+			t.images.dropLine(l.id)
 		}
+		// The rows dropped here leave from the oldest end like dropOldest's.
+		t.noteDropped(l)
 	}
 	t.hist = kept
 	t.histHead = 0
@@ -532,6 +550,17 @@ func (t *Terminal) historyBytes() int {
 	return bytes
 }
 
+// noteDropped records l as leaving the oldest end of the buffer. It continues
+// the line dropped before it exactly when droppedWrapped is set, so the logical
+// line numbers the gutter shows keep counting past it as if nothing had been
+// dropped. See LogicalLineNumbers.
+func (t *Terminal) noteDropped(l *line) {
+	if t.droppedWrapped {
+		t.droppedContinuations++
+	}
+	t.droppedWrapped = l.wrapped
+}
+
 // dropOldest gives back the oldest line, without touching the view: callers
 // that add a line adjust the view themselves.
 func (t *Terminal) dropOldest() {
@@ -546,6 +575,8 @@ func (t *Terminal) dropOldest() {
 	if t.histCount == 0 {
 		t.histHead = 0
 	}
+	t.noteDropped(l)
+	t.logicalNumbers.dropOldest()
 }
 
 // historyBudget is the byte budget of the history: an explicit one if histBudget
@@ -744,6 +775,7 @@ func (t *Terminal) recycle(l *line) *line {
 // fresh identity afterwards, so the history keeps its images and the caches
 // built from the old rows cannot paint over the new blank ones.
 func (t *Terminal) pushScreenToHistory() {
+	t.logicalNumbers.valid = false // the rows are recycled in place below
 	lines := t.scr.lines
 	last := -1
 	for y, l := range lines {
@@ -824,6 +856,8 @@ func historyCellCapExcess(have, need int) bool {
 func (t *Terminal) pushHistory(l *line) {
 	t.scrolled++
 	if t.histMax == 0 {
+		// Nothing is retained, so the line is dropped as it leaves the screen.
+		t.noteDropped(l)
 		return
 	}
 	used := l.historyUsed(l.used)
@@ -906,6 +940,12 @@ func (t *Terminal) clearHistory() {
 			t.images.dropLine(t.histAt(i).id)
 		}
 	}
+	// The cleared lines leave from the oldest end in order, like dropOldest's
+	// do, so the logical line numbers keep counting past them the same way.
+	for i := 0; i < t.histCount; i++ {
+		t.noteDropped(t.histAt(i))
+	}
+	t.logicalNumbers.valid = false
 	clear(t.hist)
 	t.hist, t.histHead, t.histCount, t.histBytes, t.view = nil, 0, 0, 0, 0
 }

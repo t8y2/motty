@@ -233,13 +233,13 @@ func TestSettingsEntriesOpenARealWorkspace(t *testing.T) {
 			{settingsTerminal, []string{
 				state.messages.SettingsTerminalOption, state.messages.SettingsTerminalFontSize, state.messages.SettingsTerminalFontFamily,
 				state.messages.SettingsTerminalScrollback, state.messages.SettingsTerminalClipboard,
-			}, []gfx.ID{hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsFontPick},
+			}, []gfx.ID{hitSettingsFontSizeDown, hitSettingsFontSizeReset, hitSettingsFontSizeUp, hitSettingsFontPick,
+				hitSettingsScrollbackMinus, hitSettingsScrollbackValue, hitSettingsScrollbackPlus},
 				[]string{
 					state.messages.SettingsTerminalOptionText, state.messages.SettingsTerminalOptionMeta,
 					state.messages.Tools.PaddingCompact, state.messages.Tools.PaddingRoomy,
 					state.messages.Tools.LineHeightCompact, state.messages.Tools.LineHeightRoomy,
 					state.messages.Tools.CursorThin, state.messages.Tools.CursorThick,
-					state.settingsScrollbackLabel(1000), state.settingsScrollbackLabel(10000),
 					state.messages.SettingsTerminalClipboardBlock, state.messages.SettingsTerminalClipboardAllow,
 				}},
 			{settingsConnection, []string{
@@ -347,7 +347,9 @@ func TestSettingsChoicesApplyDirectlyToTheWorkbenchAndTerminal(t *testing.T) {
 		state.Click(hitSettingsFontSizeUp)
 	}
 	state.useTerminalFont(fontEntry{face: gfx.MonoClassic})
-	clickSettingsChoice(t, state, state.settingsScrollbackLabel(1000))
+	for range 4 {
+		state.Click(hitSettingsScrollbackMinus)
+	}
 	clickSettingsChoice(t, state, state.settingsClipboardLabel(terminalClipboardAllow))
 
 	if state.language != i18n.Chinese || state.messages.SettingsTitle != "设置" {
@@ -417,7 +419,7 @@ func TestSettingsChoicesAndWorkspaceSurviveRestart(t *testing.T) {
 	first.Click(hitSettingsFontSizeUp)
 	first.useTerminalFont(fontEntry{face: gfx.MonoClassic})
 	first.save()
-	clickSettingsChoice(t, first, first.settingsScrollbackLabel(10000))
+	typeScrollback(t, first, "10000")
 	clickSettingsChoice(t, first, first.settingsClipboardLabel(terminalClipboardBlock))
 
 	saved, report, err := loadState(first.options.StatePath)
@@ -466,9 +468,15 @@ func TestSettingsApplyScrollbackToExistingTerminalsAndReliabilityToNewConnection
 	state.sessions = append(state.sessions, Session{ID: 1, term: terminal})
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsTerminal)
-	clickSettingsChoice(t, state, state.settingsScrollbackLabel(1000))
+	for range 4 {
+		state.Click(hitSettingsScrollbackMinus)
+	}
 	if terminal.screen.ScrollbackLimit() != 1000 {
 		t.Fatalf("existing terminal scrollback max = %d", terminal.screen.ScrollbackLimit())
+	}
+	typeScrollback(t, state, "100000")
+	if terminal.screen.ScrollbackLimit() != 100000 || state.terminalScrollback != 100000 {
+		t.Fatalf("existing terminal scrollback max = %d, setting = %d", terminal.screen.ScrollbackLimit(), state.terminalScrollback)
 	}
 	state.selectSettingsCategory(settingsConnection)
 	clickSettingsChoiceInRow(t, state, state.messages.SettingsConnectionTimeout, state.settingsTimeoutLabel(30*time.Second))
@@ -527,8 +535,6 @@ func TestSettingsChoicesHaveRovingKeyboardFocus(t *testing.T) {
 		func() bool { return state.terminalGutter == gutterNumbers })
 	rove(settingsTerminal, m.Tools.IntenseRow, m.Tools.IntenseBoth, m.Tools.IntenseBright,
 		func() bool { return state.terminalIntense == intenseBright && state.termPal.intense == intenseBright })
-	rove(settingsTerminal, m.SettingsTerminalScrollback, state.settingsScrollbackLabel(5000), state.settingsScrollbackLabel(10000),
-		func() bool { return state.terminalScrollback == 10000 })
 	rove(settingsTerminal, m.SettingsTerminalClipboard, state.settingsClipboardLabel(terminalClipboardBlock), state.settingsClipboardLabel(terminalClipboardAsk),
 		func() bool { return state.terminalClipboard == terminalClipboardAsk })
 	// Completion starts on its last choice, so move it off before roving on.

@@ -113,6 +113,7 @@ values and preserve any saved password.
 | Client | File to choose |
 | --- | --- |
 | OpenSSH config | `~/.ssh/config` (**Import > Import SSH Config**) |
+| WinSCP | `WinSCP.ini` (**Import/Export > Import from > WinSCP**) |
 | PuTTY | On Windows, a registry export: `reg export HKCU\Software\SimonTatham\PuTTY\Sessions putty.reg`. On Linux and macOS, the files in `~/.putty/sessions`. |
 | Xshell | The `.xsh` session files, or the `.xts` archive Xshell exports. |
 | MobaXterm | The `.mxtsessions` file exported from the sessions panel, or `MobaXterm.ini`. |
@@ -151,6 +152,11 @@ silently dropping characters. If a BOM-less file can be read as both UTF-8 and
 GB18030, Motty shows the differing names and asks you to choose before saving
 any hosts. If several selected files have an encoding ambiguity, import them
 one at a time so each can be decoded correctly.
+
+WinSCP import reads SFTP and SCP sites from the INI file and keeps their names,
+folders, addresses, users, ports, and local key paths. A site that uses a SOCKS5 or HTTP proxy keeps it as an outbound proxy, and a
+tunnel becomes an extra jump host named `<site> → <jump host>`. Saved WinSCP
+passwords, including the proxy's and the tunnel's, stay in the original file.
 
 ## Syncing with your SSH config
 

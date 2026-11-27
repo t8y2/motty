@@ -223,6 +223,9 @@ var (
 	hitSettingsFontSizeDown    = tree.ID(settingsHits, "settings-font-size-down")
 	hitSettingsFontSizeReset   = tree.ID(settingsHits, "settings-font-size-reset")
 	hitSettingsFontSizeUp      = tree.ID(settingsHits, "settings-font-size-up")
+	hitSettingsScrollbackMinus = tree.ID(settingsHits, "settings-scrollback-minus")
+	hitSettingsScrollbackValue = tree.ID(settingsHits, "settings-scrollback-value")
+	hitSettingsScrollbackPlus  = tree.ID(settingsHits, "settings-scrollback-plus")
 	hitSettingsCursorToggle    = tree.ID(settingsHits, "settings-cursor-blink")
 	hitSettingsCursorProgram   = tree.ID(settingsHits, "settings-cursor-program")
 	hitSettingsCopyOnSelect    = tree.ID(settingsHits, "settings-copy-on-select")
@@ -246,6 +249,8 @@ var (
 	hitProxyDialogCancel             = tree.ID(proxiesHits, "proxy-dialog-cancel")
 	hitProxyDialogSubmit             = tree.ID(proxiesHits, "proxy-dialog-submit")
 	hitProxyDialogViaShell           = tree.ID(proxiesHits, "proxy-dialog-via-shell")
+	hitProxyDialogNewTarget          = tree.ID(proxiesHits, "proxy-dialog-new-target")
+	hitProxyDialogNewJump            = tree.ID(proxiesHits, "proxy-dialog-new-jump")
 	hitProxyDialogViaHelp            = tree.ID(proxiesHits, "proxy-dialog-via-shell-help")
 	hitProxyDialogRelay              = tree.ID(proxiesHits, "proxy-dialog-relay")
 	hitProxyRowList                  = tree.Sub(proxiesHits, tree.Name("proxy-row"))
@@ -797,6 +802,7 @@ type State struct {
 	terminalFontFace   gfx.MonoFace
 	terminalLineHeight lineHeight
 	terminalScrollback int
+	scrollbackEdit     numberStepperEdit
 	terminalFindPrefs  terminalFindPreferences
 	findSettingsUI     terminalFindSettingsUI
 	// terminalZoomSaveTimer coalesces a primary+wheel burst into one save once the
@@ -877,7 +883,7 @@ type State struct {
 	// filePreviewMB bounds what a document window loads, in megabytes. The Files
 	// settings choose it with a stepper that has no upper bound.
 	filePreviewMB   int
-	filePreviewEdit filePreviewEdit
+	filePreviewEdit numberStepperEdit
 	sftpColumns     sftpColumnPreferences
 	// sftpTypeIcons is the system icon of each file extension, shared by every
 	// row and every listing. A nil map means none has been asked for yet.
@@ -1859,6 +1865,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	// typed there, as the assistant page's stepper does.
 	if state.filePreviewEdit.editing && id != hitSettingsPreviewValue && id != hitSettingsPreviewMinus && id != hitSettingsPreviewPlus {
 		state.commitFilePreviewEdit()
+	}
+	if state.scrollbackEdit.editing && id != hitSettingsScrollbackValue && id != hitSettingsScrollbackMinus && id != hitSettingsScrollbackPlus {
+		state.commitScrollbackEdit()
 	}
 	if feedback {
 		state.pressIconMotion(id)
@@ -2922,7 +2931,10 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 	if result, handled := state.aiPointer(event); handled {
 		return result
 	}
-	if result, handled := state.filePreviewPointer(event); handled {
+	if result, handled := state.stepperPointer(event, settingsFiles, hitSettingsPreviewValue, state.beginFilePreviewEdit); handled {
+		return result
+	}
+	if result, handled := state.stepperPointer(event, settingsTerminal, hitSettingsScrollbackValue, state.beginScrollbackEdit); handled {
 		return result
 	}
 	if state.modal == modalNone {

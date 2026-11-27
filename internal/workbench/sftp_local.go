@@ -286,8 +286,9 @@ func scanLocalListing(dir string, items []os.DirEntry) localListing {
 			continue
 		}
 		entry := sftpclient.Entry{Name: item.Name(), Size: info.Size(), Mode: info.Mode(), ModTime: info.ModTime()}
-		if info.Mode()&os.ModeSymlink != 0 {
-			if target, err := os.Readlink(filepath.Join(dir, item.Name())); err == nil {
+		if target, isLink, err := sftpclient.ReadLocalLink(filepath.Join(dir, item.Name()), info); isLink {
+			entry.Mode |= os.ModeSymlink
+			if err == nil {
 				entry.LinkTarget = target
 			}
 			if resolved, err := os.Stat(filepath.Join(dir, item.Name())); err == nil {

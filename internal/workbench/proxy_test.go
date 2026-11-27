@@ -774,3 +774,56 @@ func TestProxyChoiceSwapKeepsBothEndsValid(t *testing.T) {
 		t.Fatalf("targetID after swapping from already-routed jump = %d, want 0 (cleared)", state.proxyEditor.targetID)
 	}
 }
+
+// A route can be set up from nothing: the dialog creates both hosts in place
+// and each lands in the end it was created for.
+func TestProxyDialogCreatesItsHostsInPlace(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.hosts = nil
+	state.Click(hitProxies)
+	state.Click(hitProxyAdd)
+	if state.modal != modalNewProxy {
+		t.Fatalf("empty routes page did not open the dialog: modal=%d", state.modal)
+	}
+	create := func(button gfx.ID, label, address string) {
+		t.Helper()
+		state.Click(button)
+		if state.modal != modalNewHost {
+			t.Fatalf("new host form not open: modal=%d", state.modal)
+		}
+		state.editor.label.Insert(label)
+		state.editor.address.Insert(address)
+		state.Click(hitDialogSubmit)
+		if state.modal != modalNewProxy || state.dialogError != "" {
+			t.Fatalf("did not return to the route dialog: modal=%d error=%q", state.modal, state.dialogError)
+		}
+	}
+	create(hitProxyDialogNewJump, "Bastion", "bastion.example.com")
+	create(hitProxyDialogNewTarget, "Inner", "inner.example.com")
+	editor := &state.proxyEditor
+	jump, _ := state.hostByID(editor.jumpID)
+	target, _ := state.hostByID(editor.targetID)
+	if jump.Label != "Bastion" || target.Label != "Inner" || editor.jumpChoice != editor.jumpID || editor.targetChoice != editor.targetID {
+		t.Fatalf("adopted jump=%q target=%q", jump.Label, target.Label)
+	}
+	state.Click(hitProxyDialogSubmit)
+	if state.modal != modalNone || len(state.proxies) != 1 {
+		t.Fatalf("route not saved: modal=%d routes=%+v error=%q", state.modal, state.proxies, state.proxyDialogError)
+	}
+}
+
+// Cancelling the host form leaves the route dialog and what it held as it was.
+func TestProxyDialogHostFormCancelReturnsToDialog(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitProxies)
+	state.Click(hitProxyAdd)
+	target, jump := state.proxyEditor.targetID, state.proxyEditor.jumpID
+	hosts := len(state.hosts)
+	state.Click(hitProxyDialogNewJump)
+	state.Click(hitDialogCancel)
+	if state.modal != modalNewProxy || len(state.hosts) != hosts || state.proxyEditor.targetID != target || state.proxyEditor.jumpID != jump {
+		t.Fatalf("modal=%d hosts=%d editor=%+v", state.modal, len(state.hosts), state.proxyEditor)
+	}
+}

@@ -105,7 +105,6 @@ func TestMissingActionPrerequisitesHaveVisibleFeedback(t *testing.T) {
 				s.hosts[i].Protocol = protocolVNC
 			}
 		}, (*State).openForwardDialog, func(s *State) string { return s.messages.ErrForwardHostRequired }},
-		{"proxy/one SSH host", func(s *State) { s.hosts = s.hosts[:1] }, (*State).openProxyDialog, func(s *State) string { return s.messages.ErrProxyHostsRequired }},
 		{"snippet/no terminal", nil, func(s *State) { s.sendSnippet(0) }, func(s *State) string { return s.messages.Tools.StatusSnippetNoTerminal }},
 		{"snippet/from page", nil, func(s *State) {
 			s.snippets.list = []snippet{{Name: "list", Command: "ls"}}

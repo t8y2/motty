@@ -501,6 +501,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	state.refreshSnippets()
 	state.commands.shown = saved.CommandsShown
+	state.commands.sidebarLeft = saved.CommandsSidebarLeft
 	state.commands.placement = commandsPlacementBottom
 	if saved.CommandsSide {
 		state.commands.placement = commandsPlacementSide

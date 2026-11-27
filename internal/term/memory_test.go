@@ -94,6 +94,42 @@ func TestWideDesktopTerminalsKeepFullConfiguredScrollback(t *testing.T) {
 	}
 }
 
+// Choosing a larger scrollback must not silently keep a fraction of it. The
+// default budget for the largest offered choices has to cover their full line
+// count at the widths that budget represents, or the setting would repeat the
+// premature eviction of #1693.
+func TestLargeScrollbackChoicesReserveTheirFullLineCount(t *testing.T) {
+	for _, limit := range []int{50000, 100000} {
+		for _, cols := range []int{240, 600} {
+			terminal := New(cols, 24, limit)
+			line := []byte(strings.Repeat("x", cols) + "\r\n")
+			for range 25 {
+				terminal.Write(line)
+			}
+			if terminal.Scrollback() == 0 {
+				t.Fatalf("%d lines at %d columns: no history line to measure", limit, cols)
+			}
+			cost := lineHistoryBytes(terminal.histAt(0))
+			if budget := terminal.historyBudget(); budget < cost*limit {
+				t.Fatalf("%d lines at %d columns need %d bytes, budget is %d", limit, cols, cost*limit, budget)
+			}
+		}
+	}
+}
+
+// The largest offered choice retains its full count on a normal-width
+// terminal, not merely a budget that would allow it.
+func TestLargestScrollbackRetainsItsFullLineCount(t *testing.T) {
+	terminal := New(120, 24, 100000)
+	line := []byte(strings.Repeat("x", 120) + "\r\n")
+	for range 100040 {
+		terminal.Write(line)
+	}
+	if got := terminal.Scrollback(); got != 100000 {
+		t.Fatalf("scrollback = %d, want 100000 (bytes=%d budget=%d)", got, terminal.histBytes, terminal.historyBudget())
+	}
+}
+
 // Raising the scrollback limit on an existing terminal with the default budget
 // scales its default byte budget too, so changing Settings from 5000 to 10000
 // actually lets open wide terminals retain 10000 lines.

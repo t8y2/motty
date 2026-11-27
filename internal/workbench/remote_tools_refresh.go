@@ -55,16 +55,18 @@ func (state *State) tickRemoteRefresh(now time.Duration) {
 	}
 }
 
-// drawRemoteRefreshControl paints the manual refresh button inside its page
-// control: the tools window and the workbench modal share it.
+// drawRemoteRefreshControl paints the manual refresh button inside the tools
+// window's page control. The workbench modal declares the same button with
+// ui.Button; both get their surface from the one button recipe.
 func (state *State) drawRemoteRefreshControl(d *ui.DrawContext) {
 	canvas, theme := d.Canvas, *d.Theme
 	theme.Metrics.ControlHeight = d.Rect.Height
 	loading := state.remote.loading
-	paintRemoteButtonSurface(canvas, theme, d.Rect, components.ButtonGhost, gfx.State{
-		Hovered: d.State.Hovered, Pressed: d.State.Pressed, FocusVisible: d.State.Focused,
+	look := components.ButtonRecipe(theme, components.ButtonGhost, gfx.State{
+		Hovered: d.State.Hovered, Pressed: d.State.Pressed, FocusVisible: d.State.FocusVisible,
 		Disabled: loading,
 	})
+	components.PaintButtonSurface(canvas, theme, d.Rect, look)
 	foreground := state.pal.muted
 	if d.State.Hovered || d.State.Pressed {
 		foreground = state.pal.text
@@ -77,39 +79,6 @@ func (state *State) drawRemoteRefreshControl(d *ui.DrawContext) {
 		X: d.Rect.X + (d.Rect.Width-size)/2, Y: d.Rect.Y + (d.Rect.Height-size)/2,
 		Width: size, Height: size,
 	}, foreground)
-}
-
-// paintRemoteButtonSurface paints a page control's button surface with the look
-// components.ButtonRecipe gives the same variant and state. The tools controls
-// paint their own glyphs over it, so they need the surface without a label; the
-// recipe keeps that surface identical to the buttons declared with ui.Button.
-func paintRemoteButtonSurface(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, variant components.ButtonVariant, state gfx.State) {
-	look := components.ButtonRecipe(theme, variant, state)
-	if look.Shadow != gfx.ShadowNone {
-		canvas.Elevate(bounds, look.Radius, look.Shadow)
-	}
-	if look.RingWidth > 0 {
-		ring := gfx.Rect{
-			X: bounds.X - look.RingWidth, Y: bounds.Y - look.RingWidth,
-			Width: bounds.Width + 2*look.RingWidth, Height: bounds.Height + 2*look.RingWidth,
-		}
-		if look.RingOutline {
-			canvas.RoundedOutline(ring, look.RingRadius, 2, look.Ring)
-		} else {
-			canvas.Rounded(ring, look.RingRadius, look.Ring)
-		}
-	}
-	switch {
-	case look.Bordered && look.Filled && theme.Background.Alpha < 1:
-		canvas.Rounded(bounds, look.Radius, look.Background)
-		canvas.RoundedOutline(bounds, look.Radius, 1, look.Border)
-	case look.Bordered && look.Filled:
-		canvas.RoundedBorder(bounds, look.Radius, 1, look.Border.Over(theme.Background), look.Background.Over(theme.Background))
-	case look.Filled:
-		canvas.Rounded(bounds, look.Radius, look.Background)
-	case look.Bordered:
-		canvas.RoundedOutline(bounds, look.Radius, 1, look.Border)
-	}
 }
 
 // drawRemoteAutoControl paints the auto-refresh button, including its countdown
@@ -138,9 +107,10 @@ func (state *State) drawRemoteAutoControl(d *ui.DrawContext) {
 		variant = components.ButtonSecondary
 		foreground = theme.Primary
 	}
-	paintRemoteButtonSurface(canvas, buttonTheme, d.Rect, variant, gfx.State{
-		Hovered: d.State.Hovered, Pressed: d.State.Pressed, FocusVisible: d.State.Focused,
+	look := components.ButtonRecipe(buttonTheme, variant, gfx.State{
+		Hovered: d.State.Hovered, Pressed: d.State.Pressed, FocusVisible: d.State.FocusVisible,
 	})
+	components.PaintButtonSurface(canvas, buttonTheme, d.Rect, look)
 	clock := gfx.Rect{X: d.Rect.X + 9, Y: d.Rect.Y + (d.Rect.Height-18)/2, Width: 18, Height: 18}
 	phase := 0
 	if auto.enabled && !canvas.ReduceMotion() {

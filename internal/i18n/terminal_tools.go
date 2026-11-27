@@ -176,6 +176,9 @@ type ToolsMessages struct {
 	// CommandsResize is the tooltip of the strip along the bar's inner edge that
 	// drags its width.
 	CommandsResize string
+	// CommandsMoveLeft and CommandsMoveRight are the tooltips of the side bar's
+	// arrow, which moves it to the other side.
+	CommandsMoveLeft, CommandsMoveRight string
 	// CommandsBarShow is the label of the picker's quiet checkbox for that strip;
 	// CommandsBarHidden is that checkbox's tooltip while unticked. Neither names
 	// the strip: the UI uses the language's own word for saved commands.
@@ -406,6 +409,9 @@ type ToolsMessages struct {
 	ImportWarningLoopback        string // a session aimed at 127.0.0.1 / localhost
 	ImportPasswordPreviewTitle   string
 	ImportPasswordPreviewBodyFmt string
+	// ImportConnectionsBodyFmt is the preview text for a source that carries no
+	// passwords: the host count and what stays out.
+	ImportConnectionsBodyFmt     string
 	ImportConnectionsOnly        string
 	ImportSavePasswords          string
 	ImportPasswordsSavedFmt      string

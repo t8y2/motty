@@ -5,6 +5,7 @@ package workbench
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
@@ -235,4 +236,199 @@ func TestPaletteScrollbarDragsAndKeepsTheHoverOffTheRows(t *testing.T) {
 			}
 		})
 	}
+}
+
+func openSnippetTerminalView(t *testing.T, state *State) *headless.Session {
+	t.Helper()
+	var invalidator app.Invalidator
+	state.options.Invalidate = invalidator.Invalidate
+	state.options.Invalidator = &invalidator
+	var nativeInput app.TextInput
+	config := state.WindowConfig(app.Config{
+		Width: 1200, Height: 900, Tree: Tree(), Invalidator: &invalidator,
+		OnWake: state.Wake, Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnScroll: state.Scroll, OnResize: state.Resize,
+		TextInput: func(context app.TextInputContext) *app.TextInput {
+			if context.Terminal {
+				return state.TerminalInput(context)
+			}
+			if editor := state.EditorFor(context.ID); editor != nil {
+				nativeInput = app.TextInput{Editor: editor, NavigationKeys: context.NavigationKeys}
+				return &nativeInput
+			}
+			return nil
+		},
+	})
+	view, err := headless.Open(config, nil, headless.Options{Scale: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(view.Close)
+	return view
+}
+
+// Regression test for #1725: after opening the quick-command picker from the
+// terminal toolbar and executing (or dismissing) it, focus must return to the
+// active terminal so pressing Enter does not reopen the picker.
+func TestSnippetPickerReturnsKeyboardToTerminal(t *testing.T) {
+	setup := func(t *testing.T, snippets ...snippet) (*State, *fakeShell, *headless.Session) {
+		t.Helper()
+		world, options := newSharingWorld(t)
+		state := newTestState(t, options)
+		world.connectFirst(t, state)
+		shell := world.conns[0].shell(t)
+		shell.say("\x1b[0m")
+		state.Wake()
+		state.activeSection = sectionTerminal
+		state.snippets.list = snippets
+		state.refreshSnippets()
+		view := openSnippetTerminalView(t, state)
+		if err := view.Rest(); err != nil {
+			t.Fatal(err)
+		}
+		return state, shell, view
+	}
+
+	openViaToolbar := func(t *testing.T, state *State, view *headless.Session) {
+		t.Helper()
+		btn := dualHit(t, view, hitTerminalSnippets)
+		if err := view.Click(btn.X+btn.Width/2, btn.Y+btn.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(100 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalCommandPalette || !state.commandPalette.snippets {
+			t.Fatalf("toolbar click left modal=%d snippets=%v", state.modal, state.commandPalette.snippets)
+		}
+	}
+
+	assertEnterReachesTerminal := func(t *testing.T, state *State, shell *fakeShell, view *headless.Session, wantTyped string) {
+		t.Helper()
+		if err := view.Wait(100 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		wantFocus := state.activeTerminalFocusHit()
+		if got := view.Snapshot().Focused; got != wantFocus {
+			t.Fatalf("focused = %v, want terminal %v", got, wantFocus)
+		}
+		if err := view.Keys("enter"); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(100 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalNone {
+			t.Fatalf("Enter reopened modal %d", state.modal)
+		}
+		if got := shell.typed(); got != wantTyped {
+			t.Fatalf("shell typed %q, want %q", got, wantTyped)
+		}
+	}
+
+	t.Run("click snippet row", func(t *testing.T) {
+		state, shell, view := setup(t, snippet{Name: "Disk usage", Command: "df -h"})
+		openViaToolbar(t, state, view)
+		row := dualHit(t, view, hitCommandPaletteItems.At(0))
+		if err := view.Click(row.X+row.Width/2, row.Y+row.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		assertEnterReachesTerminal(t, state, shell, view, "df -h\r")
+	})
+
+	t.Run("enter on snippet row", func(t *testing.T) {
+		state, shell, view := setup(t, snippet{Name: "Disk usage", Command: "df -h"})
+		openViaToolbar(t, state, view)
+		if err := view.Keys("enter"); err != nil {
+			t.Fatal(err)
+		}
+		assertEnterReachesTerminal(t, state, shell, view, "df -h\r")
+	})
+
+	t.Run("escape dismisses picker", func(t *testing.T) {
+		state, shell, view := setup(t, snippet{Name: "Disk usage", Command: "df -h"})
+		openViaToolbar(t, state, view)
+		if err := view.Keys("escape"); err != nil {
+			t.Fatal(err)
+		}
+		assertEnterReachesTerminal(t, state, shell, view, "\r")
+	})
+
+	t.Run("close button dismisses picker", func(t *testing.T) {
+		state, shell, view := setup(t, snippet{Name: "Disk usage", Command: "df -h"})
+		openViaToolbar(t, state, view)
+		closeBtn := dualHit(t, view, hitCommandPaletteClose)
+		if err := view.Click(closeBtn.X+closeBtn.Width/2, closeBtn.Y+closeBtn.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		assertEnterReachesTerminal(t, state, shell, view, "\r")
+	})
+
+	t.Run("backdrop dismisses picker", func(t *testing.T) {
+		state, shell, view := setup(t, snippet{Name: "Disk usage", Command: "df -h"})
+		openViaToolbar(t, state, view)
+		backdrop := dualHit(t, view, hitCommandPaletteDismiss)
+		if err := view.Click(backdrop.X+4, backdrop.Y+4); err != nil {
+			t.Fatal(err)
+		}
+		assertEnterReachesTerminal(t, state, shell, view, "\r")
+	})
+
+	t.Run("snippet with variables keeps dialog focus then returns to terminal", func(t *testing.T) {
+		state, shell, view := setup(t, snippet{Name: "Deploy", Command: "deploy {{env:prod}}"})
+		openViaToolbar(t, state, view)
+		if err := view.Keys("enter"); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(100 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalSnippetVariables {
+			t.Fatalf("modal = %d, want modalSnippetVariables (%d)", state.modal, modalSnippetVariables)
+		}
+		if got := view.Snapshot().Focused; got != hitSnippetVarList.At(0) {
+			t.Fatalf("variables dialog focused = %v, want %v", got, hitSnippetVarList.At(0))
+		}
+		if err := view.Keys("enter"); err != nil {
+			t.Fatal(err)
+		}
+		assertEnterReachesTerminal(t, state, shell, view, "deploy prod\r")
+	})
+
+	t.Run("command palette session switch focuses new terminal", func(t *testing.T) {
+		world, options := newSharingWorld(t)
+		state := newTestState(t, options)
+		world.connectFirst(t, state)
+		state.Click(hitPaneSplitHorizontal)
+		if len(world.shared) != 1 || len(state.sessions) != 2 {
+			t.Fatalf("shared=%d sessions=%d, want 1 and 2", len(world.shared), len(state.sessions))
+		}
+		shell2 := world.shared[0].shell(t)
+		state.Wake()
+		state.ActivatePane(state.sessions[0].ID)
+		state.activeSection = sectionTerminal
+		view := openSnippetTerminalView(t, state)
+		if err := view.Rest(); err != nil {
+			t.Fatal(err)
+		}
+		btn := dualHit(t, view, hitCommandPalette)
+		if err := view.Click(btn.X+btn.Width/2, btn.Y+btn.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(100 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+		if state.modal != modalCommandPalette {
+			t.Fatalf("modal = %d, want modalCommandPalette", state.modal)
+		}
+		row := commandPaletteRow(t, state, hitCommandSessionList.At(int(state.sessions[1].ID)))
+		state.commandPalette.selected = row
+		if err := view.Keys("enter"); err != nil {
+			t.Fatal(err)
+		}
+		if state.activeSessionID != state.sessions[1].ID {
+			t.Fatalf("activeSessionID = %d, want %d", state.activeSessionID, state.sessions[1].ID)
+		}
+		assertEnterReachesTerminal(t, state, shell2, view, "\r")
+	})
 }

@@ -8,15 +8,20 @@ import (
 )
 
 // terminalGutter is what the strip at the left of the terminal shows for each
-// line: its number, the time its current content was written, both, or nothing.
-// A program that repaints a line in place (top, a progress bar) moves that
+// line: its number, the time its content was written, both, or nothing. The
+// strip belongs to logical lines: a soft-wrapped run paints its number and
+// time once, on the row that begins it, so a resize that rewraps the text into
+// more or fewer rows skips the extra rows and moves no number or time around
+// it. A program that repaints a line in place (top, a progress bar) moves that
 // line's time forward with every write.
 //
-// The gutter takes its width from the terminal's columns. The grid, the pty size
-// the remote is told, selection, links, find and mouse coordinates all start at
-// geometry.left, so moving that edge keeps every one of them consistent with
-// no overlay and no second coordinate system. The columns stay reserved on the
-// alternate screen too, where the strip is left empty: a full-screen program
+// The gutter takes its width from the terminal's columns, auto-sizing its
+// line-number block per terminal from gutterMinNumberChars up to
+// gutterMaxNumberChars as the line count crosses powers of ten. The grid, the
+// pty size the remote is told, selection, links, find and mouse coordinates all
+// start at geometry.left, so moving that edge keeps every one of them consistent
+// with no overlay and no second coordinate system. The columns stay reserved on
+// the alternate screen too, where the strip is left empty: a full-screen program
 // then owns every cell it was told about, and entering or leaving it never
 // changes the size the remote sees.
 type terminalGutter uint8
@@ -29,9 +34,10 @@ const (
 )
 
 const (
-	gutterNumberChars = 6 // up to 999999, then the low digits
-	gutterTimeChars   = 8 // HH:MM:SS
-	gutterRuleGap     = float32(16)
+	gutterMinNumberChars = 4 // 1..9999 without resizing: an ordinary session never crosses it
+	gutterMaxNumberChars = 6 // up to 999999, then the low digits
+	gutterTimeChars      = 8 // HH:MM:SS
+	gutterRuleGap        = float32(16)
 )
 
 func (gutter terminalGutter) String() string {
@@ -61,28 +67,70 @@ func terminalGutterFromString(value string) terminalGutter {
 func (gutter terminalGutter) numbers() bool { return gutter == gutterNumbers || gutter == gutterBoth }
 func (gutter terminalGutter) times() bool   { return gutter == gutterTime || gutter == gutterBoth }
 
-// chars is the gutter's text width in cells.
-func (gutter terminalGutter) chars() int {
+// gutterNumberDigits is the cell count needed to show line, clamped to the
+// gutter's minimum and maximum digit width. Lines past 999999 wrap to their
+// low six digits, so the column stays at gutterMaxNumberChars once reached.
+func gutterNumberDigits(line uint64) int {
+	digits := 1
+	for ; line >= 10 && digits < gutterMaxNumberChars; line /= 10 {
+		digits++
+	}
+	return max(digits, gutterMinNumberChars)
+}
+
+// gutterNumberChars is the digit columns reserved for t's line numbers. It
+// grows monotonically at powers of ten up to gutterMaxNumberChars and never
+// advances from the alternate screen or mid-synchronized update, so full-screen
+// programs, cursor moves and scrolling history never resize the PTY.
+func (t *terminal) gutterNumberChars() int {
+	if t == nil {
+		return gutterMinNumberChars
+	}
+	chars := max(t.gutterDigits, gutterMinNumberChars)
+	if t.screen == nil || t.screen.Modes().AltScreen || t.sync != nil {
+		return chars
+	}
+	if needed := gutterNumberDigits(t.cursorLine()); needed > chars {
+		chars = needed
+		t.gutterDigits = chars
+	}
+	return chars
+}
+
+// chars is the gutter's text width in cells for a number column of numberChars digits.
+func (gutter terminalGutter) chars(numberChars int) int {
 	n := 0
 	if gutter.numbers() {
-		n += gutterNumberChars
+		n += numberChars
 	}
 	if gutter.times() {
 		n += gutterTimeChars
 	}
-	if n == gutterNumberChars+gutterTimeChars {
+	if gutter.numbers() && gutter.times() {
 		n++ // a cell between the two
 	}
 	return n
 }
 
-// gutterWidth is the pixels the gutter takes from the left of the grid.
-func (state *State) gutterWidth() float32 {
-	chars := state.terminalGutter.chars()
-	if chars == 0 || state.cellWidth <= 0 {
+// gutterWidthFor is the pixels the gutter takes from the left of t's grid.
+func (state *State) gutterWidthFor(t *terminal) float32 {
+	if state.terminalGutter == gutterOff || state.cellWidth <= 0 {
+		return 0
+	}
+	numberChars := 0
+	if state.terminalGutter.numbers() {
+		numberChars = t.gutterNumberChars()
+	}
+	chars := state.terminalGutter.chars(numberChars)
+	if chars == 0 {
 		return 0
 	}
 	return snap(float32(chars)*state.cellWidth) + gutterRuleGap
+}
+
+// gutterWidth is the pixels the gutter takes for a default (minimum-width) terminal.
+func (state *State) gutterWidth() float32 {
+	return state.gutterWidthFor(nil)
 }
 
 func (state *State) wallSeconds() int64 {
@@ -156,18 +204,25 @@ func gutterStyles(size float32, face gfx.MonoFace, pal *palette) (number, writte
 // paintGutter draws the strip for row. entry is the row's cache entry. The
 // number is right-aligned against the rule's side of its block so the digits
 // line up whatever their count; the time starts after it.
+// A row that continues the line above it shows nothing: the line keeps the number
+// and time of the row that begins it, so rewrapping leaves the strip as it was.
 func (state *State) paintGutter(canvas *gfx.Canvas, entry *rowEntry, t *terminal, geometry terminalGeometry, row int, y float32, number, written gfx.TextStyle) {
+	if !t.gutterHeads[row] {
+		return
+	}
+
 	mode := state.terminalGutter
 	line := t.screen.Row(row)
-	lineNumber := t.screen.LineNumber(row)
+	lineNumber := t.gutterNumbers[row]
 	cached := &entry.gutter
 	if cached.mode != mode || cached.number != lineNumber || cached.at != line.Written || (cached.line == "" && cached.written == "") {
 		cached.number, cached.at, cached.mode = lineNumber, line.Written, mode
 		cached.line, cached.written = formatGutter(mode, lineNumber, line.Written)
 	}
-	left := geometry.left - state.gutterWidth()
+	numberChars := t.gutterNumberChars()
+	left := geometry.left - state.gutterWidthFor(t)
 	if cached.line != "" {
-		width := float32(gutterNumberChars) * state.cellWidth
+		width := float32(numberChars) * state.cellWidth
 		canvas.LabelAligned(cached.line, gfx.Rect{X: left, Y: y, Width: width, Height: state.cellHeight}, number, gfx.AlignRight)
 		left += width + state.cellWidth
 	}
@@ -179,7 +234,7 @@ func (state *State) paintGutter(canvas *gfx.Canvas, entry *rowEntry, t *terminal
 // formatGutter is the two texts of a gutter: the line number and the time.
 func formatGutter(mode terminalGutter, number uint64, written int64) (line, at string) {
 	if mode.numbers() {
-		var scratch [gutterNumberChars]byte
+		var scratch [gutterMaxNumberChars]byte
 		line = string(strconv.AppendUint(scratch[:0], number%1000000, 10))
 	}
 	if mode.times() && written != 0 {

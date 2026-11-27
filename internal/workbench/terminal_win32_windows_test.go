@@ -292,3 +292,24 @@ func TestWin32InputUnintegratedShellAutoListOpens(t *testing.T) {
 		t.Fatalf("list = %q, want git stage", got)
 	}
 }
+
+// Caps Lock is a lock key, not typing: a local shell gets the characters it
+// types, so the terminal must not encode the key as a win32 input record and
+// toggle a pseudo console state of its own. The remote desktop, which has no
+// local keyboard state, is where the key is forwarded instead.
+func TestCapsLockIsNotTypedIntoTheShell(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	shell.say("\x1b[?9001h")
+	state.Wake()
+	if !state.sessions[0].term.screen.Modes().Win32Input {
+		t.Fatal("win32 input mode was not set")
+	}
+	shell.input = nil
+	press := gfx.KeyEvent{Key: gfx.KeyCapsLock, Win32: gfx.Win32Key{VirtualKey: 0x14, ScanCode: 0x3a}}
+	key(state, 0, press)
+	press.Release = true
+	key(state, 0, press)
+	if got := string(shell.input); got != "" {
+		t.Fatalf("the shell got %q for Caps Lock", got)
+	}
+}

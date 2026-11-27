@@ -813,6 +813,8 @@ func (w *sftpWindow) refresh(local bool) {
 	}
 	if local {
 		w.owner.refreshLocalDirectory(w.view)
+	} else if w.canReconnectOwned() && !w.view.busy {
+		w.dialOwned(false)
 	} else if !w.view.busy && w.connected() {
 		w.view.forgetListings()
 		w.owner.listSFTP(w.view, w.view.path)

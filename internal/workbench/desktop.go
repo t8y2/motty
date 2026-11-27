@@ -896,7 +896,7 @@ var desktopKeys = map[gfx.Key]desktop.Key{
 	gfx.KeyLeft: desktop.KeyLeft, gfx.KeyRight: desktop.KeyRight, gfx.KeyUp: desktop.KeyUp, gfx.KeyDown: desktop.KeyDown,
 	gfx.KeyHome: desktop.KeyHome, gfx.KeyEnd: desktop.KeyEnd, gfx.KeyBackspace: desktop.KeyBackspace,
 	gfx.KeyDelete: desktop.KeyDelete, gfx.KeyPageUp: desktop.KeyPageUp, gfx.KeyPageDown: desktop.KeyPageDown,
-	gfx.KeyInsert: desktop.KeyInsert,
+	gfx.KeyInsert: desktop.KeyInsert, gfx.KeyCapsLock: desktop.KeyCapsLock,
 }
 
 // desktopKeyEvent maps a Viva key event to the remote key it means.

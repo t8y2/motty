@@ -44,3 +44,29 @@ func TestAHeldKeyReachesTheDesktopAsARepeat(t *testing.T) {
 		t.Fatalf("remote keys = %+v, want %+v", got, want)
 	}
 }
+
+// TestCapsLockReachesTheRemoteDesktop pins that the lock key itself is sent to
+// the remote: the remote applies the toggle, so a press that became text or
+// disappeared would leave it lowercase however much Shift works.
+func TestCapsLockReachesTheRemoteDesktop(t *testing.T) {
+	remote := newFileDesktop()
+	state, session := fileDesktopState(t, remote, false, Options{})
+	hit := hitTerminalList.At(int(session.ID))
+	send := func(event gfx.KeyEvent) {
+		t.Helper()
+		event.Target = hit
+		if result := state.Key(event); !result.Handled {
+			t.Fatalf("key %+v was not handled", event)
+		}
+	}
+	send(gfx.KeyEvent{Key: gfx.KeyCapsLock})
+	send(gfx.KeyEvent{Key: gfx.KeyCapsLock, Release: true})
+
+	want := []desktop.KeyEvent{
+		{Key: desktop.KeyCapsLock, Down: true},
+		{Key: desktop.KeyCapsLock},
+	}
+	if got := remote.sentKeys(); !slices.Equal(got, want) {
+		t.Fatalf("remote keys = %+v, want %+v", got, want)
+	}
+}

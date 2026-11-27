@@ -414,6 +414,83 @@ func TestCommandSidebarResizeDragsAndPersists(t *testing.T) {
 	}
 }
 
+func TestCommandSidebarMovesBesideHostsAndRemembersItsSide(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	state.hostsPanel.open = true
+	state.commands.shown = true
+	state.commands.placement = commandsPlacementSide
+	state.snippets.list = []snippet{{Name: "List", Group: "Shell", Command: "ls"}}
+	view := openPickerView(t, state, 1)
+	click := func(id gfx.ID) {
+		t.Helper()
+		rect := dualHit(t, view, id)
+		if err := view.Click(rect.X+rect.Width/2, rect.Y+rect.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Rest(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	size := state.viewport
+	frame := state.toolbarDockFrame(size, true)
+	hostEdge := frame.X + state.hostsPanelExtent(frame.Width)
+	right := state.commands.bar
+	if right.X+right.Width != frame.X+frame.Width {
+		t.Fatalf("existing preferences should open on the right: %+v", right)
+	}
+
+	click(hitCommandsMove)
+	left := state.commands.bar
+	content := state.baseWorkspacePixelBounds(size)
+	if left.X != hostEdge || left.X+left.Width != content.X || left.Width != right.Width {
+		t.Fatalf("sidebar %+v should fit between hosts (ending at %v) and terminal content %+v", left, hostEdge, content)
+	}
+	if again := newTestState(t, state.options); !again.commands.sidebarLeft {
+		t.Fatal("left side was not restored from disk")
+	}
+	grip := dualHit(t, view, hitCommandsResize)
+	if grip.X+grip.Width != content.X {
+		t.Fatalf("resize grip %+v should be on the terminal edge at %v", grip, content.X)
+	}
+	x, y := grip.X+1, grip.Y+100
+	if err := view.Press(x, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Move(x+30, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Release(x+30, y); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.commands.width != left.Width+30 {
+		t.Fatalf("dragging the left sidebar to the right gave width %v", state.commands.width)
+	}
+	click(hitCommandsFilter)
+	if !state.commands.filterOpen {
+		t.Fatal("filter menu did not open after resizing")
+	}
+	filter := dualHitLabel(t, view, state.messages.Tools.CommandsShowAll)
+	if filter.X < state.commands.bar.X+state.commands.bar.Width || filter.X+filter.Width > size.Width {
+		t.Fatalf("filter menu %+v should open to the right of sidebar %+v", filter, state.commands.bar)
+	}
+	if err := view.Click(size.Width/2, size.Height-40); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	click(hitCommandsMove)
+	if state.commands.sidebarLeft || !state.commands.shown || shell.typed() != "" {
+		t.Fatal("moving back should keep the command sidebar open without sending input")
+	}
+	if again := newTestState(t, state.options); again.commands.sidebarLeft {
+		t.Fatal("moving back did not restore the right side on restart")
+	}
+}
+
 func TestCommandSidebarDoesNotCoverTheRightToolbar(t *testing.T) {
 	state, _, _, _ := liveSession(t)
 	state.commands.shown = true

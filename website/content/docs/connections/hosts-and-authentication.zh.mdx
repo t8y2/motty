@@ -90,6 +90,7 @@ Netcatty 的导出还可能含可读取的 SSH 登录密码，此时可以选择
 | 来源 | 要选择的文件 |
 | --- | --- |
 | OpenSSH 配置 | `~/.ssh/config`（**导入 > 导入 SSH Config**） |
+| WinSCP | `WinSCP.ini`（**导入/导出 > 从其他软件导入 > WinSCP**） |
 | PuTTY | Windows 上选注册表导出：`reg export HKCU\Software\SimonTatham\PuTTY\Sessions putty.reg`；Linux 和 macOS 上选 `~/.putty/sessions` 里的文件。 |
 | Xshell | `.xsh` 会话文件，或 Xshell 导出的 `.xts` 压缩包。 |
 | MobaXterm | 从会话面板导出的 `.mxtsessions` 文件，或 `MobaXterm.ini`。 |
@@ -117,6 +118,8 @@ MobaXterm 的 UTF-8、带 BOM 的 UTF-16 和 GB18030 文本可读取；
 不支持或损坏的编码会报错，不会静默丢字。无 BOM 文件若同时符合 UTF-8 和
 GB18030，Motty 会先展示两种名称供选择，在确认前不会保存主机。
 多文件中出现编码歧义时，请逐个导入，以便分别选择正确的编码。
+
+WinSCP 导入会读取 INI 中的 SFTP 和 SCP 站点，保留名称、文件夹、地址、用户、端口和本地密钥路径。使用 SOCKS5 或 HTTP 代理的站点会保留为出站代理，隧道会变成一台名为“站点 → 跳板主机”的额外跳板主机。WinSCP 保存的密码，包括代理和隧道的密码，都留在原文件里。
 
 ## 与 SSH 配置同步
 

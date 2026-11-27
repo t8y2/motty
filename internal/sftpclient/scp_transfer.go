@@ -246,7 +246,10 @@ func (worker *Worker) scpUpload(remote *scpRemote, next request, generation uint
 			if worker.preserveTimes() {
 				modTime = info.ModTime()
 			}
-			if info.Mode()&os.ModeSymlink != 0 {
+			if text, isLink, linkErr := ReadLocalLink(local, info); isLink {
+				if linkErr != nil {
+					return linkErr
+				}
 				relative, err := filepath.Rel(next.local, local)
 				if err != nil {
 					return err
@@ -255,11 +258,11 @@ func (worker *Worker) scpUpload(remote *scpRemote, next request, generation uint
 				if err != nil {
 					return err
 				}
-				text, err := os.Readlink(local)
+				remoteTarget, err := remoteLinkTargetFromLocal(next.local, local, text, info)
 				if err != nil {
 					return err
 				}
-				links = append(links, scpLink{remote: destination, target: text})
+				links = append(links, scpLink{remote: destination, target: remoteTarget})
 				return nil
 			}
 			if !info.IsDir() {

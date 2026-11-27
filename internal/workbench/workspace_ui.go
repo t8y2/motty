@@ -43,9 +43,11 @@ func (state *State) toolbarDockContentBounds(size gfx.Size, includeTerminal bool
 			bounds.X += extent
 			bounds.Width = max(bounds.Width-extent, 0)
 		}
-		// The command bar takes the inner strip of the right edge; the terminal
-		// toolbar rail beyond it keeps the window edge.
-		bounds.Width = max(bounds.Width-state.commandsSidebarBounds(size).Width, 0)
+		sidebar := state.commandsSidebarExtent(size)
+		if state.commands.sidebarLeft {
+			bounds.X += sidebar
+		}
+		bounds.Width = max(bounds.Width-sidebar, 0)
 	}
 	return bounds
 }

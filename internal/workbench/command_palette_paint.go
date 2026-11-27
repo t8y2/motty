@@ -79,7 +79,7 @@ func (state *State) declareCommandPalette(c ui.C) {
 	})
 	dialog.Body(palette.body)
 	if dialog.Dismissed() {
-		state.closeCommandPalette()
+		state.dismissCommandPalette()
 	}
 }
 

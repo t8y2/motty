@@ -184,10 +184,10 @@ func (state *State) sftpFilterShortcut(target gfx.ID) (gfx.EventResult, bool) {
 			session, local, ok = panelSession, target, true
 		}
 	}
-	if !ok || local != hitSFTPFilter && local.Scope() != hitSFTPEntryList && !session.files.active().onListRow(local) {
+	if !ok || session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone || session.files.editPath != "" || session.files.dialog != sftpDialogNone {
 		return gfx.EventResult{}, false
 	}
-	if session.files == nil || state.activeSection != sectionTerminal || state.modal != modalNone || session.files.editPath != "" || session.files.dialog != sftpDialogNone {
+	if local != hitSFTPFilter && local.Scope() != hitSFTPEntryList && !session.files.active().onListRow(local) {
 		return gfx.EventResult{}, false
 	}
 	active := session.files.active()
