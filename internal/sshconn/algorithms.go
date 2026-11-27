@@ -9,8 +9,9 @@ import (
 )
 
 // Algorithms narrows or widens what one endpoint negotiates. An empty list keeps
-// the library's own choice for that kind, which excludes the algorithms with
-// known weaknesses; those have to be asked for by name.
+// the connection default for that kind, which excludes the algorithms with
+// known weaknesses; those have to be asked for by name. The default key
+// exchange offer is defaultKeyExchanges; the other kinds are the library's own.
 type Algorithms struct {
 	KeyExchanges []string
 	Ciphers      []string
@@ -18,14 +19,15 @@ type Algorithms struct {
 	HostKeys     []string
 }
 
-// IsZero reports whether the library's defaults apply to everything.
+// IsZero reports whether the host made no choice, so the connection
+// defaults apply.
 func (algorithms Algorithms) IsZero() bool {
 	return len(algorithms.KeyExchanges)+len(algorithms.Ciphers)+len(algorithms.MACs)+len(algorithms.HostKeys) == 0
 }
 
-// CompatibleAlgorithms offers everything the library implements: the defaults
-// first, in their order, then the weak ones, so a modern server still gets a
-// modern choice and an old device can be reached at all.
+// CompatibleAlgorithms offers everything the library implements: the secure
+// ones first, in the library's order, then the weak ones, so a modern server
+// still gets a modern choice and an old device can be reached at all.
 func CompatibleAlgorithms() Algorithms {
 	supported, weak := ssh.SupportedAlgorithms(), ssh.InsecureAlgorithms()
 	return Algorithms{
@@ -34,6 +36,21 @@ func CompatibleAlgorithms() Algorithms {
 		MACs:         slices.Concat(supported.MACs, weak.MACs),
 		HostKeys:     slices.Concat(supported.HostKeys, weak.HostKeys),
 	}
+}
+
+// defaultKeyExchanges is what a host with no algorithm choice offers: every key
+// exchange the library implements and considers secure, in its own preference
+// order, then diffie-hellman-group14-sha1, which the library keeps last in its
+// default offer for old servers.
+//
+// The library leaves diffie-hellman-group-exchange-sha256 out of its default
+// because it costs an extra round trip, but a server may support no other key
+// exchange; OpenSSH offers it by default, so a host that only speaks group
+// exchange must still be reachable. The library's support for it is what the
+// negotiated key exchange is checked against, so offering it here cannot send a
+// name this build cannot run.
+func defaultKeyExchanges() []string {
+	return append(ssh.SupportedAlgorithms().KeyExchanges, ssh.InsecureKeyExchangeDH14SHA1)
 }
 
 // UnknownAlgorithmError names a requested algorithm this build does not implement.

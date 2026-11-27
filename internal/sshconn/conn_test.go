@@ -1208,3 +1208,22 @@ func TestMissingStoredKeyIsReportedNotSilentlySkipped(t *testing.T) {
 		t.Fatalf("skipped = %v", status.Skipped)
 	}
 }
+
+// A server may support nothing but diffie-hellman-group-exchange-sha256, a
+// secure key exchange the library implements but leaves out of its own default
+// offer. A host added without an algorithm choice must still reach it.
+func TestADefaultHostReachesAServerThatOnlyOffersGroupExchange(t *testing.T) {
+	server := startServer(t, func(s *testServer) {
+		s.password = "pw"
+		s.algorithms = &ssh.Config{KeyExchanges: []string{ssh.KeyExchangeDHGEXSHA256}}
+	})
+	h := dial(t, server, nil)
+	h.phase(PhaseHostKeyPrompt)
+	h.conn.TrustHostKey(false)
+	h.phase(PhasePasswordPrompt)
+	h.conn.SubmitPassword("pw")
+	connected := h.phase(PhaseConnected)
+	if connected.Negotiated.KeyExchange != ssh.KeyExchangeDHGEXSHA256 {
+		t.Fatalf("negotiated %q", connected.Negotiated.KeyExchange)
+	}
+}

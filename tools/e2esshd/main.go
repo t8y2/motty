@@ -95,6 +95,11 @@ func main() {
 			return nil, fmt.Errorf("denied")
 		},
 	}
+	// E2ESSHD_KEX restricts key exchange to a comma-separated list, so a test
+	// can stand in for a server that only offers one, old or unusual KEX.
+	if kex := os.Getenv("E2ESSHD_KEX"); kex != "" {
+		config.KeyExchanges = strings.Split(kex, ",")
+	}
 	keyOnly := certs.userCert != nil || len(certs.extraKeys) > 0
 	if keyOnly {
 		// The certificate and extra-key fixtures must be proven by the key

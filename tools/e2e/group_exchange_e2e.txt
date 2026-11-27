@@ -1,0 +1,20 @@
+# End to end: a host added without an algorithm choice reaches a server whose
+# only key exchange is diffie-hellman-group-exchange-sha256. The library leaves
+# that KEX out of its own default offer, so the client must add it itself.
+#
+#   (cd tools/e2esshd && go build -o /tmp/e2esshd .)
+#   E2ESSHD_KEX=diffie-hellman-group-exchange-sha256 /tmp/e2esshd 2248 &
+#   go build -tags vivahead -o /tmp/motty-head ./cmd/motty
+#   python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/group_exchange_e2e.txt
+# lang: en
+
+click "Search"
+type tester@127.0.0.1:2248
+click "Connect"
+waitfor "Trust" 3000
+click "Trust and Save"
+waitfor "Password" 3000
+type secret
+key enter
+waitfor "tester@e2e" 8000
+expect text "tester@e2e" within 3000

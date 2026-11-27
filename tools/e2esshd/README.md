@@ -36,6 +36,8 @@ With `E2E_ALLOW_EXEC=1` a command requested together with a terminal runs on a p
 `E2E_MAX_SFTP=n` refuses an SFTP subsystem request while n are open, as a server with a small `MaxSessions` does; every subsystem opened, refused or closed is logged. Use it to see how a second channel for a folder search behaves (see `tools/e2e/sftp_search_e2e.txt`).
 `E2ESSHD_BANNER=SSH-2.0-OpenSSH_9.0` makes the server announce a real implementation instead of `SSH-2.0-GopE2E`. The client only probes for and starts its shell integration (the OSC 7 directory report path completion reads) on a banner it recognizes, so a check that needs that integration must also run with `E2E_ALLOW_EXEC=1` (see `tools/e2e/path_completion_e2e.txt`).
 
+`E2ESSHD_KEX=name[,name]` restricts the key exchange to those algorithms, so a test can stand in for a server that offers only one, old or unusual KEX (see `tools/e2e/group_exchange_e2e.txt`).
+
 `E2E_LOGIN_MESSAGE='line one\nline two'` gives the server a login message (PAM's MOTD, last login) that behaves as in OpenSSH: it belongs to the connection, the first session that starts a program takes it, and only a shell request prints it. A command or an SFTP subsystem that comes first drops it for good, so a client that opens one before its shell loses the banner; the log says `login-message shown to shell` or `login-message dropped by <exec|subsystem>` (see `tools/e2e/login_message_e2e.txt`).
 
 `E2E_SFTP_ONLY=1` makes it an account restricted to SFTP: a shell request is accepted, prints `This service allows sftp connections only.` and ends with exit status 1, while the SFTP subsystem keeps working (see `tools/e2e/sftp_only_e2e.txt`).
