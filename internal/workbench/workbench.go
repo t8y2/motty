@@ -892,9 +892,14 @@ type State struct {
 	// dragged the file lists' columns to; zero until a width was chosen, when
 	// the lists keep their width-based defaults. sftpColumnWidthsChosen says a
 	// drag or a double click has replaced those defaults.
+	// sftpColumnModifiedText and sftpColumnShortText are what the modification
+	// time and its year-less form measure at the current interface font and
+	// text size, refreshed on every paint.
 	sftpColumnSizeWidth     float32
 	sftpColumnModifiedWidth float32
 	sftpColumnWidthsChosen  bool
+	sftpColumnModifiedText  float32
+	sftpColumnShortText     float32
 	sftpFilesSettings       sftpFilesSettingsCache
 	sftpDownloadDirectory   string
 	defaultEditor           ExternalEditor // hands remote folders to this computer's editor

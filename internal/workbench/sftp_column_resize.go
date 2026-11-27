@@ -25,6 +25,16 @@ var (
 	sftpWindowColumnDividers  = tree.Sub(sftpColumnResizeHits, tree.Name("window-divider"))
 )
 
+// measureSFTPColumnText records what the modification time needs at the
+// window's current interface font and text size. The column used to be sized
+// for one font's metrics; a wider font or a larger interface text size then cut
+// the last digits off. The sample uses the layout the rows are formatted with,
+// so the measurement and the painted text cannot drift apart.
+func (state *State) measureSFTPColumnText(canvas *gfx.Canvas) {
+	state.sftpColumnModifiedText = canvas.TextWidth(sftpModifiedLayout, metrics.FontSizeS)
+	state.sftpColumnShortText = canvas.TextWidth(sftpModifiedLayout[5:], metrics.FontSizeS)
+}
+
 // sftpColumnMetrics is the three widths an SFTP list paints, in pixels.
 type sftpColumnMetrics struct {
 	name, size, modified float32
@@ -42,7 +52,7 @@ func (state *State) sftpColumnResizeAvailable() bool {
 // that they are the chosen ones, clamped so the name keeps its minimum.
 func (state *State) sftpColumnMetrics(area, gap float32) sftpColumnMetrics {
 	if !state.sftpColumnWidthsChosen {
-		state.sftpColumnSizeWidth, state.sftpColumnModifiedWidth = sftpColumnWidths(area)
+		state.sftpColumnSizeWidth, state.sftpColumnModifiedWidth = state.sftpColumnWidths(area)
 	}
 	size := max(state.sftpColumnSizeWidth, sftpColumnMinSize)
 	modified := max(state.sftpColumnModifiedWidth, sftpColumnMinModified)

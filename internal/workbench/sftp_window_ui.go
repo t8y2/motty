@@ -312,6 +312,7 @@ func (w *sftpWindow) paneSplitWidth(bodyWidth float32) float32 {
 
 // declarePanes declares the two panes and the splitter between them as a row.
 func (w *sftpWindow) declarePanes(c ui.C, body gfx.Rect, firstLocal bool, parts bool) {
+	w.owner.measureSFTPColumnText(c.Canvas())
 	width := w.paneSplitWidth(body.Width)
 	w.ui.split.Pos = width
 	secondWidth := max(body.Width-width-sftpWindowSplitExtent, 0)
@@ -844,8 +845,12 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 			}
 			if column.Key == sftpColumnModified {
 				date := entry.cells[3]
-				if paneWidth < 420 && len(date) >= 16 {
-					date = date[5:10]
+				full := w.owner.sftpColumnModifiedText
+				switch {
+				case paneWidth < 420 && len(date) >= 10:
+					date = date[5:10] // the pane is too narrow for a time
+				case full > 0 && modifiedWidth < full && len(date) > 5:
+					date = date[5:] // drop the year before cutting the time
 				}
 				ui.Text(c, date).FontSize(metrics.FontSizeS).Color(pal.muted).Width(modifiedWidth)
 			}
@@ -853,11 +858,18 @@ func (w *sftpWindow) declareListRow(row ui.ListRow, side int, paneWidth, rowWidt
 	})
 }
 
+// dateWidth is the modification-time column for a list that has only one fixed
+// column. It keeps the room-based default as a floor and follows the measured
+// date, so a larger interface text size cannot cut the time off.
 func (w *sftpWindow) dateWidth(width float32) float32 {
+	base, content := float32(118), w.owner.sftpColumnModifiedText
 	if width < 420 {
-		return 76
+		base, content = 76, w.owner.sftpColumnShortText
 	}
-	return 118
+	if content > 0 {
+		base = max(base, content+sftpColumnNameGap)
+	}
+	return base
 }
 
 // windowMenuRows is the file list's right-click menu as page menu rows. The

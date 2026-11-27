@@ -3226,6 +3226,11 @@ func sftpTransfersActive(transfers []sftpclient.TransferSnapshot) bool {
 	return false
 }
 
+// sftpModifiedLayout is the modification time both file lists show. The
+// columns measure this same layout, so a wider interface font or text size
+// cannot cut the time off.
+const sftpModifiedLayout = "2006/01/02 15:04"
+
 func prepareSFTPRows(rows []sftpRow, entries []sftpclient.Entry) []sftpRow {
 	if cap(rows) < len(entries) {
 		rows = make([]sftpRow, len(entries))
@@ -3241,7 +3246,7 @@ func prepareSFTPRows(rows []sftpRow, entries []sftpclient.Entry) []sftpRow {
 		icon, mono := sftpFileIcon(entry)
 		rows[index] = sftpRow{
 			entry: entry, icon: icon, mono: mono, hidden: strings.HasPrefix(entry.Name, "."),
-			cells: [5]string{"", entry.Name, size, entry.ModTime.Local().Format("2006/01/02 15:04"), kind},
+			cells: [5]string{"", entry.Name, size, entry.ModTime.Local().Format(sftpModifiedLayout), kind},
 		}
 	}
 	return rows
