@@ -19,9 +19,10 @@ import (
 // kernel32, or the bundled modern one from conpty.dll. A console is resized and
 // closed with the implementation that created it.
 type pseudoConsole struct {
-	create func(size windows.Coord, in, out windows.Handle, flags uint32, console *windows.Handle) error
-	resize func(console windows.Handle, size windows.Coord) error
-	close  func(console windows.Handle)
+	create      func(size windows.Coord, in, out windows.Handle, flags uint32, console *windows.Handle) error
+	resize      func(console windows.Handle, size windows.Coord) error
+	close       func(console windows.Handle)
+	passthrough bool
 }
 
 func systemPseudoConsole() pseudoConsole {
@@ -128,6 +129,7 @@ func loadPseudoConsole(path string) (pseudoConsole, error) {
 		close: func(console windows.Handle) {
 			syscall.SyscallN(closeConsole, uintptr(console))
 		},
+		passthrough: true,
 	}, nil
 }
 
