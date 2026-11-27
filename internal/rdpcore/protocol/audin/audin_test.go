@@ -210,6 +210,7 @@ func TestOpenStreamsAudioPacketsAndClosesOnReset(t *testing.T) {
 
 	// 4 frames * 1 channel * 2 bytes = 8 bytes per packet.
 	h.ProcessPDU(serverOpenPDU(4, 0))
+	eventually(t, "open response PDUs", func() bool { return len(cap.sent()) >= 2 })
 	if openedRate != 48000 || openedCh != 1 || openedFrames != 4 {
 		t.Fatalf("opened (%d, %d, %d), want (48000, 1, 4)", openedRate, openedCh, openedFrames)
 	}
@@ -251,6 +252,7 @@ func TestOpenFailureRepliesWithErrorHRESULT(t *testing.T) {
 	cap.clear()
 
 	h.ProcessPDU(serverOpenPDU(441, 0))
+	eventually(t, "open failure reply", func() bool { return len(cap.sent()) >= 1 })
 	sent := cap.sent()
 	if len(sent) != 1 || sent[0][0] != msgOpenReply {
 		t.Fatalf("sent = %v, want single OPEN_REPLY", sent)
@@ -264,10 +266,14 @@ func TestFormatChangeKeepsReaderWhenShapeUnchangedAndReopensWhenChanged(t *testi
 	cap := &capture{}
 	r1 := newFakeReader()
 	r2 := newFakeReader()
-	opens := 0
+	var opens sync.Mutex
+	openCount := 0
 	h := NewHandler(cap.send, func(rate uint32, channels uint16, frames uint32) (io.ReadCloser, error) {
-		opens++
-		if opens == 1 {
+		opens.Lock()
+		openCount++
+		n := openCount
+		opens.Unlock()
+		if n == 1 {
 			return r1, nil
 		}
 		return r2, nil
@@ -278,25 +284,30 @@ func TestFormatChangeKeepsReaderWhenShapeUnchangedAndReopensWhenChanged(t *testi
 		pcmFormat(16000, 1),
 	))
 	h.ProcessPDU(serverOpenPDU(480, 0))
-	if opens != 1 {
-		t.Fatalf("opens = %d, want 1", opens)
-	}
+	eventually(t, "initial open reply", func() bool { return len(cap.sent()) >= 4 })
 
 	// Same rate & channels at index 1 keeps r1 open.
 	cap.clear()
 	h.ProcessPDU(serverFormatChangePDU(1))
-	if opens != 1 || r1.isClosed() {
-		t.Fatalf("format change with identical PCM shape reopened reader (opens=%d, closed=%v)", opens, r1.isClosed())
+	opens.Lock()
+	gotOpens := openCount
+	opens.Unlock()
+	if gotOpens != 1 || r1.isClosed() {
+		t.Fatalf("format change with identical PCM shape reopened reader (opens=%d, closed=%v)", gotOpens, r1.isClosed())
 	}
 	if sent := cap.sent(); len(sent) != 1 || sent[0][0] != msgFormatChange || binary.LittleEndian.Uint32(sent[0][1:5]) != 1 {
 		t.Fatalf("sent = %v, want FORMAT_CHANGE(1)", sent)
 	}
 
-	// Different rate & channels at index 2 closes r1 and opens r2.
+	// Different rate & channels at index 2 closes r1 and opens r2 asynchronously.
 	cap.clear()
 	h.ProcessPDU(serverFormatChangePDU(2))
-	if opens != 2 || !r1.isClosed() {
-		t.Fatalf("format change to 16kHz mono did not replace reader (opens=%d, r1Closed=%v)", opens, r1.isClosed())
+	eventually(t, "format change reopen", func() bool { return len(cap.sent()) >= 1 && r1.isClosed() })
+	opens.Lock()
+	gotOpens = openCount
+	opens.Unlock()
+	if gotOpens != 2 || !r1.isClosed() {
+		t.Fatalf("format change to 16kHz mono did not replace reader (opens=%d, r1Closed=%v)", gotOpens, r1.isClosed())
 	}
 	if sent := cap.sent(); len(sent) != 1 || sent[0][0] != msgFormatChange || binary.LittleEndian.Uint32(sent[0][1:5]) != 2 {
 		t.Fatalf("sent = %v, want FORMAT_CHANGE(2)", sent)
@@ -304,6 +315,49 @@ func TestFormatChangeKeepsReaderWhenShapeUnchangedAndReopensWhenChanged(t *testi
 	h.Close()
 	if !r2.isClosed() {
 		t.Fatal("Close did not close r2")
+	}
+}
+
+func TestOpenDoesNotBlockReceiveLoopWhileInputOpens(t *testing.T) {
+	cap := &capture{}
+	entered := make(chan struct{})
+	gate := make(chan struct{})
+	reader := newFakeReader()
+	h := NewHandler(cap.send, func(uint32, uint16, uint32) (io.ReadCloser, error) {
+		close(entered)
+		<-gate
+		return reader, nil
+	}, nil)
+	h.ProcessPDU(serverFormatsPDU(pcmFormat(48000, 1)))
+	cap.clear()
+
+	done := make(chan struct{})
+	go func() {
+		h.ProcessPDU(serverOpenPDU(480, 0))
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("ProcessPDU(MSG_SNDIN_OPEN) blocked waiting for input device open")
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("input callback was not invoked")
+	}
+
+	// Other PDUs (e.g., version) continue flowing while permission prompt is open.
+	h.ProcessPDU(serverVersionPDU(2))
+	eventually(t, "version response while open is pending", func() bool { return len(cap.sent()) == 1 })
+
+	// Closing before the device finishes opening must not deadlock and must
+	// close the reader once the pending open returns.
+	h.Close()
+	close(gate)
+	eventually(t, "cancelled pending open closes reader", reader.isClosed)
+	if sent := cap.sent(); len(sent) != 1 || sent[0][0] != msgVersion {
+		t.Fatalf("unexpected open replies after Close: %v", sent)
 	}
 }
 

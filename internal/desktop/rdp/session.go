@@ -154,7 +154,9 @@ func applyAudio(config *rdpcore.Options, opts desktop.Options) {
 		}
 	}
 	if opts.Microphone {
-		config.AudioInput = openMicrophone
+		config.AudioInput = func(sampleRate uint32, channels uint16, _ uint32) (io.ReadCloser, error) {
+			return audio.OpenInput(audio.Format{SampleRate: int(sampleRate), Channels: int(channels)})
+		}
 	}
 }
 

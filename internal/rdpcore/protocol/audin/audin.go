@@ -7,6 +7,7 @@
 // the server selects a PCM format the local capture device can produce directly.
 //
 // Recording runs on a dedicated goroutine owned by the active stream so that
+// opening the capture device (which may block on OS authorization prompts) and
 // blocking audio reads never stall the RDP receive loop, and closing the
 // channel or connection unblocks and joins that goroutine promptly.
 package audin
@@ -78,6 +79,7 @@ type Handler struct {
 	clientFormats   []audioFormat
 	activeFormat    *audioFormat
 	framesPerPacket uint32
+	openGen         uint64
 	rec             *recorder
 	closed          bool
 }
@@ -146,6 +148,7 @@ func (h *Handler) detachRecorder(closePermanent bool) *recorder {
 	if closePermanent {
 		h.closed = true
 	}
+	h.openGen++
 	rec := h.rec
 	h.rec = nil
 	h.activeFormat = nil
@@ -285,51 +288,16 @@ func (h *Handler) handleOpen(body []byte) {
 		return
 	}
 	format := h.clientFormats[formatIdx]
+	frames := boundFramesPerPacket(framesPerPacket, format.SampleRate, format.Channels)
+	h.openGen++
+	gen := h.openGen
 	oldRec := h.rec
 	h.rec = nil
 	h.activeFormat = nil
-	h.mu.Unlock()
-
-	if oldRec != nil {
-		oldRec.close()
-	}
-
-	frames := boundFramesPerPacket(framesPerPacket, format.SampleRate, format.Channels)
-	reader, err := h.input(format.SampleRate, format.Channels, frames)
-	if err != nil {
-		h.log.Debug("audin: failed to open input device",
-			"rate", format.SampleRate, "channels", format.Channels, "error", err)
-		h.sendOpenReply(hresultFail)
-		return
-	}
-
-	packetBytes := int(frames) * int(format.Channels) * 2
-	rec := &recorder{
-		in:          reader,
-		packetBytes: packetBytes,
-		send:        h.sendAudioPacket,
-		log:         h.log,
-		done:        make(chan struct{}),
-	}
-
-	h.mu.Lock()
-	if h.closed {
-		h.mu.Unlock()
-		reader.Close()
-		return
-	}
-	chosen := format
-	h.activeFormat = &chosen
 	h.framesPerPacket = frames
-	h.rec = rec
 	h.mu.Unlock()
 
-	h.log.Debug("audin: recording started",
-		"rate", format.SampleRate, "channels", format.Channels, "framesPerPacket", frames)
-
-	h.sendFormatChange(formatIdx)
-	h.sendOpenReply(hresultOK)
-	go rec.run()
+	go h.openAndRun(gen, formatIdx, format, frames, true, oldRec)
 }
 
 func (h *Handler) handleFormatChange(body []byte) {
@@ -352,8 +320,7 @@ func (h *Handler) handleFormatChange(body []byte) {
 	nextFormat := h.clientFormats[formatIdx]
 	prevFormat := h.activeFormat
 	frames := h.framesPerPacket
-	hasRec := h.rec != nil
-	if hasRec && prevFormat != nil &&
+	if h.rec != nil && prevFormat != nil &&
 		prevFormat.SampleRate == nextFormat.SampleRate &&
 		prevFormat.Channels == nextFormat.Channels {
 		// Only nominal bitrate or index changed; keep the active stream running
@@ -364,24 +331,47 @@ func (h *Handler) handleFormatChange(body []byte) {
 		h.sendFormatChange(formatIdx)
 		return
 	}
+	frames = boundFramesPerPacket(frames, nextFormat.SampleRate, nextFormat.Channels)
+	h.openGen++
+	gen := h.openGen
 	oldRec := h.rec
 	h.rec = nil
 	h.activeFormat = nil
+	h.framesPerPacket = frames
 	h.mu.Unlock()
 
+	go h.openAndRun(gen, formatIdx, nextFormat, frames, false, oldRec)
+}
+
+func (h *Handler) openAndRun(gen uint64, formatIdx uint32, format audioFormat, frames uint32, replyOpen bool, oldRec *recorder) {
 	if oldRec != nil {
 		oldRec.close()
 	}
 
-	frames = boundFramesPerPacket(frames, nextFormat.SampleRate, nextFormat.Channels)
-	reader, err := h.input(nextFormat.SampleRate, nextFormat.Channels, frames)
-	if err != nil {
-		h.log.Debug("audin: failed to reopen input device on format change",
-			"rate", nextFormat.SampleRate, "channels", nextFormat.Channels, "error", err)
+	h.mu.Lock()
+	stale := h.closed || h.openGen != gen
+	input := h.input
+	h.mu.Unlock()
+	if stale || input == nil {
 		return
 	}
 
-	packetBytes := int(frames) * int(nextFormat.Channels) * 2
+	reader, err := input(format.SampleRate, format.Channels, frames)
+	if err != nil {
+		h.mu.Lock()
+		stale = h.closed || h.openGen != gen
+		h.mu.Unlock()
+		if !stale {
+			h.log.Debug("audin: failed to open input device",
+				"rate", format.SampleRate, "channels", format.Channels, "error", err)
+			if replyOpen {
+				h.sendOpenReply(hresultFail)
+			}
+		}
+		return
+	}
+
+	packetBytes := int(frames) * int(format.Channels) * 2
 	rec := &recorder{
 		in:          reader,
 		packetBytes: packetBytes,
@@ -391,19 +381,25 @@ func (h *Handler) handleFormatChange(body []byte) {
 	}
 
 	h.mu.Lock()
-	if h.closed {
+	if h.closed || h.openGen != gen {
 		h.mu.Unlock()
-		reader.Close()
+		_ = reader.Close()
 		return
 	}
-	chosen := nextFormat
+	chosen := format
 	h.activeFormat = &chosen
 	h.framesPerPacket = frames
 	h.rec = rec
 	h.mu.Unlock()
 
+	h.log.Debug("audin: recording started",
+		"rate", format.SampleRate, "channels", format.Channels, "framesPerPacket", frames)
+
 	h.sendFormatChange(formatIdx)
-	go rec.run()
+	if replyOpen {
+		h.sendOpenReply(hresultOK)
+	}
+	rec.run()
 }
 
 func boundFramesPerPacket(frames uint32, sampleRate uint32, channels uint16) uint32 {
