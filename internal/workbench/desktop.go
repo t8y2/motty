@@ -742,12 +742,17 @@ func (state *State) syncClipboardImage(view *desktopView) {
 	if digest == view.sentImage {
 		return
 	}
+	if err := clipboard.SetClipboardImage(png); err != nil {
+		// The remote did not get the picture; leave sentImage empty so the
+		// caller does not paste what it held before.
+		view.sentImage = imageDigest{}
+		return
+	}
 	view.sentImage = digest
 	// The picture replaces what the remote clipboard held, not only the words
 	// here: text it still had is not what was copied any more.
 	view.sentClip = ""
 	view.files.dropped = false
-	_ = clipboard.SetClipboardImage(png)
 }
 
 // clipboardImage reads the picture on the system clipboard, if one is there.
@@ -1250,10 +1255,17 @@ func (state *State) pasteDesktop(view *desktopView, event app.TextEvent) {
 				return
 			}
 			if event.Text != view.sentClip || view.files.dropped {
+				if err := view.session.SetClipboard(event.Text); err != nil {
+					// The remote never received the text, so Ctrl+V would paste
+					// whatever it held before; type the text instead.
+					view.sentClip = ""
+					view.releaseMetaBeforeTyping()
+					_ = view.session.SendText(event.Text)
+					return
+				}
 				view.sentClip = event.Text
 				view.sentImage = imageDigest{}
 				view.files.dropped = false
-				_ = view.session.SetClipboard(event.Text)
 			}
 			view.pasteChord()
 			return
