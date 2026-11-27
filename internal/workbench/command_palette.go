@@ -130,6 +130,10 @@ func (state *State) openCommandPalette() {
 
 func (state *State) closeCommandPalette() {
 	state.commandPalette.snippetDrag = snippetPickerDrag{}
+	state.commandPalette.returnToPicker = false
+	if state.snippets.folderMenu.fromPicker {
+		state.snippets.folderMenu.open = false
+	}
 	if state.snippetMenu.fromPicker {
 		state.snippetMenu.open = false
 	}

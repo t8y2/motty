@@ -15,7 +15,7 @@ func (state *State) snippetPickerDragPointer(event gfx.PointerEvent) gfx.EventRe
 	handle, onHandle := event.Target.In(hitSnippetPickerHandle)
 	if event.Kind == gfx.PointerDown {
 		*drag = snippetPickerDrag{}
-		if !palette.snippets || state.snippetSend.target == sendChosen || state.snippetMenu.open ||
+		if !palette.snippets || state.snippetSend.target == sendChosen || state.snippetMenu.open || state.snippets.folderMenu.open ||
 			!onHandle || event.Button != gfx.PointerButtonPrimary || handle >= len(palette.visible) {
 			return gfx.EventResult{}
 		}

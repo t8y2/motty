@@ -394,6 +394,7 @@ func (state *State) commandPaletteHeight() float32 {
 // declareFoldRow is the heading of a group the list can open and close: a choice
 // like the rows under it, with a chevron for the way it will go.
 func (state *State) declareFoldRow(c ui.C, entry commandPaletteEntry, visible int) {
+	state.openSnippetPickerMenuOn(c.Canvas(), hitCommandPaletteItems.At(visible), entry)
 	selected := state.commandPalette.selected == visible
 	color, detailColor := state.pal.muted, state.pal.faint
 	padLeft := float32(10 + min(int(entry.depth), 8)*14)

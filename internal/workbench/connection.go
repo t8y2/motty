@@ -1493,7 +1493,8 @@ func (state *State) closeModal() {
 		state.lockUI.formCount = 0
 		state.lockUI.error = ""
 	}
-	returnToPicker := state.commandPalette.returnToPicker && state.modal == modalSnippetDelete
+	returnToPicker := state.commandPalette.returnToPicker &&
+		(state.modal == modalSnippetDelete || state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
 	returnToRules := state.ruleManager.returning && (state.modal == modalHighlightRule || state.modal == modalAutofillRule || state.modal == modalDeleteRule)
 	returnToSnippetGroups := state.snippetGroups.returning && (state.modal == modalSnippetGroupRename || state.modal == modalSnippetGroupDelete)
 	returnToHost := state.modal == modalCredential && state.credentialReturn != modalNone

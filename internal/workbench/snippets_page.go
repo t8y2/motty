@@ -791,7 +791,9 @@ func (state *State) declareSnippetFolderMenu(c ui.C) {
 	if !menu.open {
 		return
 	}
-	if state.modal != modalNone || state.activeSection != sectionSnippets || menu.group == "" {
+	picker := menu.fromPicker && state.modal == modalCommandPalette && state.commandPalette.snippets
+	if menu.group == "" || (menu.fromPicker && !picker) ||
+		(!menu.fromPicker && (state.modal != modalNone || state.activeSection != sectionSnippets)) {
 		menu.open = false
 		return
 	}
@@ -807,18 +809,28 @@ func (state *State) declareSnippetFolderMenu(c ui.C) {
 }
 
 func (state *State) chooseSnippetFolderMenu(id gfx.ID) {
-	group := state.snippets.folderMenu.group
+	menu := state.snippets.folderMenu
+	group := menu.group
 	if group == "" {
 		return
 	}
 	switch id {
 	case hitSnippetFolderMenuAdd:
+		if menu.fromPicker {
+			state.closeCommandPalette()
+		}
 		state.startInlineSnippetDraft(group)
 	case hitSnippetFolderMenuNewChild:
+		state.commandPalette.returnToPicker = menu.fromPicker
+		if menu.fromPicker {
+			state.foldSnippetGroup(strings.ToLower(group), true)
+		}
 		state.openSnippetGroupCreate(group + "/")
 	case hitSnippetFolderMenuRename:
+		state.commandPalette.returnToPicker = menu.fromPicker
 		state.openSnippetGroupRenameDirect(group)
 	case hitSnippetFolderMenuDelete:
+		state.commandPalette.returnToPicker = menu.fromPicker
 		state.openSnippetGroupDeleteDirect(group)
 	}
 }

@@ -178,9 +178,10 @@ type snippetTreeEntry struct {
 
 // snippetFolderMenu is the context menu for a folder row in the Snippets tree.
 type snippetFolderMenu struct {
-	open  bool
-	group string
-	at    gfx.Point
+	fromPicker bool
+	open       bool
+	group      string
+	at         gfx.Point
 }
 
 // snippetBlankMenu is the context menu opened by right-clicking the blank area
