@@ -128,6 +128,11 @@ const (
 // stalls cannot spend the time the next one needs. Tests shorten it.
 var feedAttemptTimeout = 10 * time.Second
 
+// staleCheckTimeout bounds the secondary official probe when CNB already
+// answered, so a network that cannot reach the official host does not wait the
+// full fallback chain before accepting the CNB release.
+var staleCheckTimeout = 4 * time.Second
+
 // Latest reads the feed. The client decides timeouts and proxies; nil uses the
 // desktop's proxy settings, as netclient does, with a 15 second timeout.
 func Latest(ctx context.Context, client *http.Client, feed string) (Release, error) {
@@ -240,38 +245,67 @@ const cnbReleases = "https://cnb.cool/dbxio.com/motty/-/releases/download/"
 // CheckPackage selects the package matching the installation on this machine.
 // It prefers the signed Viva feed, which is where patches and the one trust
 // root live; the mirror feed stays for a .deb (the Viva feed has no Debian
-// asset) and for the migration window, when the Viva feed is not published yet
-// or cannot be reached. Each feed gets its own attempt timeout: a stalled Viva
-// feed must not spend the time the mirror or GitHub fallback needs.
+// asset), for the migration window when the Viva feed is not published yet or
+// cannot be reached, and as a freshness check when the Viva feed lags behind a
+// newer release already published on the mirror. Each feed gets its own attempt
+// timeout: a stalled Viva feed must not spend the time the mirror or GitHub
+// fallback needs.
 func CheckPackage(ctx context.Context, client *http.Client, goos, goarch string, pkg Package) (Release, error) {
+	return checkOfficialPackageAt(ctx, client, VivaFeed, []string{VivaPublicKey}, MirrorFeed, Feed, Current, goos, goarch, pkg)
+}
+
+func checkOfficialPackageAt(ctx context.Context, client *http.Client, vivaFeed string, vivaKeys []string, mirrorFeed, githubFeed, current, goos, goarch string, pkg Package) (Release, error) {
 	if pkg != PackageDeb {
 		attempt, cancel := context.WithTimeout(ctx, feedAttemptTimeout)
-		release, err := checkVivaPackageAt(attempt, client, VivaFeed, []string{VivaPublicKey}, goos, goarch, pkg)
+		release, err := checkVivaPackageWithCurrent(attempt, client, vivaFeed, vivaKeys, current, goos, goarch, pkg)
 		cancel()
 		if err == nil {
+			// The mirror feed sits on the same download host as the Viva feed.
+			// If the Viva feed lags behind (for example, when latest.json was
+			// published before the Viva feed step failed), prefer the mirror's
+			// newer release; when versions match, keep the Viva release so
+			// delta patches and Ed25519 feed verification are preserved.
+			mirrorCtx, cancelMirror := context.WithTimeout(ctx, feedAttemptTimeout)
+			mirror, mirrorErr := latestMirrorPackage(mirrorCtx, client, mirrorFeed, goos, goarch, pkg)
+			cancelMirror()
+			if mirrorErr == nil && Newer(release.Version, mirror.Version) {
+				return mirror, nil
+			}
 			return release, nil
 		}
 	}
-	return checkFeedsPackage(ctx, client, MirrorFeed, Feed, goos, goarch, pkg)
+	return checkFeedsPackage(ctx, client, mirrorFeed, githubFeed, goos, goarch, pkg)
 }
 
 // CheckPackageFrom asks the source the user selected. The CNB source reads the
 // same signed feed from the CNB copy and points the package at the CNB release.
-// When that copy cannot answer, the official feeds still decide, so a mirror
-// that is not published yet never makes updates impossible; the returned error
-// is then the CNB one, because that is the source the user chose. A .deb has no
-// asset in the signed feed, so it keeps the official path whatever the source.
+// When that copy cannot answer or lags behind a newer official release, the
+// official feeds still decide, so a mirror that is not published yet never
+// makes updates impossible; the returned error is then the CNB one, because
+// that is the source the user chose. A .deb has no asset in the signed feed, so
+// it keeps the official path whatever the source.
 func CheckPackageFrom(ctx context.Context, client *http.Client, goos, goarch string, pkg Package, source Source) (Release, error) {
+	return checkPackageFromAt(ctx, client, CNBFeed, VivaFeed, []string{VivaPublicKey}, MirrorFeed, Feed, Current, goos, goarch, pkg, source)
+}
+
+func checkPackageFromAt(ctx context.Context, client *http.Client, cnbFeed, vivaFeed string, vivaKeys []string, mirrorFeed, githubFeed, current, goos, goarch string, pkg Package, source Source) (Release, error) {
 	if source != SourceCNB || pkg == PackageDeb {
-		return CheckPackage(ctx, client, goos, goarch, pkg)
+		return checkOfficialPackageAt(ctx, client, vivaFeed, vivaKeys, mirrorFeed, githubFeed, current, goos, goarch, pkg)
 	}
 	attempt, cancel := context.WithTimeout(ctx, feedAttemptTimeout)
-	release, err := checkVivaPackageAt(attempt, client, CNBFeed, []string{VivaPublicKey}, goos, goarch, pkg)
+	release, err := checkVivaPackageWithCurrent(attempt, client, cnbFeed, vivaKeys, current, goos, goarch, pkg)
 	cancel()
 	if err == nil {
-		return cnbRelease(release, goos, goarch, pkg), nil
+		cnb := cnbRelease(release, goos, goarch, pkg)
+		officialCtx, cancelOfficial := context.WithTimeout(ctx, staleCheckTimeout)
+		official, officialErr := checkOfficialPackageAt(officialCtx, client, vivaFeed, vivaKeys, mirrorFeed, githubFeed, current, goos, goarch, pkg)
+		cancelOfficial()
+		if officialErr == nil && Newer(cnb.Version, official.Version) {
+			return official, nil
+		}
+		return cnb, nil
 	}
-	if official, officialErr := CheckPackage(ctx, client, goos, goarch, pkg); officialErr == nil {
+	if official, officialErr := checkOfficialPackageAt(ctx, client, vivaFeed, vivaKeys, mirrorFeed, githubFeed, current, goos, goarch, pkg); officialErr == nil {
 		return official, nil
 	}
 	return Release{}, err
@@ -336,6 +370,10 @@ func cnbAssetName(version, goos, goarch string, pkg Package) string {
 // checkVivaPackageAt reads a Viva feed. The feed URL and keys are parameters so
 // a test can sign a feed of its own.
 func checkVivaPackageAt(ctx context.Context, client *http.Client, feedURL string, keys []string, goos, goarch string, pkg Package) (Release, error) {
+	return checkVivaPackageWithCurrent(ctx, client, feedURL, keys, Current, goos, goarch, pkg)
+}
+
+func checkVivaPackageWithCurrent(ctx context.Context, client *http.Client, feedURL string, keys []string, current, goos, goarch string, pkg Package) (Release, error) {
 	if client == nil {
 		// The attempt context normally ends the feed first; the client's own
 		// timeout is the backstop for a caller that sets no deadline.
@@ -350,7 +388,7 @@ func checkVivaPackageAt(ctx context.Context, client *http.Client, feedURL string
 		publicKeys = append(publicKeys, key)
 	}
 	vivaClient, err := vivaupdate.New(vivaupdate.Config{
-		FeedURL: feedURL, PublicKeys: publicKeys, Current: Current, HTTP: client,
+		FeedURL: feedURL, PublicKeys: publicKeys, Current: current, HTTP: client,
 	})
 	if err != nil {
 		return Release{}, err
@@ -362,7 +400,7 @@ func checkVivaPackageAt(ctx context.Context, client *http.Client, feedURL string
 	if feed == nil {
 		// The feed is reachable and has nothing newer: the running version is
 		// the latest, which is what the caller compares against.
-		return Release{Version: Current, PlatformPackageChecked: true}, nil
+		return Release{Version: current, PlatformPackageChecked: true}, nil
 	}
 	asset, err := selectVivaAsset(feed, goos, goarch, pkg)
 	if err != nil {
