@@ -102,21 +102,30 @@ func (state *State) hostPasswordAvailable(host Host) bool {
 	return available
 }
 
-// hostKeyCredentialLabel names the private key configured on an SSH host, if a
-// specific key is pinned.
-func (state *State) hostKeyCredentialLabel(host Host) string {
+// hostPrivateKeyForCopy returns the pinned SSH identity whose private key text
+// can be copied for host. Security keys hold no copyable private key material.
+func (state *State) hostPrivateKeyForCopy(host Host) (identityRecord, bool) {
 	if !host.isSSH() || host.Auth != authPrivateKey {
-		return ""
+		return identityRecord{}, false
 	}
-	if fingerprint := strings.TrimSpace(host.Identity); fingerprint != "" {
-		if identity, ok := state.identityForFingerprint(fingerprint); ok && identity.Name != "" {
-			return identity.Name
-		}
+	fingerprint := strings.TrimSpace(host.Identity)
+	if fingerprint == "" {
+		return identityRecord{}, false
 	}
-	if host.SSHOptions != nil && len(host.SSHOptions.IdentityFiles) > 0 {
-		return strings.Join(host.SSHOptions.IdentityFiles, ", ")
+	identity, ok := state.identityForFingerprint(fingerprint)
+	if !ok || identity.Error != "" || identity.SecurityKey {
+		return identityRecord{}, false
 	}
-	return ""
+	return identity, true
+}
+
+// hostCredentialAvailable reports whether host has a copyable credential
+// (either a saved password or a copyable pinned SSH private key).
+func (state *State) hostCredentialAvailable(host Host) bool {
+	if _, ok := state.hostPrivateKeyForCopy(host); ok {
+		return true
+	}
+	return state.hostPasswordAvailable(host)
 }
 
 func connectionProtocolName(host Host) string {
@@ -141,10 +150,18 @@ func connectionProtocolName(host Host) string {
 	}
 }
 
+// resolvedCopyCredential holds the resolved secret material to copy for a host:
+// either a password or a private key (with its optional saved passphrase).
+type resolvedCopyCredential struct {
+	password   string
+	privateKey string
+	passphrase string
+}
+
 // formatConnectionInfo formats host's connection details as copyable lines.
-// includeCredentials appends the resolved password (or pinned key name when
-// key-authenticated). Local shells have no remote connection info to format.
-func (state *State) formatConnectionInfo(host Host, includeCredentials bool, password string) string {
+// includeCredentials appends the resolved password or private key (plus saved
+// key passphrase when present). Local shells have no remote connection info.
+func (state *State) formatConnectionInfo(host Host, includeCredentials bool, cred resolvedCopyCredential) string {
 	if host.ID == localHostID {
 		return ""
 	}
@@ -156,7 +173,7 @@ func (state *State) formatConnectionInfo(host Host, includeCredentials bool, pas
 		return ""
 	}
 	m := state.messages
-	lines := make([]string, 0, 6)
+	lines := make([]string, 0, 7)
 	add := func(label, value string) {
 		if value != "" {
 			lines = append(lines, fmt.Sprintf("%s: %s", label, value))
@@ -170,64 +187,96 @@ func (state *State) formatConnectionInfo(host Host, includeCredentials bool, pas
 	}
 	add(m.FieldUser, state.connectionCopyUsername(host))
 	if includeCredentials {
-		if password != "" {
-			add(m.FieldPassword, password)
-		} else if keyLabel := state.hostKeyCredentialLabel(host); keyLabel != "" {
-			add(m.FieldIdentity, keyLabel)
+		if cred.password != "" {
+			add(m.FieldPassword, cred.password)
+		}
+		if cred.passphrase != "" {
+			add(m.KeyPassphraseLabel, cred.passphrase)
+		}
+		if keyText := strings.TrimRight(cred.privateKey, "\r\n"); keyText != "" {
+			lines = append(lines, fmt.Sprintf("%s:\n%s", m.FieldIdentity, keyText))
 		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-// resolveHostPasswordForCopy reads the saved password for host, triggering the
-// legacy vault unlock dialog when required and reporting vault errors to the
-// status line. retry runs once the vault is unlocked.
-func (state *State) resolveHostPasswordForCopy(host Host, retry func()) (password string, ok bool) {
+// resolveHostCredentialForCopy reads the host's copyable credential (private
+// key or saved password), opening the legacy vault unlock dialog when needed
+// and reporting read errors to the status line. retry runs after unlock.
+func (state *State) resolveHostCredentialForCopy(host Host, includePassphrase bool, retry func()) (resolvedCopyCredential, bool) {
+	if identity, ok := state.hostPrivateKeyForCopy(host); ok {
+		vaultFile := state.secrets.vault
+		if (identity.Stored || includePassphrase) && vaultFile != nil && vaultFile.NeedsConversion() {
+			state.openVaultUnlock(nil, retry)
+			return resolvedCopyCredential{}, false
+		}
+		data, err := state.identityKeyData(identity)
+		if err != nil {
+			state.status = err.Error()
+			return resolvedCopyCredential{}, false
+		}
+		keyText := string(data)
+		clear(data)
+		var passphrase string
+		if includePassphrase && vaultFile != nil && vaultFile.Len() > 0 && !vaultFile.NeedsConversion() {
+			if value, found, getErr := vaultFile.Get(passphraseSecretName(identity.Path)); getErr == nil && found {
+				passphrase = value
+			}
+		}
+		return resolvedCopyCredential{privateKey: keyText, passphrase: passphrase}, true
+	}
+
 	name, hasSecret := state.hostPasswordSecretNameForCopy(host)
 	if !hasSecret {
-		return "", true
+		return resolvedCopyCredential{}, true
 	}
 	vaultFile := state.secrets.vault
 	if vaultFile == nil || vaultFile.Len() == 0 {
-		return "", true
+		return resolvedCopyCredential{}, true
 	}
 	if vaultFile.NeedsConversion() {
 		state.openVaultUnlock(nil, retry)
-		return "", false
+		return resolvedCopyCredential{}, false
 	}
 	value, found, err := vaultFile.Get(name)
 	if err != nil {
 		state.status = state.vaultErrorText(err)
-		return "", false
+		return resolvedCopyCredential{}, false
 	}
 	if !found {
-		return "", true
+		return resolvedCopyCredential{}, true
 	}
-	return value, true
+	return resolvedCopyCredential{password: value}, true
 }
 
-func (state *State) copyHostPassword(host Host) {
-	password, ok := state.resolveHostPasswordForCopy(host, func() {
-		state.copyHostPassword(host)
+func (state *State) copyHostCredential(host Host) {
+	cred, ok := state.resolveHostCredentialForCopy(host, false, func() {
+		state.copyHostCredential(host)
 	})
-	if !ok || password == "" {
+	if !ok {
 		return
 	}
-	state.copyConnectionText(password)
+	if cred.privateKey != "" {
+		state.copyConnectionText(cred.privateKey)
+		return
+	}
+	if cred.password != "" {
+		state.copyConnectionText(cred.password)
+	}
 }
 
 func (state *State) copyHostConnectionInfo(host Host, includeCredentials bool) {
-	password := ""
+	var cred resolvedCopyCredential
 	if includeCredentials {
 		var ok bool
-		password, ok = state.resolveHostPasswordForCopy(host, func() {
+		cred, ok = state.resolveHostCredentialForCopy(host, true, func() {
 			state.copyHostConnectionInfo(host, true)
 		})
 		if !ok {
 			return
 		}
 	}
-	state.copyConnectionText(state.formatConnectionInfo(host, includeCredentials, password))
+	state.copyConnectionText(state.formatConnectionInfo(host, includeCredentials, cred))
 }
 
 // copyConnectionText places what a connection copy row offers on the clipboard.
@@ -249,7 +298,7 @@ func (state *State) hasCopyableConnectionInfo(host Host) bool {
 	if connectionHostAddress(host) != "" || connectionAddressAndPort(host) != "" || host.Label != "" || state.connectionCopyUsername(host) != "" {
 		return true
 	}
-	return state.formatConnectionInfo(host, false, "") != ""
+	return state.formatConnectionInfo(host, false, resolvedCopyCredential{}) != ""
 }
 
 // addCopyInfoSubmenu adds the shared "Copy Info >" row used by both the session
@@ -270,7 +319,8 @@ func (state *State) addCopyInfoSubmenu(c ui.C, rows *menuRows, triggerID gfx.ID,
 }
 
 // declareCopyInfoSubmenu declares the right-hand submenu choices for copying
-// individual fields or formatted connection info (with or without credentials).
+// individual fields, credentials, or formatted connection info (with or without
+// credentials).
 func (state *State) declareCopyInfoSubmenu(c ui.C, menu *ui.MenuItems, host Host) {
 	menu.RowHeight(contextMenuRow)
 	m := state.messages
@@ -280,9 +330,9 @@ func (state *State) declareCopyInfoSubmenu(c ui.C, menu *ui.MenuItems, host Host
 	address := connectionAddressAndPort(host)
 	name := host.Label
 	username := state.connectionCopyUsername(host)
-	hasPassword := state.hostPasswordAvailable(host)
-	hasInfo := state.formatConnectionInfo(host, false, "") != ""
-	hasCredInfo := hasInfo && (hasPassword || state.hostKeyCredentialLabel(host) != "")
+	hasCredential := state.hostCredentialAvailable(host)
+	hasInfo := state.formatConnectionInfo(host, false, resolvedCopyCredential{}) != ""
+	hasCredInfo := hasInfo && hasCredential
 
 	addItem := func(label string, ico gfx.Icon, disabled bool, action func()) {
 		if menu.Item(label).Icon(ico).Disabled(disabled).Clicked() {
@@ -303,8 +353,8 @@ func (state *State) declareCopyInfoSubmenu(c ui.C, menu *ui.MenuItems, host Host
 	addItem(m.CopyUsername, icon(iconCopy), username == "", func() {
 		state.copyConnectionText(username)
 	})
-	addItem(m.CopyPassword, icon(iconKey), !hasPassword, func() {
-		state.copyHostPassword(host)
+	addItem(m.CopyCredential, icon(iconKey), !hasCredential, func() {
+		state.copyHostCredential(host)
 	})
 	menu.Separator()
 	addItem(m.CopyConnectionInfo, icon(iconLink), !hasInfo, func() {

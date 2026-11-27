@@ -3,6 +3,8 @@ package workbench
 import (
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -72,7 +74,7 @@ func TestCopyInfoSubmenuOpensToTheRightOnTabAndHostMenus(t *testing.T) {
 				state.messages.CopyAddressAndPort,
 				state.messages.CopyConnectionName,
 				state.messages.CopyUsername,
-				state.messages.CopyPassword,
+				state.messages.CopyCredential,
 				state.messages.CopyConnectionInfo,
 				state.messages.CopyConnectionInfoWithCredentials,
 			} {
@@ -129,7 +131,7 @@ func TestCopyInfoSubmenuCopiesAllFieldsAndCredentialsFromHostAndTabMenus(t *test
 		{state.messages.CopyAddressAndPort, wantAddressPort},
 		{state.messages.CopyConnectionName, target.Label},
 		{state.messages.CopyUsername, wantUser},
-		{state.messages.CopyPassword, "P@ssw0rd!99"},
+		{state.messages.CopyCredential, "P@ssw0rd!99"},
 		{state.messages.CopyConnectionInfo, wantInfo},
 		{state.messages.CopyConnectionInfoWithCredentials, wantInfoWithCreds},
 	}
@@ -186,13 +188,13 @@ func TestCopyInfoSubmenuResolvesSharedCredentialAndDisablesMissingCredentials(t 
 		t.Fatalf("shared credential copy = %q, want inherited user and shared password", copied)
 	}
 
-	// Host with no saved password and no pinned key disables Copy Password and
+	// Host with no saved password and no pinned key disables Copy Credential and
 	// Copy Connection Info (with Credentials), while keeping plain Copy Connection Info enabled.
 	plainHost := state.hosts[0]
 	rightClickHost(state, plainHost.ID)
 	canvas := openCopyInfoSubmenu(t, state)
-	if row, ok := submenuRowByLabel(canvas, state.messages.CopyPassword); !ok || !row.Disabled {
-		t.Fatalf("CopyPassword on passwordless host: found=%v disabled=%v, want disabled", ok, row.Disabled)
+	if row, ok := submenuRowByLabel(canvas, state.messages.CopyCredential); !ok || !row.Disabled {
+		t.Fatalf("CopyCredential on passwordless host: found=%v disabled=%v, want disabled", ok, row.Disabled)
 	}
 	if row, ok := submenuRowByLabel(canvas, state.messages.CopyConnectionInfoWithCredentials); !ok || !row.Disabled {
 		t.Fatalf("CopyConnectionInfoWithCredentials on passwordless host: found=%v disabled=%v, want disabled", ok, row.Disabled)
@@ -228,21 +230,51 @@ func TestCopyInfoSubmenuHandlesProtocolsAndPrivateKeyCredentials(t *testing.T) {
 		t.Fatalf("VNC copy with credentials = %q", copied)
 	}
 
-	// SSH key-auth host with pinned identity: Copy Password disabled, Copy Info (with Credentials) includes key name.
-	state.identities = append(state.identities, identityRecord{Name: "prod-ed25519", Fingerprint: "SHA256:prodkey", Path: "/tmp/prod"})
+	// SSH key-auth host with a pinned file-backed private key and saved passphrase:
+	// Copy Credential copies the PEM text; Copy Connection Info (with Credentials)
+	// includes both the saved passphrase and the PEM text.
+	const fakePEM = "-----BEGIN OPENSSH PRIVATE KEY-----\nTEST-KEY-BODY\n-----END OPENSSH PRIVATE KEY-----\n"
+	keyPath := filepath.Join(t.TempDir(), "prod_ed25519")
+	if err := os.WriteFile(keyPath, []byte(fakePEM), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.secrets.vault.Set(passphraseSecretName(keyPath), "key-pass-42"); err != nil {
+		t.Fatal(err)
+	}
+	state.identities = append(state.identities, identityRecord{Name: "prod-ed25519", Fingerprint: "SHA256:prodkey", Path: keyPath})
 	keyHost := Host{ID: 902, CatalogID: "cat-key", Label: "Prod Key", Protocol: protocolSSH, Address: "10.0.0.9", Port: 22, User: "deploy", Auth: authPrivateKey, Identity: "SHA256:prodkey"}
 	state.hosts = append(state.hosts, keyHost)
+
 	rightClickHost(state, keyHost.ID)
 	canvas = openCopyInfoSubmenu(t, state)
-	if row, ok := submenuRowByLabel(canvas, state.messages.CopyPassword); !ok || !row.Disabled {
-		t.Fatalf("key-auth CopyPassword: found=%v disabled=%v, want disabled", ok, row.Disabled)
+	if row, ok := submenuRowByLabel(canvas, state.messages.CopyCredential); !ok || row.Disabled {
+		t.Fatalf("key-auth CopyCredential: found=%v disabled=%v, want enabled", ok, row.Disabled)
 	}
 	if row, ok := submenuRowByLabel(canvas, state.messages.CopyConnectionInfoWithCredentials); !ok || row.Disabled {
 		t.Fatalf("key-auth CopyConnectionInfoWithCredentials: found=%v disabled=%v, want enabled", ok, row.Disabled)
 	}
-	clickPageMenuRow(t, state, state.messages.CopyConnectionInfoWithCredentials)
-	if !strings.Contains(copied, "Private key: prod-ed25519") || strings.Contains(copied, "Password:") {
+	clickPageMenuRow(t, state, state.messages.CopyCredential)
+	if copied != fakePEM {
+		t.Fatalf("key-auth CopyCredential = %q, want PEM %q", copied, fakePEM)
+	}
+
+	rightClickHost(state, keyHost.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyConnectionInfoWithCredentials)
+	if !strings.Contains(copied, "Key passphrase: key-pass-42") || !strings.Contains(copied, "Private key:\n"+strings.TrimRight(fakePEM, "\n")) || strings.Contains(copied, "Password:") {
 		t.Fatalf("key-auth copy with credentials = %q", copied)
+	}
+
+	// Hardware security key has no copyable private key material.
+	state.identities = append(state.identities, identityRecord{Name: "yubikey", Fingerprint: "SHA256:sk", Path: "/tmp/sk", SecurityKey: true})
+	skHost := Host{ID: 904, CatalogID: "cat-sk", Label: "SK Host", Protocol: protocolSSH, Address: "10.0.0.10", Port: 22, User: "deploy", Auth: authPrivateKey, Identity: "SHA256:sk"}
+	state.hosts = append(state.hosts, skHost)
+	rightClickHost(state, skHost.ID)
+	canvas = openCopyInfoSubmenu(t, state)
+	if row, ok := submenuRowByLabel(canvas, state.messages.CopyCredential); !ok || !row.Disabled {
+		t.Fatalf("security-key CopyCredential: found=%v disabled=%v, want disabled", ok, row.Disabled)
+	}
+	if row, ok := submenuRowByLabel(canvas, state.messages.CopyConnectionInfoWithCredentials); !ok || !row.Disabled {
+		t.Fatalf("security-key CopyConnectionInfoWithCredentials: found=%v disabled=%v, want disabled", ok, row.Disabled)
 	}
 
 	// WSL host: not treated as an IP or IP:PORT, keeps connection info with distribution.
@@ -253,7 +285,7 @@ func TestCopyInfoSubmenuHandlesProtocolsAndPrivateKeyCredentials(t *testing.T) {
 	if got := connectionAddressAndPort(wslHost); got != "" {
 		t.Fatalf("WSL connectionAddressAndPort = %q, want empty", got)
 	}
-	if got := state.formatConnectionInfo(wslHost, false, ""); !strings.Contains(got, "Protocol: WSL") || !strings.Contains(got, "Address: Ubuntu") || !strings.Contains(got, "User: dev") {
+	if got := state.formatConnectionInfo(wslHost, false, resolvedCopyCredential{}); !strings.Contains(got, "Protocol: WSL") || !strings.Contains(got, "Address: Ubuntu") || !strings.Contains(got, "User: dev") {
 		t.Fatalf("WSL connection info = %q", got)
 	}
 }
@@ -331,7 +363,7 @@ func TestCopyInfoSubmenuKeyboardNavigationAndLocalTab(t *testing.T) {
 		state.messages.CopyHostAddress,
 		state.messages.CopyAddressAndPort,
 		state.messages.CopyUsername,
-		state.messages.CopyPassword,
+		state.messages.CopyCredential,
 		state.messages.CopyConnectionInfo,
 		state.messages.CopyConnectionInfoWithCredentials,
 	} {

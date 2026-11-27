@@ -473,7 +473,7 @@ var TraditionalMessages = Messages{
 	CopyAddressAndPort:                     "複製 IP:PORT",
 	CopyConnectionName:                     "複製連線名稱",
 	CopyUsername:                           "複製使用者名稱",
-	CopyPassword:                           "複製密碼",
+	CopyCredential:                         "複製憑證",
 	CopyConnectionInfo:                     "複製連線資訊",
 	CopyConnectionInfoWithCredentials:      "複製連線資訊（含憑證）",
 	CopyInfoFieldName:                      "名稱",

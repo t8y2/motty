@@ -473,7 +473,7 @@ var ChineseMessages = Messages{
 	CopyAddressAndPort:                     "复制 IP:PORT",
 	CopyConnectionName:                     "复制连接名称",
 	CopyUsername:                           "复制用户名",
-	CopyPassword:                           "复制密码",
+	CopyCredential:                         "复制凭据",
 	CopyConnectionInfo:                     "复制连接信息",
 	CopyConnectionInfoWithCredentials:      "复制连接信息（含凭据）",
 	CopyInfoFieldName:                      "名称",

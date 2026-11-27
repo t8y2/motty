@@ -473,7 +473,7 @@ var EnglishMessages = Messages{
 	CopyAddressAndPort:                     "Copy IP:PORT",
 	CopyConnectionName:                     "Copy Connection Name",
 	CopyUsername:                           "Copy Username",
-	CopyPassword:                           "Copy Password",
+	CopyCredential:                         "Copy Credential",
 	CopyConnectionInfo:                     "Copy Connection Info",
 	CopyConnectionInfoWithCredentials:      "Copy Connection Info (with Credentials)",
 	CopyInfoFieldName:                      "Name",

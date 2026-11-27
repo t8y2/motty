@@ -453,7 +453,7 @@ type Messages struct {
 	CopyAddressAndPort                     string
 	CopyConnectionName                     string
 	CopyUsername                           string
-	CopyPassword                           string
+	CopyCredential                         string
 	CopyConnectionInfo                     string
 	CopyConnectionInfoWithCredentials      string
 	CopyInfoFieldName                      string
