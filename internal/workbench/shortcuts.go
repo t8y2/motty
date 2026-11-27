@@ -852,10 +852,22 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 			return state.openTerminalFind(session)
 		}
 	case shortcutCopy:
+		if hasSession && session.desk != nil {
+			if state.desktopHoldsTheKeyboard() && session.desk.isRDP() {
+				session.desk.copyChord()
+			}
+			break
+		}
 		if hasSession && session.term != nil {
 			return state.copySelection(session)
 		}
 	case shortcutPaste:
+		if hasSession && session.desk != nil {
+			if state.desktopHoldsTheKeyboard() {
+				state.pasteDesktopFromClipboard(session.desk)
+			}
+			break
+		}
 		if hasSession {
 			state.pasteIntoTerminal(session)
 		}

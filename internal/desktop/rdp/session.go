@@ -902,15 +902,27 @@ func (session *Session) typeRune(r rune, down, repeat bool) error {
 
 func (session *Session) SendText(text string) error {
 	typed := 0
-	for _, r := range text {
+	runes := []rune(text)
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
 		if typed++; typed > maxTyped {
 			return errors.New("rdp: text too long to type")
 		}
-		if r == '\n' {
-			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), true, false); err != nil {
+		if r == '\r' {
+			if i+1 < len(runes) && runes[i+1] == '\n' {
+				continue
+			}
+			r = '\n'
+		}
+		if r == '\n' || r == '\t' {
+			key := desktop.KeyEnter
+			if r == '\t' {
+				key = desktop.KeyTab
+			}
+			if err := session.client.SendKeyboard(keyCode(key), true, false); err != nil {
 				return err
 			}
-			if err := session.client.SendKeyboard(keyCode(desktop.KeyEnter), false, false); err != nil {
+			if err := session.client.SendKeyboard(keyCode(key), false, false); err != nil {
 				return err
 			}
 			continue

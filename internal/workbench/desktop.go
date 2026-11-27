@@ -14,7 +14,6 @@ import (
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
-	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/desktop"
 	"motty/internal/memlimit"
@@ -697,12 +696,17 @@ func (state *State) syncClipboardImage(view *desktopView) {
 	if digest == view.sentImage {
 		return
 	}
+	if err := clipboard.SetClipboardImage(png); err != nil {
+		// The remote did not get the picture; leave sentImage empty so the
+		// caller does not paste what it held before.
+		view.sentImage = imageDigest{}
+		return
+	}
 	view.sentImage = digest
 	// The picture replaces what the remote clipboard held, not only the words
 	// here: text it still had is not what was copied any more.
 	view.sentClip = ""
 	view.files.dropped = false
-	_ = clipboard.SetClipboardImage(png)
 }
 
 // clipboardImage reads the picture on the system clipboard, if one is there.
@@ -819,6 +823,71 @@ func (view *desktopView) tap(mods []desktop.Key, event desktop.KeyEvent) {
 	_ = view.session.SendKey(event)
 	for index := len(mods) - 1; index >= 0; index-- {
 		_ = view.session.SendKey(desktop.KeyEvent{Key: mods[index]})
+	}
+}
+
+// isRDP reports whether view is backed by an RDP session.
+func (view *desktopView) isRDP() bool {
+	return view != nil && view.session != nil && view.session.Info().Protocol == "RDP"
+}
+
+// releaseRemoteModifier drops every held local key mapped to key and sends its
+// release to the remote once if any was held.
+func (view *desktopView) releaseRemoteModifier(key desktop.Key) {
+	target := desktop.KeyEvent{Key: key}
+	released := false
+	kept := view.held[:0]
+	for _, entry := range view.held {
+		if entry.remote == target {
+			released = true
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	view.held = kept
+	if released {
+		_ = view.session.SendKey(desktop.KeyEvent{Key: key})
+	}
+}
+
+// remoteControlChord presses Ctrl+<r> on the remote side and lets go of it.
+// When the local Command/Meta key is held down on the remote (from macOS
+// Command+C / Command+V), releasing it after pressing Control masks the bare
+// Windows/Super release so the remote does not open its Start menu or overview,
+// and drops it from view.held so the later physical release is ignored.
+func (view *desktopView) remoteControlChord(r rune) {
+	controlHeld := view.remoteHolds(desktop.KeyEvent{Key: desktop.KeyControl}, -1)
+	if !controlHeld {
+		_ = view.session.SendKey(desktop.KeyEvent{Key: desktop.KeyControl, Down: true})
+	}
+	view.releaseRemoteModifier(desktop.KeyMeta)
+	_ = view.session.SendKey(desktop.KeyEvent{Rune: r, Down: true})
+	_ = view.session.SendKey(desktop.KeyEvent{Rune: r})
+	if !controlHeld {
+		_ = view.session.SendKey(desktop.KeyEvent{Key: desktop.KeyControl})
+	}
+}
+
+// copyChord presses Ctrl+C on the remote side and lets go of it.
+func (view *desktopView) copyChord() {
+	view.remoteControlChord('c')
+}
+
+// releaseMetaBeforeTyping lets go of a held Meta/Command key before SendText
+// runs, masking the release with Control so the remote does not open its Start
+// menu or overview and so Enter keys inside SendText are not received as
+// Win+Enter / Super+Enter.
+func (view *desktopView) releaseMetaBeforeTyping() {
+	if !view.remoteHolds(desktop.KeyEvent{Key: desktop.KeyMeta}, -1) {
+		return
+	}
+	controlHeld := view.remoteHolds(desktop.KeyEvent{Key: desktop.KeyControl}, -1)
+	if !controlHeld {
+		_ = view.session.SendKey(desktop.KeyEvent{Key: desktop.KeyControl, Down: true})
+	}
+	view.releaseRemoteModifier(desktop.KeyMeta)
+	if !controlHeld {
+		_ = view.session.SendKey(desktop.KeyEvent{Key: desktop.KeyControl})
 	}
 }
 
@@ -948,11 +1017,22 @@ func (state *State) desktopShortcut(view *desktopView, event gfx.KeyEvent) gfx.E
 		}
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
+	// On macOS, Command+C on an RDP session translates to the remote desktop's
+	// Ctrl+C and claims the chord so the application Edit -> Copy menu entry
+	// does not swallow it into an empty terminal copy.
+	if !event.Release && !view.ended && view.isRDP() &&
+		primaryModifier == gfx.ModifierMeta && event.Modifiers == gfx.ModifierMeta &&
+		strings.EqualFold(event.Text, "c") {
+		if !event.Repeat {
+			view.copyChord()
+		}
+		return gfx.EventResult{Handled: true}
+	}
 	// The paste shortcut of this computer, when what is to be pasted is files: the
 	// text system would paste text (and nothing at all from a clipboard that has
 	// none, as a file manager's copy on Windows is), so Motty presses the remote's
 	// own paste instead. Held until the files are offered, in an event of its own.
-	if !event.Release && event.Modifiers == keymap.Primary && strings.EqualFold(event.Text, "v") {
+	if !event.Release && event.Modifiers == primaryModifier && strings.EqualFold(event.Text, "v") {
 		if !event.Repeat && state.pasteFiles(view) {
 			return gfx.EventResult{Handled: true}
 		}
@@ -1088,20 +1168,14 @@ func (state *State) desktopText(sessionID uint32, event app.TextEvent) app.TextS
 	case app.TextInsert:
 		t.preedit = app.TextState{}
 		if typing {
+			view.releaseMetaBeforeTyping()
 			_ = view.session.SendText(event.Text)
 		}
 	case app.TextPaste, app.TextPasteNoText:
 		if !typing {
 			break
 		}
-		// Files are pasted by the remote itself (Ctrl+V): typing their names, which
-		// a file manager also leaves on the clipboard as text, would paste nothing.
-		if state.pasteFiles(view) {
-			break
-		}
-		if event.Kind == app.TextPaste {
-			_ = view.session.SendText(event.Text)
-		}
+		state.pasteDesktop(view, event)
 	case app.TextSetMarked:
 		runes := utf8.RuneCountInString(event.Text)
 		t.preedit = app.TextState{
@@ -1112,6 +1186,61 @@ func (state *State) desktopText(sessionID uint32, event app.TextEvent) app.TextS
 		t.preedit = app.TextState{}
 	}
 	return t.preedit
+}
+
+// pasteDesktop pastes into a live remote desktop. Files on the clipboard (or
+// dropped on the picture) go through the remote's own Ctrl+V; on RDP with
+// clipboard sharing enabled, text and pictures do the same so multiline text,
+// formatting and images paste atomically instead of being typed a character at
+// a time. When clipboard sharing is off (or on VNC), text is typed after
+// releasing any held Meta/Command key so Enter is not turned into Win+Enter.
+func (state *State) pasteDesktop(view *desktopView, event app.TextEvent) {
+	if state.pasteFiles(view) {
+		return
+	}
+	if view.clipboard && view.isRDP() {
+		if event.Kind == app.TextPaste {
+			if event.Text == "" {
+				return
+			}
+			if event.Text != view.sentClip || view.files.dropped {
+				if err := view.session.SetClipboard(event.Text); err != nil {
+					// The remote never received the text, so Ctrl+V would paste
+					// whatever it held before; type the text instead.
+					view.sentClip = ""
+					view.releaseMetaBeforeTyping()
+					_ = view.session.SendText(event.Text)
+					return
+				}
+				view.sentClip = event.Text
+				view.sentImage = imageDigest{}
+				view.files.dropped = false
+			}
+			view.pasteChord()
+			return
+		}
+		if event.Kind == app.TextPasteNoText {
+			state.syncClipboardImage(view)
+			if view.sentImage != (imageDigest{}) {
+				view.pasteChord()
+			}
+			return
+		}
+	}
+	if event.Kind == app.TextPaste && event.Text != "" {
+		view.releaseMetaBeforeTyping()
+		_ = view.session.SendText(event.Text)
+	}
+}
+
+// pasteDesktopFromClipboard pastes the current system clipboard into a focused
+// remote desktop (used by the application Edit -> Paste menu entry).
+func (state *State) pasteDesktopFromClipboard(view *desktopView) {
+	if text, err := state.options.ClipboardText(); err == nil && text != "" {
+		state.pasteDesktop(view, app.TextEvent{Kind: app.TextPaste, Text: text})
+		return
+	}
+	state.pasteDesktop(view, app.TextEvent{Kind: app.TextPasteNoText})
 }
 
 // clickDesktop handles the controls of a desktop page.

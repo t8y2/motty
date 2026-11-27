@@ -464,18 +464,32 @@ func TestPastingCopiedFilesPressesPasteOnTheRemoteAfterTheOffer(t *testing.T) {
 	}
 }
 
-func TestPastingTextStillTypesIt(t *testing.T) {
+func TestPastingTextUsesClipboardWhenSharedAndTypesWhenOff(t *testing.T) {
 	remote := newFileDesktop()
 	state, session := fileDesktopState(t, remote, true, Options{
 		ClipboardText: func() (string, error) { return "some text", nil },
 	})
 	state.desktopText(session.ID, pasteEvent(app.TextPaste, "some text"))
-	if typed := remote.typedTexts(); len(typed) != 1 || typed[0] != "some text" {
-		t.Fatalf("typed %v", typed)
+	if texts := remote.sentTexts(); len(texts) != 1 || texts[0] != "some text" {
+		t.Fatalf("clipboard texts = %v, want [some text]", texts)
 	}
+	if !remote.pasted() || len(remote.typedTexts()) != 0 {
+		t.Fatalf("expected remote Ctrl+V paste without typing, keys=%v typed=%v", remote.keys, remote.typedTexts())
+	}
+	before := len(remote.keys)
 	state.desktopText(session.ID, pasteEvent(app.TextPasteNoText, ""))
-	if remote.pasted() || len(remote.offered()) != 0 {
-		t.Fatal("an empty clipboard pasted files")
+	if len(remote.keys) != before || len(remote.offered()) != 0 {
+		t.Fatal("an empty clipboard pasted files or pressed keys")
+	}
+
+	// With clipboard sharing disabled, pasting text still types it.
+	noClip := newFileDesktop()
+	noClipState, noClipSession := fileDesktopState(t, noClip, false, Options{
+		ClipboardText: func() (string, error) { return "typed text", nil },
+	})
+	noClipState.desktopText(noClipSession.ID, pasteEvent(app.TextPaste, "typed text"))
+	if typed := noClip.typedTexts(); len(typed) != 1 || typed[0] != "typed text" {
+		t.Fatalf("typed %v, want [typed text]", typed)
 	}
 }
 
@@ -510,14 +524,17 @@ func TestDroppedFilesStayTheRemoteClipboardUntilSomethingNewIsCopied(t *testing.
 		t.Fatalf("the dropped files were not pasted (typed %v)", remote.typedTexts())
 	}
 
-	// Copying something new is what the user wants next: the text is typed, and
-	// the dropped files are no longer what a paste means.
+	// Copying something new is what the user wants next: the text replaces the
+	// dropped files on the remote clipboard and is pasted via Ctrl+V.
 	staleFiles = nil
 	clipboardText = "a new copy"
 	before := len(remote.keys)
 	state.desktopText(session.ID, pasteEvent(app.TextPaste, clipboardText))
-	if typed := remote.typedTexts(); len(typed) != 1 || typed[0] != clipboardText || len(remote.keys) != before {
-		t.Fatalf("a new copy was not pasted as text: typed %v", typed)
+	if texts := remote.sentTexts(); len(texts) != 1 || texts[0] != clipboardText {
+		t.Fatalf("a new copy was not offered to remote clipboard: %v", texts)
+	}
+	if !remote.pasted() || len(remote.keys) != before+4 || len(remote.typedTexts()) != 0 {
+		t.Fatalf("a new copy was not pasted via remote Ctrl+V: keys=%v typed=%v", remote.keys[before:], remote.typedTexts())
 	}
 	if session.desk.files.dropped {
 		t.Fatal("the drop is still the remote clipboard after something new was copied")
