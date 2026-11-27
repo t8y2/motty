@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/keymap"
@@ -1158,6 +1159,39 @@ func TestRemoteNativeWindowProcessDetailsTakesPointerAndKeys(t *testing.T) {
 		driverClick(t, driver, driverHit(t, driver, w.ui.messages.Tools.RemoteProcessDetails, gfx.RoleMenuItem))
 		if !w.ui.remote.processDetails.open || w.ui.remote.processDetails.process.PID != 2211 {
 			t.Fatal("the process context menu did not open the selected process")
+		}
+	})
+}
+
+// TestRemoteToolbarRefreshPressDoesNotShowTheKeyboardRing: a press on the toolbar's
+// refresh button moves pointer focus onto it, which is not a keyboard focus. The
+// halo belongs to the keyboard, so the press must leave the button quiet.
+func TestRemoteToolbarRefreshPressDoesNotShowTheKeyboardRing(t *testing.T) {
+	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
+		state, _, fake, _ := liveSession(t)
+		fake.mu.Lock()
+		fake.runCommand = (&remoteServer{}).run
+		fake.mu.Unlock()
+		state.options.OpenContentWindow = application.OpenContentWindow
+		state.Click(hitRemoteToolsOpen)
+		w := state.remoteWindows[0]
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		driver := nativeWindowDriver(t, host.windows[0].config)
+		refresh := driverHit(t, driver, w.ui.messages.Tools.RemoteRefresh, gfx.RoleButton)
+		driverClick(t, driver, refresh)
+		host.until(t, func() bool { return !w.ui.remote.loading })
+		if err := driver.Paint(); err != nil {
+			t.Fatal(err)
+		}
+		snapshot := driver.Snapshot()
+		if snapshot.Focused != refresh.ID {
+			t.Fatalf("a press on the refresh button focused %v, want %v", snapshot.Focused, refresh.ID)
+		}
+		halo := components.ButtonRecipe(w.ui.Theme(), components.ButtonGhost, gfx.State{FocusVisible: true}).Ring
+		for _, primitive := range snapshot.Primitives {
+			if primitive.Color == halo {
+				t.Fatalf("the pressed refresh button paints the keyboard's focus ring: %+v", primitive)
+			}
 		}
 	})
 }
