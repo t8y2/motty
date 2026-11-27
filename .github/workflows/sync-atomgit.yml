@@ -1,0 +1,72 @@
+# Mirrors this repository's branches and tags to AtomGit
+# (https://atomgit.com/t8y2/motty), the code only: no release packages. GitHub
+# stays the source of record, so every ref is forced: the mirror is never ahead.
+# A push to main, a tag, or a deleted ref syncs at once; the schedule repairs
+# anything a run missed.
+#
+# Needs ATOMGIT_TOKEN, an access token with write access to t8y2/motty on
+# AtomGit, as a repository secret. The destination is fixed here, so a fork
+# never publishes.
+name: Sync AtomGit
+
+on:
+  push:
+    branches: [main]
+    tags: ["**"]
+  delete:
+  schedule:
+    # Three times a day, off the top of the hour so the run does not queue
+    # behind every other scheduled job. The push trigger is the main path; this
+    # is the repair path for a mirror that missed a run.
+    - cron: "37 */8 * * *"
+  workflow_dispatch:
+
+# Forced updates to the same refs cannot run at once: a delete landing while a
+# push runs would resurrect the ref it just removed.
+concurrency:
+  group: sync-atomgit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    name: Push refs to AtomGit
+    # Mirror destinations are fixed to the upstream repository; forks must not
+    # publish their refs there, even with the secrets mirrored.
+    if: github.repository == 't8y2/motty'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out every ref
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Push to AtomGit
+        env:
+          ATOMGIT_TOKEN: ${{ secrets.ATOMGIT_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ATOMGIT_TOKEN}" ]; then
+            echo "::error::ATOMGIT_TOKEN is not set: add an AtomGit access token with write access to t8y2/motty as a repository secret"
+            exit 1
+          fi
+          git remote add atomgit "https://t8y2:${ATOMGIT_TOKEN}@atomgit.com/t8y2/motty.git"
+
+          # A push never removes a ref, so a deleted tag or branch has to be
+          # deleted on the mirror explicitly.
+          if [ "${GITHUB_EVENT_NAME}" = "delete" ]; then
+            case "${GITHUB_REF_TYPE}" in
+              tag) git push atomgit ":refs/tags/${GITHUB_REF_NAME}" ;;
+              branch) git push atomgit ":refs/heads/${GITHUB_REF_NAME}" ;;
+            esac
+          fi
+
+          # The checkout only holds the triggering branch, so read the branch
+          # list from origin. The mirror/ namespace keeps those refs from
+          # colliding with the checked-out branch.
+          git fetch --prune --tags origin '+refs/heads/*:refs/heads/mirror/*'
+          git push atomgit --force 'refs/heads/mirror/*:refs/heads/*'
+          git push atomgit --force --tags

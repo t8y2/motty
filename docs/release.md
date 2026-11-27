@@ -354,7 +354,11 @@ branch and tag on each push to `main`, on a tag or a deleted ref, and on a
 three-times-daily schedule that repairs a missed run. A branch or tag deleted on
 GitHub is deleted on the mirror too.
 
-The same host mirrors release packages: the *Copy the release to CNB* job runs
+`https://atomgit.com/t8y2/motty` is the same kind of copy of the code only,
+kept by `.github/workflows/sync-atomgit.yml` on the same triggers. It needs the
+`ATOMGIT_TOKEN` secret and does not carry release packages.
+
+The CNB host also mirrors release packages: the *Copy the release to CNB* job runs
 after *Publish*, and `tools/sync-cnb-release.mjs` copies the GitHub release's
 metadata and every asset to CNB Releases, skipping files that are already there.
 An asset is then downloadable at
