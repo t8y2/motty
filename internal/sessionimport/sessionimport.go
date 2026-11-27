@@ -86,6 +86,25 @@ type Entry struct {
 type SSHSettings struct {
 	Auth          string
 	IdentityFiles []string
+	Proxy         *OutboundProxy
+	Jump          *SSHJump
+}
+
+type OutboundProxy struct {
+	Kind          ProxyKind
+	Address, User string
+}
+
+type ProxyKind uint8
+
+const (
+	ProxySOCKS5 ProxyKind = iota + 1
+	ProxyHTTPConnect
+)
+
+type SSHJump struct {
+	Host, User, KeyPath string
+	Port                uint16
 }
 
 // Result is what a file held.
@@ -413,6 +432,8 @@ func ParseWithOptions(client Client, paths []string, options ParseOptions) (Resu
 			part, err = ParseXPipe(path)
 		case Tabby:
 			part, err = ParseTabby(path)
+		case WinSCP:
+			part, err = ParseWinSCP(path)
 		default:
 			err = fmt.Errorf("unknown client %d", client)
 		}
@@ -449,6 +470,7 @@ const (
 	Xterminal
 	XPipe
 	Tabby
+	WinSCP
 )
 
 // ---- PuTTY ----

@@ -110,7 +110,6 @@ type Messages struct {
 	Completion CompletionMessages
 	// SSHSync holds the texts of the sync with the OpenSSH config; see ssh_sync.go.
 	SSHSync SSHSyncMessages
-	WinSCPImport WinSCPImportMessages
 	// Desktop holds the remote-desktop tabs' texts; see desktop.go.
 	Desktop DesktopMessages
 	WSL     WSLMessages
@@ -1406,7 +1405,6 @@ func For(language Language) Messages {
 		messages.History = chineseHistory
 		messages.Completion = chineseCompletion
 		messages.SSHSync = chineseSSHSync
-		messages.WinSCPImport = chineseWinSCPImport
 		messages.Desktop, messages.WSL = chineseDesktop, chineseWSL
 		messages.About = chineseAbout
 		return messages
@@ -1422,7 +1420,6 @@ func For(language Language) Messages {
 		messages.History = traditionalHistory
 		messages.Completion = traditionalCompletion
 		messages.SSHSync = traditionalSSHSync
-		messages.WinSCPImport = traditionalWinSCPImport
 		messages.Desktop, messages.WSL = traditionalDesktop, traditionalWSL
 		messages.About = traditionalAbout
 		return messages
@@ -1438,7 +1435,6 @@ func For(language Language) Messages {
 		messages.History = englishHistory
 		messages.Completion = englishCompletion
 		messages.SSHSync = englishSSHSync
-		messages.WinSCPImport = englishWinSCPImport
 		messages.Desktop, messages.WSL = englishDesktop, englishWSL
 		messages.About = englishAbout
 		return messages

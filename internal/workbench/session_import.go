@@ -11,6 +11,7 @@ import (
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sessionimport"
 	"motty/internal/sshconfig"
+	"motty/internal/sshconn"
 	"motty/internal/vault"
 	"motty/internal/workbench/icons"
 )
@@ -60,14 +61,15 @@ type sessionImportPassword struct {
 }
 
 type sessionImportPreview struct {
-	base       *configBase
-	plan       hostImportPlan
-	summary    string
-	passwords  []sessionImportPassword
-	conflicts  int
-	eligible   int
-	tabby      []sessionimport.Entry
-	tabbyVault bool
+	base            *configBase
+	plan            hostImportPlan
+	summary         string
+	passwords       []sessionImportPassword
+	conflicts       int
+	eligible        int
+	tabby           []sessionimport.Entry
+	tabbyVault      bool
+	connectionsOnly bool
 }
 
 type mobaEncodingPrompt struct {
@@ -98,6 +100,8 @@ func importClientName(client sessionimport.Client) string {
 		return "XPipe"
 	case sessionimport.Tabby:
 		return "Tabby"
+	case sessionimport.WinSCP:
+		return "WinSCP"
 	}
 	return "MobaXterm"
 }
@@ -127,8 +131,7 @@ func (state *State) clickImportSessions(id gfx.ID) {
 	case hitImportTabby:
 		state.importTabby()
 	case hitImportWinSCP:
-		state.modal = modalNone
-		state.importWinSCP()
+		state.importSessions(sessionimport.WinSCP)
 	case hitImportGuide:
 		state.openExternal(state.messages.Tools.ImportGuideURL)
 	case hitImportSessionsCancel, hitImportSessionsClose, hitImportSessionsDismiss:
@@ -251,9 +254,11 @@ func (state *State) prepareSessionImport(client sessionimport.Client, result ses
 	if conflicts > 0 {
 		plan.warnings = append(plan.warnings, fmt.Sprintf(m.ImportPasswordConflictFmt, conflicts))
 	}
-	if tabbyVault || len(passwords) > 0 || client == sessionimport.Tabby && tabbyImportHasKeys(result.Entries) {
+	connectionsOnly := client == sessionimport.WinSCP
+	if connectionsOnly || tabbyVault || len(passwords) > 0 || client == sessionimport.Tabby && tabbyImportHasKeys(result.Entries) {
 		state.sessionImport = sessionImportPreview{
 			base: state.configBase, plan: plan, summary: summary, passwords: passwords, conflicts: conflicts,
+			connectionsOnly: connectionsOnly,
 		}
 		if client == sessionimport.Tabby {
 			state.sessionImport.tabby = result.Entries
@@ -475,6 +480,9 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 	const width float32 = 550
 	description := fmt.Sprintf(m.ImportPasswordPreviewBodyFmt, len(state.sessionImport.plan.hosts), len(state.sessionImport.passwords), state.sessionImport.eligible)
 	title, saveLabel := m.ImportPasswordPreviewTitle, m.ImportSavePasswords
+	if state.sessionImport.connectionsOnly {
+		title = m.ImportChooserTitle
+	}
 	if state.sessionImport.tabby != nil {
 		title, saveLabel = m.TabbyImportTitle, m.TabbyImportSave
 		description = m.TabbyImportDescription
@@ -504,7 +512,7 @@ func (state *State) declareSessionImportPreview(c ui.C) {
 		if ui.Button(c, m.ImportConnectionsOnly).Secondary().Shrink(0).AutoFocus().Clicked() {
 			c.After(func() { state.clickSessionImportPreview(hitImportConnectionsOnly) })
 		}
-		if ui.Button(c, saveLabel).Shrink(0).Clicked() {
+		if !state.sessionImport.connectionsOnly && ui.Button(c, saveLabel).Shrink(0).Clicked() {
 			c.After(func() { state.clickSessionImportPreview(hitImportSavePasswords) })
 		}
 	})
@@ -605,6 +613,7 @@ func (state *State) clickSessionImportPreview(id gfx.ID) {
 		state.sessionImport = sessionImportPreview{}
 		state.dialogError = ""
 		state.modal = modalNone
+		state.status = state.messages.Tools.ImportCanceled
 	case hitImportConnectionsOnly, hitImportSavePasswords:
 		if state.saveBlocked || state.config == nil || state.pauseSave > 0 {
 			state.dialogError = state.messages.Tools.ImportHostSaveUnavailable
@@ -711,9 +720,42 @@ func (state *State) sessionImportPlan(result sessionimport.Result) hostImportPla
 		}
 		host.CatalogID = freshCatalogID(builder.usedIDs)
 		builder.plan.nextHostID++
+		if settings := entry.SSHSettings; settings != nil {
+			if proxy := settings.Proxy; proxy != nil {
+				kind := sshconn.ProxySOCKS5
+				if proxy.Kind == sessionimport.ProxyHTTPConnect {
+					kind = sshconn.ProxyHTTPConnect
+				}
+				host.Proxy = &outboundProxy{kind: kind, address: proxy.Address, user: proxy.User}
+			}
+		}
 		builder.plan.hosts = append(builder.plan.hosts, host)
+		if settings := entry.SSHSettings; settings != nil {
+			if jump := settings.Jump; jump != nil {
+				builder.addSessionImportJump(host, *jump)
+			}
+		}
 	}
 	return builder.plan
+}
+
+func (builder *hostImportBuilder) addSessionImportJump(target Host, jump sessionimport.SSHJump) {
+	// Keep the jump's authentication independent of existing saved connections.
+	host := Host{
+		ID: builder.plan.nextHostID, CatalogID: freshCatalogID(builder.usedIDs),
+		Label: target.Label + " → " + jump.Host, Group: target.Group, Address: jump.Host,
+		User: jump.User, Port: jump.Port, Proxy: cloneOutboundProxy(target.Proxy),
+	}
+	if jump.KeyPath != "" {
+		host.SSHOptions = &sshconfig.ConnectionOptions{IdentityFiles: []string{jump.KeyPath}}
+	}
+	host.finish()
+	builder.plan.nextHostID++
+	builder.plan.hosts = append(builder.plan.hosts, host)
+	builder.plan.proxies = append(builder.plan.proxies, proxyRecord{
+		ID: builder.plan.nextProxyID, TargetID: target.ID, JumpID: host.ID,
+	})
+	builder.plan.nextProxyID++
 }
 
 // planHasSameHost reports whether the hosts this import has already made
