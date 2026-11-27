@@ -649,6 +649,9 @@ func (state *State) pumpDesktop(session *Session) {
 	}
 	view.session.Bells() // a bell has no sound to make here
 	state.finishFileOffers(view)
+	if lister, ok := view.session.(desktop.FileLister); ok && view.clipboard && !view.ended && state.clipboardFilePromises() {
+		state.pumpDesktopFileList(view, lister)
+	}
 	receivedFiles := false
 	if receiver, ok := view.session.(desktop.FileReceiver); ok {
 		state.pumpReceivingFiles(view, receiver)

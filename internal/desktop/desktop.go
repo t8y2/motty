@@ -229,6 +229,47 @@ type FileReceiver interface {
 	CancelReceivingFiles()
 }
 
+// FileListing is one entry of the file list a remote system's clipboard holds:
+// Name is the path inside the copied selection (`\` separated), Size is the
+// length the server named, and Dir says the entry is a folder.
+type FileListing struct {
+	Name string
+	Size int64
+	Dir  bool
+}
+
+// ClipboardFileList is a remote clipboard's file list, or why none arrived.
+type ClipboardFileList struct {
+	Files []FileListing
+	// Version names this list: a read, release or download of it passes it back,
+	// so one that has since been replaced is left alone.
+	Version uint64
+	Err     error
+}
+
+// FileLister is a Session that can take the file list the remote system put on
+// its clipboard and leave the content on the server until a paste here reads
+// it. The workbench promises the files to the local clipboard (Windows), so a
+// copy inside the remote session transfers nothing until it is pasted; the
+// promise reads the content a range at a time.
+type FileLister interface {
+	Session
+	// RemoteFileList returns the list the remote clipboard delivered since the
+	// previous call, if any.
+	RemoteFileList() (ClipboardFileList, bool)
+	// ReadRemoteFile returns up to length bytes at offset of the file at index
+	// of the list called version. It blocks until the server answers.
+	ReadRemoteFile(version uint64, index int, offset int64, length int) ([]byte, error)
+	// ReleaseRemoteFileList drops the list called version and lets the server's
+	// clipboard data go, once the local clipboard no longer holds the promise.
+	// A newer list is left alone.
+	ReleaseRemoteFileList(version uint64)
+	// DownloadRemoteFileList reads the list called version into a staging
+	// directory instead, for a caller that decided not to promise it; the files
+	// then arrive through FileReceiver. It fails when the list is gone.
+	DownloadRemoteFileList(version uint64) error
+}
+
 // FileProgress is how far files being received have come.
 type FileProgress struct {
 	// Name is the entry being saved, a `/` separated path inside the selection.
@@ -379,6 +420,12 @@ type Options struct {
 	// Clipboard allows the clipboard to cross in both directions. Off, the
 	// backend neither sends the local clipboard nor keeps the remote's.
 	Clipboard bool
+	// DeferClipboardFiles asks a backend whose protocol can do it to deliver
+	// the remote clipboard's file list without its content, so a local paste
+	// reads the content later (see FileLister). A backend that cannot leaves it
+	// false and downloads as usual; the workbench only asks where the platform
+	// can put promised files on the clipboard.
+	DeferClipboardFiles bool
 	// Audio plays the remote system's sound on this computer's default output
 	// device. Off, the backend asks the server for no audio at all. A machine
 	// whose device cannot be opened, or whose server offers no PCM format,

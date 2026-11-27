@@ -84,7 +84,15 @@ type fileContentsResponse struct {
 // RequestRemoteFiles asks the server for the file list its clipboard holds. The
 // list, and then the files themselves, arrive through OnRemoteFiles. It fails
 // when the server did not advertise file transfer or the clipboard is off.
-func (h *Handler) RequestRemoteFiles() error {
+func (h *Handler) RequestRemoteFiles() error { return h.requestRemoteFiles(false) }
+
+// RequestRemoteFileList asks the server for its clipboard's file list alone.
+// The list arrives through OnRemoteFileList, and its files are read one range
+// at a time with ReadRemoteFileRange while the caller promises them to the
+// local clipboard; the server's data stays locked until ReleaseRemoteFileList.
+func (h *Handler) RequestRemoteFileList() error { return h.requestRemoteFiles(true) }
+
+func (h *Handler) requestRemoteFiles(listOnly bool) error {
 	h.mu.Lock()
 	enabled, hasFiles, id := h.enabled, h.remoteHasFiles, h.remoteFileListID
 	canLock := h.serverCaps&CBCanLockClipData != 0
@@ -101,7 +109,7 @@ func (h *Handler) RequestRemoteFiles() error {
 	var request formatDataRequest
 	queued := false
 	if enabled && hasFiles {
-		request, queued = h.enqueueDataRequestLocked(id, true, lockID)
+		request, queued = h.enqueueDataRequestLocked(id, true, listOnly, lockID)
 	}
 	h.mu.Unlock()
 	if !enabled {
@@ -149,6 +157,20 @@ func (h *Handler) forgetRemoteLock(id uint32) {
 	h.mu.Unlock()
 }
 
+// releaseLazyLocked forgets the on-demand file list and returns the
+// cancellation of its reads and the lock it held, if any. The caller cancels
+// the reads and sends the unlock.
+func (h *Handler) releaseLazyLocked() (context.CancelFunc, uint32) {
+	cancel := h.lazyCancel
+	clipID := h.lazyClipID
+	h.lazyCancel, h.lazyContext = nil, nil
+	h.lazyFiles, h.lazyClipID, h.lazyVersion, h.lazyActive = nil, 0, 0, false
+	if clipID != 0 && h.remoteLockID == clipID {
+		h.remoteLockID = 0
+	}
+	return cancel, clipID
+}
+
 // releaseRemoteLockIfIdle tells the server it may let the data go, unless the
 // newest download still reads it; that download unlocks when it ends.
 func (h *Handler) releaseRemoteLockIfIdle(id uint32) {
@@ -164,6 +186,15 @@ func (h *Handler) releaseRemoteLockIfIdle(id uint32) {
 	if release {
 		h.sendResponse(encodeLockClipData(CBUnlockClipData, id))
 	}
+}
+
+// OnRemoteFileList sets the callback invoked with the file list alone, read on
+// demand (see RequestRemoteFileList). It runs on a goroutine of its own, since
+// a list whose entries have no size asks the server for each one first.
+func (h *Handler) OnRemoteFileList(fn func(files []RemoteFile, version uint64, err error)) {
+	h.mu.Lock()
+	h.onFileList = fn
+	h.mu.Unlock()
 }
 
 // OnRemoteFilesProgress sets the callback that hears how far the download of
@@ -371,6 +402,183 @@ func (h *Handler) finishDownload(serial uint64, clipID uint32) {
 	if current && callback != nil {
 		callback(RemoteFilesProgress{})
 	}
+}
+
+// errFileListGone says the on-demand file list is no longer on the remote
+// clipboard, so there is nothing left to read.
+var errFileListGone = errors.New("the remote file list is no longer on the clipboard")
+
+// startRemoteFileList resolves the sizes a descriptor left out, then hands the
+// list to the caller with the version that names it. It runs on a goroutine of
+// its own because a size request waits for the server, which the receive loop
+// must keep reading.
+func (h *Handler) startRemoteFileList(files []RemoteFile, generation uint64, clipID uint32) {
+	h.mu.Lock()
+	if h.downloadGeneration != generation {
+		h.mu.Unlock()
+		h.releaseRemoteLockIfIdle(clipID)
+		return
+	}
+	callback := h.onFileList
+	if callback == nil {
+		h.mu.Unlock()
+		h.releaseRemoteLockIfIdle(clipID)
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	old := h.lazyCancel
+	h.lazySerial++
+	version := h.lazySerial
+	h.lazyCancel, h.lazyContext, h.lazyVersion = cancel, ctx, version
+	h.mu.Unlock()
+	if old != nil {
+		old()
+	}
+	go h.prepareRemoteFileList(ctx, version, generation, clipID, files, callback)
+}
+
+// prepareRemoteFileList fills in the sizes the list did not carry and makes it
+// the list ReadRemoteFileRange reads. A newer clipboard releases it before it
+// is delivered, so a stale list never replaces a newer one.
+func (h *Handler) prepareRemoteFileList(ctx context.Context, version uint64, generation uint64, clipID uint32, files []RemoteFile, callback func([]RemoteFile, uint64, error)) {
+	h.lazyMu.Lock()
+	defer h.lazyMu.Unlock()
+	for index := range files {
+		if files[index].Dir || files[index].HasSize {
+			continue
+		}
+		data, err := h.requestFileContents(ctx, index, FileContentsSize, 0, 8, clipID)
+		if err == nil && len(data) != 8 {
+			err = fmt.Errorf("a file size of %d bytes", len(data))
+		}
+		if err != nil {
+			h.reportFileListError(version, err)
+			return
+		}
+		files[index].Size = binary.LittleEndian.Uint64(data)
+		files[index].HasSize = true
+	}
+	h.mu.Lock()
+	current := h.lazyVersion == version && h.downloadGeneration == generation
+	if current {
+		h.lazyFiles, h.lazyClipID, h.lazyActive = files, clipID, true
+	}
+	h.mu.Unlock()
+	if !current {
+		return
+	}
+	callback(files, version, nil)
+}
+
+// finishRemoteFileList releases the server's data and tells the caller why the
+// list could not be read, when the caller is still waiting for it.
+func (h *Handler) finishRemoteFileList(err error) {
+	h.mu.Lock()
+	callback := h.onFileList
+	cancel := h.lazyCancel
+	h.lazyCancel, h.lazyContext = nil, nil
+	h.lazyFiles, h.lazyClipID, h.lazyVersion, h.lazyActive = nil, 0, 0, false
+	unlock := h.takeRemoteLockLocked()
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if unlock != 0 {
+		h.sendResponse(encodeLockClipData(CBUnlockClipData, unlock))
+	}
+	if callback != nil {
+		callback(nil, 0, err)
+	}
+}
+
+// reportFileListError is finishRemoteFileList for the list with version, which
+// a newer clipboard may already have released.
+func (h *Handler) reportFileListError(version uint64, err error) {
+	h.mu.Lock()
+	waiting := h.lazyVersion == version
+	h.mu.Unlock()
+	if !waiting {
+		return
+	}
+	h.finishRemoteFileList(err)
+}
+
+// ReadRemoteFileRange reads length bytes at offset of the file at index of the
+// list called version. A range past the end yields nothing; the caller knows
+// the size from the list. It blocks until the server answers.
+func (h *Handler) ReadRemoteFileRange(version uint64, index int, offset int64, length int) ([]byte, error) {
+	if offset < 0 || length < 0 || length > maxContentsRequest {
+		return nil, fmt.Errorf("a file range of %d bytes at %d", length, offset)
+	}
+	h.mu.Lock()
+	active := h.lazyVersion == version && h.lazyActive
+	files := h.lazyFiles
+	clipID, ctx := h.lazyClipID, h.lazyContext
+	h.mu.Unlock()
+	if !active || ctx == nil {
+		return nil, errFileListGone
+	}
+	if index < 0 || index >= len(files) {
+		return nil, fmt.Errorf("file %d of a list of %d", index, len(files))
+	}
+	entry := files[index]
+	if entry.Dir {
+		return nil, fmt.Errorf("the remote clipboard's %q is a directory", entry.Name)
+	}
+	if offset >= int64(entry.Size) {
+		return nil, nil
+	}
+	if length > 0 {
+		length = int(min(int64(length), int64(entry.Size)-offset))
+	}
+	h.lazyMu.Lock()
+	defer h.lazyMu.Unlock()
+	if ctx.Err() != nil {
+		return nil, errFileListGone
+	}
+	return h.requestFileContents(ctx, index, FileContentsRange, uint64(offset), uint32(length), clipID)
+}
+
+// ReleaseRemoteFileList drops the on-demand list called version and lets the
+// server's clipboard data go: the local clipboard no longer holds the files
+// promised from it. A newer list, or no list, is left alone.
+func (h *Handler) ReleaseRemoteFileList(version uint64) {
+	h.mu.Lock()
+	if h.lazyVersion != version {
+		h.mu.Unlock()
+		return
+	}
+	cancel, clipID := h.releaseLazyLocked()
+	if clipID == 0 {
+		clipID = h.takeRemoteLockLocked()
+	}
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if clipID != 0 {
+		h.sendResponse(encodeLockClipData(CBUnlockClipData, clipID))
+	}
+}
+
+// DownloadRemoteFiles reads the list called version instead of leaving it on
+// demand, for a caller that decided not to promise it: the content goes to a
+// staging directory and arrives through OnRemoteFiles like any download.
+func (h *Handler) DownloadRemoteFiles(version uint64) error {
+	h.mu.Lock()
+	if h.lazyVersion != version || !h.lazyActive || len(h.lazyFiles) == 0 {
+		h.mu.Unlock()
+		return errFileListGone
+	}
+	files, clipID, generation, cancel := h.lazyFiles, h.lazyClipID, h.downloadGeneration, h.lazyCancel
+	h.lazyCancel, h.lazyContext = nil, nil
+	h.lazyFiles, h.lazyClipID, h.lazyVersion, h.lazyActive = nil, 0, 0, false
+	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	h.startRemoteFiles(files, generation, clipID)
+	return nil
 }
 
 // receiveRemoteFile writes one file and returns how many bytes it read. read

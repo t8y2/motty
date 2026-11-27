@@ -72,6 +72,10 @@ type Session struct {
 	hasText     bool
 	remoteFiles desktop.ReceivedFiles
 	hasFiles    bool
+	// remoteFileList is the server's file list when the caller reads it on
+	// demand instead of downloading it, and hasFileList says one arrived.
+	remoteFileList desktop.ClipboardFileList
+	hasFileList    bool
 	// receiving is the download of the server's files under way, when
 	// isReceiving; receivingStep is how far it had come when the window was
 	// last woken for it.
@@ -107,6 +111,7 @@ type Session struct {
 
 var _ desktop.Session = (*Session)(nil)
 var _ desktop.FileReceiver = (*Session)(nil)
+var _ desktop.FileLister = (*Session)(nil)
 
 func (session *Session) NetworkRTT() (time.Duration, time.Time) {
 	return session.client.NetworkRTT()
@@ -240,9 +245,12 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	client.OnDisconnect(func(err error) { session.finish(err) })
 	if opts.Clipboard {
 		client.OnClipboardUpdate(func(hasText, _, hasFiles bool) {
-			if hasFiles {
+			switch {
+			case hasFiles && opts.DeferClipboardFiles:
+				_ = client.RequestClipboardFileList()
+			case hasFiles:
 				_ = client.RequestClipboardFiles()
-			} else if hasText {
+			case hasText:
 				_ = client.RequestClipboard()
 			}
 		})
@@ -263,6 +271,7 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 			session.wake()
 		})
 		client.OnClipboardFilesProgress(session.onFilesProgress)
+		client.OnClipboardFileList(session.onFileList)
 	}
 
 	// A reconnection, and a server redirection (GNOME Remote Desktop's remote
@@ -586,6 +595,51 @@ func (session *Session) RemoteFiles() (desktop.ReceivedFiles, bool) {
 	files, ok := session.remoteFiles, session.hasFiles
 	session.remoteFiles, session.hasFiles = desktop.ReceivedFiles{}, false
 	return files, ok
+}
+
+// onFileList records the server's file list read on demand, or why none
+// arrived, for the workbench to promise it to the local clipboard.
+func (session *Session) onFileList(files []rdpcore.ClipboardFile, version uint64, err error) {
+	list := desktop.ClipboardFileList{Version: version, Err: err}
+	for _, file := range files {
+		size := int64(-1)
+		if file.HasSize {
+			size = int64(min(file.Size, math.MaxInt64))
+		}
+		list.Files = append(list.Files, desktop.FileListing{Name: file.Name, Size: size, Dir: file.Dir})
+	}
+	session.mu.Lock()
+	session.remoteFileList, session.hasFileList = list, true
+	session.mu.Unlock()
+	session.wake()
+}
+
+// RemoteFileList returns the server's file list delivered since the previous
+// call (see desktop.FileLister).
+func (session *Session) RemoteFileList() (desktop.ClipboardFileList, bool) {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+	list, ok := session.remoteFileList, session.hasFileList
+	session.remoteFileList, session.hasFileList = desktop.ClipboardFileList{}, false
+	return list, ok
+}
+
+// ReadRemoteFile reads part of a file of that list from the server (see
+// desktop.FileLister).
+func (session *Session) ReadRemoteFile(version uint64, index int, offset int64, length int) ([]byte, error) {
+	return session.client.ReadClipboardFile(version, index, offset, length)
+}
+
+// ReleaseRemoteFileList lets the server's clipboard data go once the local
+// clipboard no longer holds the promises made from it.
+func (session *Session) ReleaseRemoteFileList(version uint64) {
+	session.client.ReleaseClipboardFileList(version)
+}
+
+// DownloadRemoteFileList reads the list delivered on demand into a staging
+// directory instead, for a caller that cannot promise it.
+func (session *Session) DownloadRemoteFileList(version uint64) error {
+	return session.client.DownloadClipboardFiles(version)
 }
 
 // ReceivingFiles reports the server's files being saved now (see

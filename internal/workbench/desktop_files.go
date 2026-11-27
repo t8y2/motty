@@ -3,11 +3,14 @@ package workbench
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -41,6 +44,16 @@ type desktopFiles struct {
 	receiving   desktop.FileProgress
 	isReceiving bool
 	receiveText transferText
+
+	// promised says the remote clipboard's files are on this computer's
+	// clipboard as promises, promiseVersion names the remote list they read,
+	// and promiseSeq names the promise last made. promiseReleased is the
+	// platform's release callback, which may run on any goroutine: it holds the
+	// seq of the promise the clipboard no longer has.
+	promised        bool
+	promiseVersion  uint64
+	promiseSeq      uint64
+	promiseReleased atomic.Uint64
 
 	mu      sync.Mutex
 	running bool
@@ -358,6 +371,209 @@ func (state *State) receiveDesktopFiles(view *desktopView, files desktop.Receive
 	}
 	state.status = text
 }
+
+// clipboardFilePromises reports whether the system clipboard can hold files
+// whose content is read when the user pastes them.
+func (state *State) clipboardFilePromises() bool {
+	if state.options.ClipboardFilePromises != nil {
+		return state.options.ClipboardFilePromises()
+	}
+	return app.Supports(app.CapabilityClipboardFilePromise)
+}
+
+// pumpDesktopFileList takes the file list the remote system put on its
+// clipboard and promises it to this computer's clipboard, so copying files in
+// the remote session transfers nothing until they are pasted here. When the
+// clipboard no longer holds that promise, the server's data is let go.
+func (state *State) pumpDesktopFileList(view *desktopView, lister desktop.FileLister) {
+	files := &view.files
+	if version := files.promiseReleased.Swap(0); version != 0 && files.promised && version == files.promiseSeq {
+		files.promised = false
+		lister.ReleaseRemoteFileList(files.promiseVersion)
+	}
+	list, ok := lister.RemoteFileList()
+	if !ok {
+		return
+	}
+	if list.Err != nil {
+		state.status = fmt.Sprintf(state.messages.Tools.DesktopFilesReceiveFailedFmt, list.Err)
+		lister.ReleaseRemoteFileList(list.Version)
+		return
+	}
+	state.promiseDesktopFiles(view, lister, list)
+}
+
+// promiseDesktopFiles puts the remote list on the local clipboard as a promise.
+// A tree the platform cannot describe (too many entries, a name the shell
+// refuses) is downloaded instead, so the files still reach this computer.
+func (state *State) promiseDesktopFiles(view *desktopView, lister desktop.FileLister, list desktop.ClipboardFileList) {
+	promises, err := desktopFilePromises(lister, list.Version, list.Files)
+	if err == nil {
+		files := &view.files
+		files.promiseSeq++
+		seq := files.promiseSeq
+		released := func() {
+			files.promiseReleased.Store(seq)
+			if state.options.Invalidate != nil {
+				state.options.Invalidate()
+			}
+		}
+		if setErr := state.options.SetClipboardFilePromises(promises, released); setErr == nil {
+			files.promised, files.promiseVersion = true, list.Version
+			return
+		} else {
+			err = setErr
+		}
+	}
+	if downloadErr := lister.DownloadRemoteFileList(list.Version); downloadErr != nil {
+		state.status = fmt.Sprintf(state.messages.Tools.DesktopFilesReceiveFailedFmt, downloadErr)
+	}
+}
+
+// desktopFilePromises turns the remote's flat list into the promise tree the
+// clipboard takes: folders with their children, and each file opening the
+// server's bytes a range at a time when a paste reads it.
+func desktopFilePromises(lister desktop.FileLister, version uint64, entries []desktop.FileListing) ([]app.FilePromise, error) {
+	if len(entries) > app.MaxDragFiles {
+		return nil, fmt.Errorf("%d files and folders", len(entries))
+	}
+	type node struct {
+		name     string
+		index    int
+		file     bool
+		size     int64
+		children map[string]*node
+		order    []string
+	}
+	root := &node{index: -1, children: make(map[string]*node)}
+	for index, entry := range entries {
+		parts, ok := promiseNameParts(entry.Name)
+		if !ok {
+			return nil, fmt.Errorf("the remote name %q cannot be one", entry.Name)
+		}
+		current := root
+		for _, part := range parts[:len(parts)-1] {
+			child := current.children[part]
+			if child == nil {
+				child = &node{name: part, index: -1, children: make(map[string]*node)}
+				current.children[part] = child
+				current.order = append(current.order, part)
+			}
+			if child.file {
+				return nil, fmt.Errorf("the remote name %q is inside a file", entry.Name)
+			}
+			current = child
+		}
+		name := parts[len(parts)-1]
+		child := current.children[name]
+		if child == nil {
+			child = &node{name: name, index: -1, children: make(map[string]*node)}
+			current.children[name] = child
+			current.order = append(current.order, name)
+		}
+		if entry.Dir {
+			if child.file {
+				return nil, fmt.Errorf("the remote list names %q as a file and a folder", entry.Name)
+			}
+			continue
+		}
+		if child.file || len(child.order) > 0 {
+			return nil, fmt.Errorf("the remote list names %q twice", entry.Name)
+		}
+		child.file, child.index, child.size = true, index, entry.Size
+	}
+	var build func(order []string, children map[string]*node) []app.FilePromise
+	build = func(order []string, children map[string]*node) []app.FilePromise {
+		out := make([]app.FilePromise, 0, len(order))
+		for _, name := range order {
+			child := children[name]
+			if child.file {
+				out = append(out, app.FilePromise{
+					Name: child.name, Size: child.size,
+					Open: remoteFileOpener(lister, version, child.index, child.size),
+				})
+				continue
+			}
+			kids := build(child.order, child.children)
+			out = append(out, app.FilePromise{Name: child.name, Directory: true, List: func() ([]app.FilePromise, error) {
+				return kids, nil
+			}})
+		}
+		return out
+	}
+	return build(root.order, root.children), nil
+}
+
+// promiseNameParts splits a descriptor's relative name into the one path
+// component per level the clipboard's promise tree takes, refusing anything
+// that could name a place outside it.
+func promiseNameParts(name string) ([]string, bool) {
+	name = strings.ReplaceAll(name, `\`, "/")
+	if name == "" || strings.HasPrefix(name, "/") || strings.IndexByte(name, 0) >= 0 {
+		return nil, false
+	}
+	parts := strings.Split(name, "/")
+	if len(parts) > 32 {
+		return nil, false
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return nil, false
+		}
+	}
+	return parts, true
+}
+
+// remoteFileOpener is a file promise's Open: it reads the server's bytes when a
+// paste asks for them, not before.
+func remoteFileOpener(lister desktop.FileLister, version uint64, index int, size int64) func() (io.ReadCloser, error) {
+	return func() (io.ReadCloser, error) {
+		return &remoteFileReader{lister: lister, version: version, index: index, size: size}, nil
+	}
+}
+
+// remoteFileReader reads one promised file from the server a range at a time.
+// The clipboard asks for it in buffers of its own size; each Read returns what
+// one request carries, which a reader may do as long as it makes progress.
+type remoteFileReader struct {
+	lister  desktop.FileLister
+	version uint64
+	index   int
+	size    int64
+	offset  int64
+}
+
+// maxReadRange bounds one request: MS-RDPECLIP carries at most 64 KiB of a
+// file per message, and Windows asks for no more.
+const maxReadRange = 64 << 10
+
+func (reader *remoteFileReader) Read(p []byte) (int, error) {
+	if reader.offset >= reader.size {
+		return 0, io.EOF
+	}
+	if len(p) == 0 {
+		return 0, nil
+	}
+	length := int64(len(p))
+	if length > maxReadRange {
+		length = maxReadRange
+	}
+	if remaining := reader.size - reader.offset; length > remaining {
+		length = remaining
+	}
+	data, err := reader.lister.ReadRemoteFile(reader.version, reader.index, reader.offset, int(length))
+	if err != nil {
+		return 0, err
+	}
+	if len(data) == 0 {
+		return 0, io.ErrUnexpectedEOF
+	}
+	n := copy(p, data)
+	reader.offset += int64(n)
+	return n, nil
+}
+
+func (reader *remoteFileReader) Close() error { return nil }
 
 // desktopFilesOffered tells what was put on the remote clipboard, and what was left out.
 func (state *State) desktopFilesOffered(offer desktop.FileOffer) string {

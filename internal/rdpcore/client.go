@@ -295,6 +295,7 @@ type Client struct {
 	onClipboardImage         func(pngData []byte)
 	onClipboardFiles         func(files cliprdr.RemoteFiles, err error)
 	onClipboardFilesProgress func(cliprdr.RemoteFilesProgress)
+	onClipboardFileList      func(files []cliprdr.RemoteFile, version uint64, err error)
 
 	// Heartbeat: last time we received any data from server (unix nanos)
 	lastReceived atomic.Int64
@@ -1444,6 +1445,14 @@ func (c *Client) mcsConnect() error {
 			c.cbMu.RUnlock()
 			if fn != nil {
 				fn(progress)
+			}
+		})
+		c.clipHandler.OnRemoteFileList(func(files []cliprdr.RemoteFile, version uint64, err error) {
+			c.cbMu.RLock()
+			fn := c.onClipboardFileList
+			c.cbMu.RUnlock()
+			if fn != nil {
+				fn(files, version, err)
 			}
 		})
 		c.registerChannelHandler("cliprdr", func(_ uint16, data []byte) {
@@ -5661,6 +5670,18 @@ func (c *Client) OnClipboardFiles(fn func(files cliprdr.RemoteFiles, err error))
 	c.cbMu.Unlock()
 }
 
+// ClipboardFile is one entry of the file list the server's clipboard holds.
+type ClipboardFile = cliprdr.RemoteFile
+
+// OnClipboardFileList sets the callback invoked with the file list alone, for a
+// caller that reads its files on demand instead of downloading them (see
+// RequestClipboardFileList). It runs on a goroutine of its own.
+func (c *Client) OnClipboardFileList(fn func(files []ClipboardFile, version uint64, err error)) {
+	c.cbMu.Lock()
+	c.onClipboardFileList = fn
+	c.cbMu.Unlock()
+}
+
 // ClipboardFilesProgress is how far the files the server copied have been read
 // (see OnClipboardFilesProgress).
 type ClipboardFilesProgress = cliprdr.RemoteFilesProgress
@@ -5772,6 +5793,45 @@ func (c *Client) RequestClipboardFiles() error {
 		return ErrNotConnected
 	}
 	return c.clipHandler.RequestRemoteFiles()
+}
+
+// RequestClipboardFileList asks the server for its clipboard's file list alone.
+// The list arrives through OnClipboardFileList; its files are read with
+// ReadClipboardFile while the caller holds them, and ReleaseClipboardFileList
+// lets the server's data go.
+func (c *Client) RequestClipboardFileList() error {
+	if c.clipHandler == nil {
+		return ErrNotConnected
+	}
+	return c.clipHandler.RequestRemoteFileList()
+}
+
+// ReadClipboardFile reads up to length bytes at offset of the file at index of
+// the list the server's clipboard holds, blocking until it answers. A range
+// past the file's end yields nothing.
+func (c *Client) ReadClipboardFile(version uint64, index int, offset int64, length int) ([]byte, error) {
+	if c.clipHandler == nil {
+		return nil, ErrNotConnected
+	}
+	return c.clipHandler.ReadRemoteFileRange(version, index, offset, length)
+}
+
+// ReleaseClipboardFileList drops the server's on-demand file list and lets its
+// clipboard data go.
+func (c *Client) ReleaseClipboardFileList(version uint64) {
+	if c.clipHandler != nil {
+		c.clipHandler.ReleaseRemoteFileList(version)
+	}
+}
+
+// DownloadClipboardFiles reads the on-demand list the server's clipboard holds
+// into a staging directory instead, delivering it through OnClipboardFiles,
+// for a caller that decided not to read it on demand.
+func (c *Client) DownloadClipboardFiles(version uint64) error {
+	if c.clipHandler == nil {
+		return ErrNotConnected
+	}
+	return c.clipHandler.DownloadRemoteFiles(version)
 }
 
 // Done returns a channel that is closed when the connection ends,

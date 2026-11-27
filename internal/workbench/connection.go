@@ -357,6 +357,13 @@ type Options struct {
 	// SetClipboardFiles puts files on the system clipboard, as a file manager
 	// does after a copy. Nil uses app.SetClipboardFiles.
 	SetClipboardFiles func([]string) error
+	// SetClipboardFilePromises puts files on the system clipboard whose content
+	// is produced when the user pastes them, for a remote desktop's files that
+	// stay on the server until then. Nil uses app.SetClipboardFilePromises.
+	SetClipboardFilePromises func([]app.FilePromise, func()) error
+	// ClipboardFilePromises reports whether the system clipboard can hold
+	// promised files. Nil asks Viva for the capability.
+	ClipboardFilePromises func() bool
 	// ClipboardImagePNG reads an image from the system clipboard as PNG bytes.
 	// Nil uses app.ClipboardImagePNG.
 	ClipboardImagePNG func() ([]byte, error)
@@ -499,6 +506,12 @@ func (options Options) withDefaults() Options {
 	}
 	if options.SetClipboardFiles == nil {
 		options.SetClipboardFiles = app.SetClipboardFiles
+	}
+	if options.SetClipboardFilePromises == nil {
+		options.SetClipboardFilePromises = app.SetClipboardFilePromises
+	}
+	if options.ClipboardFilePromises == nil {
+		options.ClipboardFilePromises = func() bool { return app.Supports(app.CapabilityClipboardFilePromise) }
 	}
 	if options.Notify == nil {
 		options.Notify = app.SendNotification

@@ -264,6 +264,19 @@ type Handler struct {
 	downloadMu         sync.Mutex
 	downloadCancel     context.CancelFunc
 	downloadGeneration uint64
+	// The file list a caller reads on demand, for a local clipboard that
+	// promises it: the server's list, the lock that keeps its data readable,
+	// and the cancellation of a read in flight. lazyMu serializes the contents
+	// requests of those reads, as downloadMu does for a whole download.
+	lazyMu      sync.Mutex
+	lazyFiles   []RemoteFile
+	lazyClipID  uint32
+	lazyVersion uint64
+	lazyActive  bool
+	lazyCancel  context.CancelFunc
+	lazyContext context.Context
+	lazySerial  uint64
+	onFileList  func(files []RemoteFile, version uint64, err error)
 }
 
 // formatDataRequest is one CB_FORMAT_DATA_REQUEST whose response has not
@@ -274,6 +287,7 @@ type formatDataRequest struct {
 	id         uint64
 	format     uint32
 	files      bool
+	listOnly   bool   // the file list alone, read on demand, not its files
 	clipID     uint32 // the locked clipboard data the file list belongs to, 0 when unlocked
 	generation uint64
 	sent       time.Time
@@ -335,7 +349,7 @@ func (h *Handler) dropExpiredDataRequestsLocked(now time.Time) {
 // enqueueDataRequestLocked records a request before it is sent. It reports
 // false when too many requests are already outstanding; the caller then does
 // not send it rather than let a response land on the wrong request.
-func (h *Handler) enqueueDataRequestLocked(format uint32, files bool, clipID uint32) (formatDataRequest, bool) {
+func (h *Handler) enqueueDataRequestLocked(format uint32, files, listOnly bool, clipID uint32) (formatDataRequest, bool) {
 	now := time.Now()
 	h.dropExpiredDataRequestsLocked(now)
 	if len(h.pendingData) >= maxPendingDataRequests {
@@ -343,7 +357,7 @@ func (h *Handler) enqueueDataRequestLocked(format uint32, files bool, clipID uin
 	}
 	h.pendingNextID++
 	request := formatDataRequest{
-		id: h.pendingNextID, format: format, files: files,
+		id: h.pendingNextID, format: format, files: files, listOnly: listOnly,
 		clipID: clipID, generation: h.downloadGeneration, sent: now,
 	}
 	h.pendingData = append(h.pendingData, request)
@@ -396,6 +410,13 @@ func (h *Handler) SetEnabled(enabled bool) {
 		h.downloadGeneration++
 		cancel = h.downloadCancel
 		h.downloadCancel = nil
+		lazyCancel, lazyClipID := h.releaseLazyLocked()
+		if lazyCancel != nil {
+			defer lazyCancel()
+		}
+		if lazyClipID != 0 {
+			defer h.sendResponse(encodeLockClipData(CBUnlockClipData, lazyClipID))
+		}
 		unlock = h.takeRemoteLockLocked()
 		// Responses to requests sent while sharing was on are not this side's
 		// clipboard any more; re-enabling starts with a fresh format list.
@@ -464,8 +485,15 @@ func (h *Handler) Close() {
 	h.downloadGeneration++
 	cancel := h.downloadCancel
 	h.downloadCancel = nil
+	lazyCancel, lazyClipID := h.releaseLazyLocked()
 	unlock := h.takeRemoteLockLocked()
 	h.mu.Unlock()
+	if lazyCancel != nil {
+		lazyCancel()
+	}
+	if lazyClipID != 0 && lazyClipID != unlock {
+		h.sendResponse(encodeLockClipData(CBUnlockClipData, lazyClipID))
+	}
 	if cancel != nil {
 		cancel()
 	}
@@ -622,10 +650,17 @@ func (h *Handler) handleFormatList(payload []byte) {
 	// The server's clipboard changed: a file list being read is now stale.
 	cancel := h.downloadCancel
 	h.downloadGeneration++
+	lazyCancel, lazyClipID := h.releaseLazyLocked()
 	unlock := h.takeRemoteLockLocked()
 	h.mu.Unlock()
 	if cancel != nil {
 		cancel()
+	}
+	if lazyCancel != nil {
+		lazyCancel()
+	}
+	if lazyClipID != 0 && lazyClipID != unlock {
+		h.sendResponse(encodeLockClipData(CBUnlockClipData, lazyClipID))
 	}
 	if unlock != 0 {
 		// The list this side locked may still be read from, but the remote
@@ -744,7 +779,11 @@ func (h *Handler) handleFormatDataResponse(flags uint16, payload []byte) {
 		h.log.LogAttrs(context.Background(), slog.LevelWarn, "server returned format data error")
 		if request.files {
 			h.releaseRemoteLockIfIdle(request.clipID)
-			h.finishRemoteFiles(request.generation, RemoteFiles{}, errFileListRefused)
+			if request.listOnly {
+				h.finishRemoteFileList(errFileListRefused)
+			} else {
+				h.finishRemoteFiles(request.generation, RemoteFiles{}, errFileListRefused)
+			}
 		}
 		return
 	}
@@ -759,7 +798,15 @@ func (h *Handler) handleFormatDataResponse(flags uint16, payload []byte) {
 		if err != nil {
 			h.log.LogAttrs(context.Background(), slog.LevelWarn, "server file list refused", slog.Any("error", err))
 			h.releaseRemoteLockIfIdle(request.clipID)
-			h.finishRemoteFiles(request.generation, RemoteFiles{}, err)
+			if request.listOnly {
+				h.finishRemoteFileList(err)
+			} else {
+				h.finishRemoteFiles(request.generation, RemoteFiles{}, err)
+			}
+			return
+		}
+		if request.listOnly {
+			h.startRemoteFileList(files, request.generation, request.clipID)
 			return
 		}
 		h.startRemoteFiles(files, request.generation, request.clipID)
@@ -829,7 +876,7 @@ func (h *Handler) RequestRemoteText() error {
 		h.mu.Unlock()
 		return nil
 	}
-	request, queued := h.enqueueDataRequestLocked(CFUnicodeText, false, 0)
+	request, queued := h.enqueueDataRequestLocked(CFUnicodeText, false, false, 0)
 	h.mu.Unlock()
 	if !queued {
 		return nil
@@ -852,7 +899,7 @@ func (h *Handler) RequestRemoteImage() error {
 		h.mu.Unlock()
 		return nil
 	}
-	request, queued := h.enqueueDataRequestLocked(CFDIB, false, 0)
+	request, queued := h.enqueueDataRequestLocked(CFDIB, false, false, 0)
 	h.mu.Unlock()
 	if !queued {
 		return nil

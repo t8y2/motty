@@ -151,6 +151,12 @@ func fileDesktopState(t *testing.T, remote desktop.Session, clipboard bool, opti
 	if options.SetClipboardFiles != nil {
 		state.options.SetClipboardFiles = options.SetClipboardFiles
 	}
+	if options.SetClipboardFilePromises != nil {
+		state.options.SetClipboardFilePromises = options.SetClipboardFilePromises
+	}
+	if options.ClipboardFilePromises != nil {
+		state.options.ClipboardFilePromises = options.ClipboardFilePromises
+	}
 	state.connectionReconnect = reconnectOff
 	state.dialDesktop = func(ctx context.Context, request desktopRequest) (desktop.Session, error) {
 		return remote, nil
@@ -627,5 +633,248 @@ func TestAFailedRemoteFileCopyIsShown(t *testing.T) {
 	state.pumpDesktop(session)
 	if !strings.Contains(state.status, "read failed") {
 		t.Fatalf("status = %q", state.status)
+	}
+}
+
+// promisingDesktop is a desktop whose protocol leaves the remote clipboard's
+// files on the server until a paste reads them: it hands out a list, reads
+// ranges as they are asked for, and records what happened to the list.
+type promisingDesktop struct {
+	*fileDesktop
+	mu        sync.Mutex
+	list      desktop.ClipboardFileList
+	hasList   bool
+	data      map[int][]byte
+	reads     []promiseRead
+	released  []uint64
+	downloads []uint64
+}
+
+type promiseRead struct {
+	version uint64
+	index   int
+	offset  int64
+	length  int
+}
+
+func newPromisingDesktop() *promisingDesktop {
+	return &promisingDesktop{fileDesktop: newFileDesktop()}
+}
+
+func (s *promisingDesktop) RemoteFileList() (desktop.ClipboardFileList, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.hasList {
+		return desktop.ClipboardFileList{}, false
+	}
+	list := s.list
+	s.hasList = false
+	return list, true
+}
+
+func (s *promisingDesktop) ReadRemoteFile(version uint64, index int, offset int64, length int) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reads = append(s.reads, promiseRead{version: version, index: index, offset: offset, length: length})
+	body := s.data[index]
+	if offset >= int64(len(body)) {
+		return nil, nil
+	}
+	end := offset + int64(length)
+	if end > int64(len(body)) {
+		end = int64(len(body))
+	}
+	return append([]byte(nil), body[offset:end]...), nil
+}
+
+func (s *promisingDesktop) ReleaseRemoteFileList(version uint64) {
+	s.mu.Lock()
+	s.released = append(s.released, version)
+	s.mu.Unlock()
+}
+
+func (s *promisingDesktop) DownloadRemoteFileList(version uint64) error {
+	s.mu.Lock()
+	s.downloads = append(s.downloads, version)
+	s.mu.Unlock()
+	return nil
+}
+
+func (s *promisingDesktop) promisedReads() []promiseRead {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]promiseRead(nil), s.reads...)
+}
+
+func (s *promisingDesktop) releasedVersions() []uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]uint64(nil), s.released...)
+}
+
+func (s *promisingDesktop) downloadedVersions() []uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]uint64(nil), s.downloads...)
+}
+
+// TestRemoteFilesArePromisedAndReadWhenPasted is the point of the deferred
+// transfer: the remote's list goes on the local clipboard as a promise, no file
+// is downloaded, and reading a promised file goes back to the server.
+func TestRemoteFilesArePromisedAndReadWhenPasted(t *testing.T) {
+	remote := newPromisingDesktop()
+	remote.list = desktop.ClipboardFileList{Version: 7, Files: []desktop.FileListing{
+		{Name: "big.bin", Size: 10},
+		{Name: "folder", Dir: true},
+		{Name: `folder\inner.txt`, Size: 3},
+	}}
+	remote.data = map[int][]byte{0: []byte("0123456789"), 2: []byte("abc")}
+	remote.hasList = true
+	var promises []app.FilePromise
+	var released func()
+	var put [][]string
+	state, session := fileDesktopState(t, remote, true, Options{
+		ClipboardFilePromises: func() bool { return true },
+		SetClipboardFilePromises: func(files []app.FilePromise, onReleased func()) error {
+			promises, released = files, onReleased
+			return nil
+		},
+		SetClipboardFiles: func(paths []string) error {
+			put = append(put, paths)
+			return nil
+		},
+	})
+	state.pumpDesktop(session)
+	if len(promises) != 2 || promises[0].Name != "big.bin" || !promises[1].Directory {
+		t.Fatalf("promised %+v", promises)
+	}
+	if len(put) != 0 {
+		t.Fatalf("the files were downloaded to %v", put)
+	}
+	if len(remote.promisedReads()) != 0 {
+		t.Fatalf("a file was read before a paste: %+v", remote.promisedReads())
+	}
+
+	reader, err := promises[0].Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := make([]byte, 4)
+	n, err := reader.Read(body)
+	if err != nil || string(body[:n]) != "0123" {
+		t.Fatalf("the promised file reads %q, %v", body[:n], err)
+	}
+	reader.Close()
+	reads := remote.promisedReads()
+	if len(reads) != 1 || reads[0].version != 7 || reads[0].index != 0 || reads[0].offset != 0 {
+		t.Fatalf("the read asked for %+v", reads)
+	}
+	// The clipboard no longer holds the promise: the server's data is let go.
+	released()
+	state.pumpDesktop(session)
+	if got := remote.releasedVersions(); len(got) != 1 || got[0] != 7 {
+		t.Fatalf("released %v, want the list's version", got)
+	}
+}
+
+// TestAPromiseThePlatformRefusesIsDownloaded keeps the files reachable when the
+// clipboard cannot describe the tree: the list is read into a staging directory
+// as before.
+func TestAPromiseThePlatformRefusesIsDownloaded(t *testing.T) {
+	remote := newPromisingDesktop()
+	remote.list = desktop.ClipboardFileList{Version: 3, Files: []desktop.FileListing{{Name: "a.txt", Size: 3}}}
+	remote.hasList = true
+	paths := copiedFiles(t, "a.txt")
+	remote.received = append(remote.received, desktop.ReceivedFiles{Paths: paths, Files: 1, Bytes: 3})
+	var put [][]string
+	state, session := fileDesktopState(t, remote, true, Options{
+		ClipboardFilePromises: func() bool { return true },
+		SetClipboardFilePromises: func([]app.FilePromise, func()) error {
+			return errors.New("the shell cannot take this tree")
+		},
+		SetClipboardFiles: func(got []string) error {
+			put = append(put, got)
+			return nil
+		},
+	})
+	state.pumpDesktop(session)
+	if got := remote.downloadedVersions(); len(got) != 1 || got[0] != 3 {
+		t.Fatalf("downloaded %v, want the list's version", got)
+	}
+	state.pumpDesktop(session)
+	if len(put) != 1 || !slices.Equal(put[0], paths) {
+		t.Fatalf("put %q, want the downloaded files", put)
+	}
+}
+
+// TestAReplacedPromiseIsNotReleasedForTheNewList keeps the release of an old
+// promise, which the platform can report while a newer one is installed, from
+// freeing the data the newer list still reads.
+func TestAReplacedPromiseIsNotReleasedForTheNewList(t *testing.T) {
+	remote := newPromisingDesktop()
+	remote.list = desktop.ClipboardFileList{Version: 4, Files: []desktop.FileListing{{Name: "a.txt", Size: 1}}}
+	remote.hasList = true
+	var previous func()
+	state, session := fileDesktopState(t, remote, true, Options{
+		ClipboardFilePromises: func() bool { return true },
+		SetClipboardFilePromises: func(files []app.FilePromise, released func()) error {
+			if previous != nil {
+				// The platform replaces the old promise: it reports that one released.
+				previous()
+			}
+			previous = released
+			return nil
+		},
+	})
+	state.pumpDesktop(session)
+
+	// A second list is promised; installing it releases the first promise.
+	remote.mu.Lock()
+	remote.list = desktop.ClipboardFileList{Version: 5, Files: []desktop.FileListing{{Name: "b.txt", Size: 1}}}
+	remote.hasList = true
+	remote.mu.Unlock()
+	state.pumpDesktop(session)
+	state.pumpDesktop(session)
+	if got := remote.releasedVersions(); len(got) != 0 {
+		t.Fatalf("the new list was released by the old promise: %v", got)
+	}
+}
+
+// TestADescriptorTreeTheClipboardCannotTakeIsRefused checks the promise builder
+// against names that are not one path component per level and against a list
+// larger than the clipboard takes; the caller then downloads the files.
+func TestADescriptorTreeTheClipboardCannotTakeIsRefused(t *testing.T) {
+	remote := newPromisingDesktop()
+	cases := map[string][]desktop.FileListing{
+		"escape":     {{Name: `..\escape.txt`, Size: 1}},
+		"absolute":   {{Name: `\windows\system32\cmd.exe`, Size: 1}},
+		"empty part": {{Name: `folder\\file.txt`, Size: 1}},
+		"both":       {{Name: "a", Size: 1}, {Name: "a", Dir: true}},
+		"twice":      {{Name: "a", Size: 1}, {Name: "a", Size: 2}},
+		"file child": {{Name: "a", Size: 1}, {Name: `a\b`, Size: 1}},
+	}
+	for name, entries := range cases {
+		if _, err := desktopFilePromises(remote, 1, entries); err == nil {
+			t.Errorf("%s: the tree was accepted", name)
+		}
+	}
+	many := make([]desktop.FileListing, app.MaxDragFiles+1)
+	for index := range many {
+		many[index] = desktop.FileListing{Name: strings.Repeat("x", 8), Size: 0}
+	}
+	if _, err := desktopFilePromises(remote, 1, many); err == nil {
+		t.Error("a list larger than the clipboard takes was accepted")
+	}
+	// A folder that comes after its children still builds the tree.
+	promises, err := desktopFilePromises(remote, 1, []desktop.FileListing{
+		{Name: `folder\inner.txt`, Size: 3},
+		{Name: "folder", Dir: true},
+	})
+	if err != nil || len(promises) != 1 || !promises[0].Directory {
+		t.Fatalf("the nested tree is %+v, %v", promises, err)
+	}
+	kids, err := promises[0].List()
+	if err != nil || len(kids) != 1 || kids[0].Name != "inner.txt" {
+		t.Fatalf("the folder's children are %+v, %v", kids, err)
 	}
 }

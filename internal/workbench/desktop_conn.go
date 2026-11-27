@@ -77,6 +77,10 @@ type desktopRequest struct {
 	// desktop.Options.VerifyCertificate.
 	Verify          func(address string, der []byte) error
 	VerifyServerKey func(address string, publicKeyDER []byte) error
+	// FilePromises lets an RDP session leave the remote clipboard's files on
+	// the server until this computer pastes the promise; see
+	// desktop.Options.DeferClipboardFiles.
+	FilePromises bool
 }
 
 // openDesktopSession is the production opener.
@@ -113,6 +117,7 @@ func openDesktopSession(ctx context.Context, request desktopRequest) (desktop.Se
 		options.LegacyTLS = host.LegacyTLS
 		effects := host.desktopEffects()
 		options.Effects = &effects
+		options.DeferClipboardFiles = request.FilePromises
 		options.Width, options.Height, options.Scale = request.Width, request.Height, request.Scale
 		if request.Verify != nil {
 			typedAddress := net.JoinHostPort(host.Address, strconv.Itoa(int(host.Port)))
@@ -685,6 +690,7 @@ func (state *State) newDesktopConn(session *Session, host Host) *desktopConn {
 		certs = pins.New(filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile))
 	}
 	conn := newDesktopConn(host, notify, open, state.connectionTimeout, state.proxyForHost(host), certs)
+	conn.request.FilePromises = state.clipboardFilePromises()
 	if state.options.KnownHostsPath != "" {
 		conn.identityFile = filepath.Join(filepath.Dir(state.options.KnownHostsPath), rdpCertificatesFile)
 	}
