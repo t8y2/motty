@@ -620,6 +620,7 @@ var EnglishMessages = Messages{
 	ColorPickerApply:                     "OK",
 	ColorPickerInvalid:                   "Enter a valid hex color",
 	ColorNone:                            "No color",
+	ColorRandom:                          "Random color",
 	ColorGreen:                           "Green",
 	ColorYellow:                          "Yellow",
 	ColorOrange:                          "Orange",
