@@ -275,10 +275,10 @@ func TestHeadlessCatalogDropsTheScreenAndStopsPromisingATerminal(t *testing.T) {
 		}
 		return names
 	}
-	if got, want := names(false), []string{NameListSessions, NameListHosts, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
+	if got, want := names(false), []string{NameListSessions, NameListHosts, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus, NameHostResources, NameHostActivity}; !slices.Equal(got, want) {
 		t.Errorf("read-only headless tools %v, want %v", got, want)
 	}
-	if got, want := names(true), []string{NameListSessions, NameListHosts, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus}; !slices.Equal(got, want) {
+	if got, want := names(true), []string{NameListSessions, NameListHosts, NameTerminalExec, NameTerminalStart, NameTerminalPoll, NameTerminalStop, NameTerminalExecMany, NameSFTPList, NameSFTPRead, NameSFTPStat, NameSFTPChecksum, NameTransferStatus, NameHostResources, NameHostActivity}; !slices.Equal(got, want) {
 		t.Errorf("headless tools with commands %v, want %v", got, want)
 	}
 	if _, ok := Lookup(NameTerminalRead); !ok {
@@ -290,8 +290,8 @@ func TestHeadlessFullAccessAddsFileChangesWithoutInventingATerminal(t *testing.T
 	full := Headless(HeadlessOptions{Commands: true, WriteFiles: true})
 	// Dropped from the window catalog: terminal_read, tool_output_read and the
 	// three rz/sz tools. The job tools stay: they run on exec channels of their
-	// own. Three host metadata tools are added.
-	if len(full) != len(All())-5+3 {
+	// own. Three host metadata tools and the two host status tools are added.
+	if len(full) != len(All())-5+3+2 {
 		t.Fatal("full access did not expose every tool that works without a terminal")
 	}
 	var writes int

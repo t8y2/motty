@@ -140,7 +140,7 @@ claude mcp add motty-hosts -- /path/to/motty mcp-serve
 
 | | |
 | --- | --- |
-| 工具 | 根据权限提供 `list_sessions`（你开放的主机）、`terminal_exec`、`terminal_exec_many`、`sftp_list`、`sftp_read`、`note_query`；“全部允许”另外提供 `sftp_write`、`sftp_remove` 和 `note_edit`。没有可读的终端屏幕。 |
+| 工具 | 根据权限提供 `list_sessions`（你开放的主机）、`host_resources`、`host_activity`、`terminal_exec`、`terminal_exec_many`、`sftp_list`、`sftp_read`、`note_query`；“全部允许”另外提供 `sftp_write`、`sftp_remove` 和 `note_edit`。没有可读的终端屏幕。 |
 | 命令 | 通过 SSH exec 通道运行：没有终端，两次调用之间不保留任何状态。 |
 | 只读 | 默认。选 **可运行命令** 后，代理可以运行评为低风险的命令。需要你批准的操作会被拒绝，因为没有人可以询问。 |
 | 全部允许 | 先完成风险确认，才会保存并选中。在已授权主机上直接执行任意风险命令、写入或删除文件，不再请求审批。权限与 HTTP 分别设置，客户端下次启动服务时生效。 |
@@ -193,6 +193,21 @@ claude mcp add motty-hosts -- /path/to/motty mcp-serve
 读取普通文件时拒绝最后一级符号链接；UTF-8 模式会替换无效字节，使用 `encoding: "base64"`
 可保留任意字节。偏移按原始字节计数，不按字符计数。`tail` 不能与非零 `offset` 一起使用。
 校验期间发现大小或修改时间变化会报错；这不等于对持续变化的文件提供原子快照。
+
+### 独立服务：主机资源与近期操作
+
+`host_resources` 和 `host_activity` 是只读工具，只读和“可运行命令”下都提供，不需要
+先开放命令权限。
+
+| 工具 | 说明 |
+| --- | --- |
+| `host_resources` | 传入一台或几台（最多 8 台）已授权主机的 `sessions`，只有一台可用时可省略。并行按需取一次 CPU、内存和各挂载点的磁盘占用，沿用监控面板的采样命令；每台返回 `collected_at`。某台连不上时只在该台返回 `error`，其余照常返回；全部失败才算错误。CPU 是短时间窗口内的读数，tmpfs 等虚拟文件系统不列出。 |
+| `host_activity` | 按当前已授权的主机列出最近的调用，新的在前：时间、主机、工具、简短说明、记录的结果（`ok`、`failed`、`refused`）。可用 `session` 限定一台主机，`limit` 默认 20、最多 100。 |
+
+`host_activity` 读的就是设置 > MCP 里的活动日志，不含输出内容，也不含笔记调用。摘要里
+形如 `--password`、`token=`、URL 中的口令等凭据会被遮盖；已不再对代理开放的主机，其记录
+不会返回。上传或下载会各有“已排队”（`transfer_queued`）和“已结束”（`transfer_finished`，
+摘要末尾带最终状态）两条记录，只有后者说明传输是否完成。
 
 ### 授权本机传输目录
 

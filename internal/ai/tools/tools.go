@@ -358,6 +358,7 @@ func Headless(options HeadlessOptions) []Spec {
 		}
 		out = append(out, spec)
 	}
+	out = append(out, hostStatusSpecs...)
 	if options.Notes {
 		out = append(out, ExternalNotes(options.NoteWrites)...)
 	}
@@ -394,6 +395,11 @@ func Lookup(name string) (Spec, bool) {
 		}
 	}
 	for _, spec := range hostFileSpecs {
+		if spec.Name == name {
+			return spec, true
+		}
+	}
+	for _, spec := range hostStatusSpecs {
 		if spec.Name == name {
 			return spec, true
 		}

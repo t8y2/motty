@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -65,6 +66,10 @@ func (s *Store) Audit(limit int) ([]AuditEntry, error) {
 		return nil, wrapDB(err)
 	}
 	defer rows.Close()
+	return scanAudit(rows)
+}
+
+func scanAudit(rows *sql.Rows) ([]AuditEntry, error) {
 	var entries []AuditEntry
 	for rows.Next() {
 		var entry AuditEntry
@@ -76,6 +81,34 @@ func (s *Store) Audit(limit int) ([]AuditEntry, error) {
 		entries = append(entries, entry)
 	}
 	return entries, wrapDB(rows.Err())
+}
+
+// AuditForHosts returns the most recent entries that concern at least one of
+// the given hosts, newest first. A call on several hosts keeps their ids in one
+// comma-separated column, so each id is matched as a whole element: ids contain
+// characters that LIKE treats as wildcards. No hosts means no entries.
+func (s *Store) AuditForHosts(hostIDs []string, limit int) ([]AuditEntry, error) {
+	if len(hostIDs) == 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = DefaultListLimit
+	}
+	limit = min(limit, MaxListLimit)
+	conditions := make([]string, len(hostIDs))
+	args := make([]any, 0, len(hostIDs)+1)
+	for index, id := range hostIDs {
+		conditions[index] = `instr(',' || host_id || ',', ',' || ? || ',') > 0`
+		args = append(args, id)
+	}
+	args = append(args, limit)
+	rows, err := s.db.Query(`SELECT id, at, host_id, host_label, tool, summary, outcome FROM agent_audit WHERE `+
+		strings.Join(conditions, ` OR `)+` ORDER BY at DESC, id DESC LIMIT ?`, args...)
+	if err != nil {
+		return nil, wrapDB(err)
+	}
+	defer rows.Close()
+	return scanAudit(rows)
 }
 
 // PruneAudit deletes the entries older than before and says how many went.

@@ -108,6 +108,9 @@ func structured(value any, text string) Result {
 }
 
 func (g Gate) runHostTool(ctx context.Context, name string, raw []byte) (Result, bool) {
+	if name == tools.NameHostResources || name == tools.NameHostActivity {
+		return g.runHostStatusTool(ctx, name, raw)
+	}
 	if name == tools.NameUploadSelected {
 		backend, ok := g.Backend.(SelectedUploader)
 		if !ok || g.Target == nil {

@@ -815,6 +815,9 @@ func TestServeAgentMCPOffersReadingUntilTheUserAllowsCommands(t *testing.T) {
 	if strings.Contains(replies[2], `"name":"terminal_exec"`) || strings.Contains(replies[2], `"name":"terminal_read"`) || strings.Contains(replies[2], `"name":"sftp_write"`) || !strings.Contains(replies[2], `"name":"sftp_list"`) {
 		t.Errorf("the read-only catalog = %s", replies[2])
 	}
+	if !strings.Contains(replies[2], `"name":"host_resources"`) || !strings.Contains(replies[2], `"name":"host_activity"`) {
+		t.Errorf("the read-only catalog lacks the host status tools: %s", replies[2])
+	}
 	if !strings.Contains(replies[3], "host_web") || !strings.Contains(replies[3], "ops@127.0.0.1") {
 		t.Errorf("list_sessions = %s", replies[3])
 	}

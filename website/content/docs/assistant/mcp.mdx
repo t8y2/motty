@@ -168,7 +168,7 @@ host that syncs in from another device starts closed.
 
 | | |
 | --- | --- |
-| Tools | Depending on the access level: `list_sessions` (authorized saved hosts), `terminal_exec`, `terminal_exec_many`, `sftp_list`, `sftp_read`, `note_query`. Allow all also offers `sftp_write`, `sftp_remove` and `note_edit`. There is no terminal screen to read. |
+| Tools | Depending on the access level: `list_sessions` (authorized saved hosts), `host_resources`, `host_activity`, `terminal_exec`, `terminal_exec_many`, `sftp_list`, `sftp_read`, `note_query`. Allow all also offers `sftp_write`, `sftp_remove` and `note_edit`. There is no terminal screen to read. |
 | Commands | Run through an SSH exec channel: no terminal, and nothing carries over from one call to the next. |
 | Read only | The default. **Commands** lets agents run commands rated low risk. Anything that would need your approval is refused, because nobody is there to ask. |
 | Allow all | Saved and selected only after risk confirmation. Runs commands of any risk level and writes or deletes files on authorized hosts without approval. Configured separately from HTTP; applies the next time the client starts the service. |
@@ -235,6 +235,22 @@ and checksums reject final-component symlinks. UTF-8 reads replace invalid byte
 sequences; base64 preserves bytes, and offsets always count source bytes.
 Do not combine tail with a nonzero offset. Checksumming rejects observed size or
 modification-time changes, but does not promise an atomic snapshot of a live file.
+
+### Independent service: host resources and recent activity
+
+`host_resources` and `host_activity` are read-only tools, offered in Read only
+and **Commands** alike; neither needs command access.
+
+| Tool | Behavior |
+| --- | --- |
+| `host_resources` | Pass `sessions`, one to eight authorized hosts (optional when only one is available). Takes one on-demand reading of CPU, memory and per-mount disk use, in parallel, with the monitor panel's own sampling commands; each host returns `collected_at`. A host that cannot be reached returns its own `error` while the others return normally; the call is an error only when every host failed. CPU is measured over a short interval; virtual filesystems such as tmpfs are left out. |
+| `host_activity` | The latest calls on the hosts open to agents now, newest first: time, host, tool, a short summary and the recorded outcome (`ok`, `failed`, `refused`). `session` narrows it to one host; `limit` defaults to 20, at most 100. |
+
+`host_activity` reads the same activity log as Settings > MCP: no output, and no
+note calls. Credentials in a summary (`--password`, `token=`, a password in a URL)
+are masked, and the history of a host no longer open to agents is not returned. A
+transfer leaves two entries, `transfer_queued` and `transfer_finished` (its summary
+ends with the final state); only the second says whether it completed.
 
 ### Authorizing local transfer directories
 

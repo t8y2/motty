@@ -54,6 +54,7 @@ func TestHeadlessSchemasMatchTheirExtendedArguments(t *testing.T) {
 		NameSFTPList: FileListArgs{}, NameSFTPRead: FileReadArgs{}, NameSFTPWrite: SFTPWriteArgs{}, NameSFTPRemove: SFTPRemoveArgs{},
 		NameSFTPStat: SFTPListArgs{}, NameSFTPChecksum: FileChecksumArgs{}, NameSFTPUpload: TransferArgs{}, NameSFTPDownload: TransferArgs{},
 		NameTransferStatus: TransferQuery{}, NameTransferCancel: TransferQuery{},
+		NameHostResources: HostResourcesArgs{}, NameHostActivity: HostActivityArgs{},
 	}
 	for _, spec := range Headless(HeadlessOptions{Commands: true, WriteFiles: true, LocalFiles: true}) {
 		var schema struct {
@@ -97,5 +98,55 @@ func TestTransfersRequireBothFullAccessAndLocalFileAuthorization(t *testing.T) {
 		if spec.Name == NameSFTPUpload || spec.Name == NameSFTPDownload {
 			t.Fatal("local file access leaked into the HTTP/in-app catalog")
 		}
+	}
+}
+
+func TestHostStatusToolsAreReadOnlyAndInEveryHeadlessCatalog(t *testing.T) {
+	for _, commands := range []bool{false, true} {
+		offered := map[string]Spec{}
+		for _, spec := range Headless(HeadlessOptions{Commands: commands}) {
+			offered[spec.Name] = spec
+		}
+		for _, name := range []string{NameHostResources, NameHostActivity} {
+			spec, ok := offered[name]
+			if !ok || spec.Kind != Read {
+				t.Fatalf("commands=%v: %s must be offered as a read tool, got %+v", commands, name, spec)
+			}
+		}
+	}
+	for _, spec := range All() {
+		if spec.Name == NameHostResources || spec.Name == NameHostActivity {
+			t.Fatalf("%s leaked into the in-app and HTTP catalog", spec.Name)
+		}
+	}
+}
+
+func TestDecodeHostStatusArguments(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		raw    string
+		decode func([]byte) error
+		valid  bool
+	}{
+		{"one host", `{"sessions":["h1"]}`, func(raw []byte) error { _, err := DecodeHostResources(raw); return err }, true},
+		{"default host", `{}`, func(raw []byte) error { _, err := DecodeHostResources(raw); return err }, true},
+		{"empty list is the default host", `{"sessions":[]}`, func(raw []byte) error { _, err := DecodeHostResources(raw); return err }, true},
+		{"empty id", `{"sessions":[""]}`, func(raw []byte) error { _, err := DecodeHostResources(raw); return err }, false},
+		{"duplicate", `{"sessions":["h1","h1"]}`, func(raw []byte) error { _, err := DecodeHostResources(raw); return err }, false},
+		{"too many", `{"sessions":["1","2","3","4","5","6","7","8","9"]}`, func(raw []byte) error { _, err := DecodeHostResources(raw); return err }, false},
+		{"unknown field", `{"command":"df"}`, func(raw []byte) error { _, err := DecodeHostResources(raw); return err }, false},
+		{"activity default", `{}`, func(raw []byte) error { _, err := DecodeHostActivity(raw); return err }, true},
+		{"activity limit", `{"session":"h1","limit":100}`, func(raw []byte) error { _, err := DecodeHostActivity(raw); return err }, true},
+		{"activity zero limit", `{"limit":0}`, func(raw []byte) error { _, err := DecodeHostActivity(raw); return err }, false},
+		{"activity over limit", `{"limit":101}`, func(raw []byte) error { _, err := DecodeHostActivity(raw); return err }, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.decode([]byte(test.raw)); (err == nil) != test.valid {
+				t.Fatalf("valid=%v error=%v", test.valid, err)
+			}
+		})
+	}
+	if args, err := DecodeHostActivity([]byte(`{}`)); err != nil || args.Limit != DefaultActivityLimit {
+		t.Fatalf("default activity page = %+v, %v", args, err)
 	}
 }

@@ -774,3 +774,33 @@ func TestModelReasoningPersistenceAndRetention(t *testing.T) {
 		t.Fatalf("expected retained reasoning after SaveModels, got %+v", models)
 	}
 }
+
+func TestAuditForHostsMatchesWholeIDsNewestFirst(t *testing.T) {
+	s, _ := openTemp(t)
+	now := time.Now()
+	for index, entry := range []AuditEntry{
+		{HostID: "host_a", Tool: "terminal_exec", Summary: "one"},
+		{HostID: "hostXa", Tool: "terminal_exec", Summary: "looks like host_a to a wildcard"},
+		{HostID: "host_b,host_a", Tool: "terminal_exec_many", Summary: "two"},
+		{HostID: "host_ab", Tool: "terminal_exec", Summary: "a longer id that contains host_a"},
+		{Tool: "note_query", HostLabel: "notes", Summary: "list"},
+	} {
+		entry.At, entry.Outcome = now.Add(time.Duration(index)*time.Second), AuditOK
+		if err := s.RecordAudit(entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, err := s.AuditForHosts([]string{"host_a"}, 10)
+	if err != nil || len(entries) != 2 || entries[0].Summary != "two" || entries[1].Summary != "one" {
+		t.Fatalf("host_a entries = %+v, %v", entries, err)
+	}
+	if entries, _ := s.AuditForHosts([]string{"host_a"}, 1); len(entries) != 1 || entries[0].Summary != "two" {
+		t.Fatalf("limit not applied: %+v", entries)
+	}
+	if entries, _ := s.AuditForHosts([]string{"host_b", "host_ab"}, 10); len(entries) != 2 {
+		t.Fatalf("several hosts = %+v", entries)
+	}
+	if entries, err := s.AuditForHosts(nil, 10); err != nil || len(entries) != 0 {
+		t.Fatalf("no hosts must mean no entries: %+v, %v", entries, err)
+	}
+}
