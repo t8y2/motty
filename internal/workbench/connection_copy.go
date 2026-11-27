@@ -1,15 +1,52 @@
 package workbench
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
+
+// copyInfoHits is the place of the confirmation dialog controls for copying
+// credentials onto the system clipboard.
+var copyInfoHits = tree.Feature("copy-info")
+
+var (
+	hitCopyCredentialConfirmDismiss = tree.ID(copyInfoHits, "copy-credential-confirm-dismiss")
+	hitCopyCredentialConfirmClose   = tree.ID(copyInfoHits, "copy-credential-confirm-close")
+	hitCopyCredentialConfirmCancel  = tree.ID(copyInfoHits, "copy-credential-confirm-cancel")
+	hitCopyCredentialConfirmOK      = tree.ID(copyInfoHits, "copy-credential-confirm-ok")
+)
+
+// defaultSecretClipboardTTL is how long a copied credential remains on the
+// system clipboard before Motty clears it (provided nothing else replaced it).
+const defaultSecretClipboardTTL = 30 * time.Second
+
+// copyCredentialConfirm remembers the pending credential copy while the
+// confirmation dialog is open. No vault or keystore read happens until the user
+// explicitly confirms.
+type copyCredentialConfirm struct {
+	host        Host
+	includeInfo bool
+}
+
+// secretClipboardState tracks the active auto-clear timer for a credential that
+// Motty placed on the system clipboard. Only the SHA-256 digest of the copied
+// text is kept in memory so plaintext secrets do not linger in State.
+type secretClipboardState struct {
+	timer  *time.Timer
+	serial uint64
+	digest [32]byte
+	active bool
+}
 
 // connectionAddressAndPort is the endpoint text the copy actions place on the
 // clipboard. Portless connections, including local, WSL and serial hosts, have
@@ -70,38 +107,6 @@ func (state *State) hostPasswordSecretNameForCopy(host Host) (string, bool) {
 	return hostPasswordSecretName(host)
 }
 
-// copyInfoPasswordProbe caches one password-availability lookup while a single
-// tab or host context menu stays open, so repainting an open submenu does not
-// re-decrypt records or re-trigger an OS keystore prompt on every frame.
-type copyInfoPasswordProbe struct {
-	name      string
-	checked   bool
-	available bool
-}
-
-// hostPasswordAvailable reports whether host has a saved password that can be
-// copied (or a legacy master-password vault that must be unlocked first).
-func (state *State) hostPasswordAvailable(host Host) bool {
-	name, ok := state.hostPasswordSecretNameForCopy(host)
-	if !ok {
-		return false
-	}
-	vaultFile := state.secrets.vault
-	if vaultFile == nil || vaultFile.Len() == 0 {
-		return false
-	}
-	if vaultFile.NeedsConversion() {
-		return true
-	}
-	if state.copyInfoProbe.checked && state.copyInfoProbe.name == name {
-		return state.copyInfoProbe.available
-	}
-	value, found, err := vaultFile.Get(name)
-	available := err != nil || (found && value != "")
-	state.copyInfoProbe = copyInfoPasswordProbe{name: name, checked: true, available: available}
-	return available
-}
-
 // hostPrivateKeyForCopy returns the pinned SSH identity whose private key text
 // can be copied for host. Security keys hold no copyable private key material.
 func (state *State) hostPrivateKeyForCopy(host Host) (identityRecord, bool) {
@@ -119,13 +124,18 @@ func (state *State) hostPrivateKeyForCopy(host Host) (identityRecord, bool) {
 	return identity, true
 }
 
-// hostCredentialAvailable reports whether host has a copyable credential
-// (either a saved password or a copyable pinned SSH private key).
-func (state *State) hostCredentialAvailable(host Host) bool {
+// hostCredentialMayExist reports whether host can have a copyable credential
+// using only in-memory metadata and vault record count (vault.Len). It never
+// decrypts records or calls the OS keystore while painting or expanding menus.
+func (state *State) hostCredentialMayExist(host Host) bool {
 	if _, ok := state.hostPrivateKeyForCopy(host); ok {
 		return true
 	}
-	return state.hostPasswordAvailable(host)
+	if _, ok := state.hostPasswordSecretNameForCopy(host); !ok {
+		return false
+	}
+	vaultFile := state.secrets.vault
+	return vaultFile != nil && vaultFile.Len() > 0
 }
 
 func connectionProtocolName(host Host) string {
@@ -201,9 +211,10 @@ func (state *State) formatConnectionInfo(host Host, includeCredentials bool, cre
 }
 
 // resolveHostCredentialForCopy reads the host's copyable credential (private
-// key or saved password), opening the legacy vault unlock dialog when needed
-// and reporting read errors to the status line. retry runs after unlock.
-func (state *State) resolveHostCredentialForCopy(host Host, includePassphrase bool, retry func()) (resolvedCopyCredential, bool) {
+// key or saved password) strictly on explicit user confirmation, opening the
+// legacy vault unlock dialog when needed and reporting read errors via action
+// notice and status line. retry runs after unlock.
+func (state *State) resolveHostCredentialForCopy(host Host, includePassphrase bool, title string, retry func()) (resolvedCopyCredential, bool) {
 	if identity, ok := state.hostPrivateKeyForCopy(host); ok {
 		vaultFile := state.secrets.vault
 		needsVault := identity.Stored || (includePassphrase && vaultFile != nil && vaultFile.Len() > 0)
@@ -213,7 +224,7 @@ func (state *State) resolveHostCredentialForCopy(host Host, includePassphrase bo
 		}
 		data, err := state.identityKeyData(identity)
 		if err != nil {
-			state.status = err.Error()
+			state.showActionError(title, err.Error())
 			return resolvedCopyCredential{}, false
 		}
 		keyText := string(data)
@@ -241,7 +252,7 @@ func (state *State) resolveHostCredentialForCopy(host Host, includePassphrase bo
 	}
 	value, found, err := vaultFile.Get(name)
 	if err != nil {
-		state.status = state.vaultErrorText(err)
+		state.showActionError(title, state.vaultErrorText(err))
 		return resolvedCopyCredential{}, false
 	}
 	if !found {
@@ -250,34 +261,186 @@ func (state *State) resolveHostCredentialForCopy(host Host, includePassphrase bo
 	return resolvedCopyCredential{password: value}, true
 }
 
+// askCopyCredentialConfirm prompts the user before copying plaintext secrets
+// onto the system clipboard.
+func (state *State) askCopyCredentialConfirm(host Host, includeInfo bool) {
+	state.copyCredentialConfirm = copyCredentialConfirm{host: host, includeInfo: includeInfo}
+	state.modal = modalCopyCredentialConfirm
+}
+
+func (state *State) clickCopyCredentialConfirmDialog(id gfx.ID) {
+	switch id {
+	case hitCopyCredentialConfirmDismiss, hitCopyCredentialConfirmClose, hitCopyCredentialConfirmCancel:
+		state.modal = modalNone
+		state.copyCredentialConfirm = copyCredentialConfirm{}
+	case hitCopyCredentialConfirmOK:
+		pending := state.copyCredentialConfirm
+		state.modal = modalNone
+		state.copyCredentialConfirm = copyCredentialConfirm{}
+		if pending.includeInfo {
+			state.copyHostConnectionInfoWithCredentials(pending.host)
+			return
+		}
+		state.copyHostCredential(pending.host)
+	}
+}
+
+// copyCredentialConfirmKey makes Escape cancel and Enter on the confirm button
+// confirm.
+func (state *State) copyCredentialConfirmKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if state.modal != modalCopyCredentialConfirm || event.Repeat {
+		return gfx.EventResult{}, false
+	}
+	if event.Key == gfx.KeyEscape {
+		state.clickCopyCredentialConfirmDialog(hitCopyCredentialConfirmCancel)
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	if event.Key == gfx.KeyEnter && event.Target == hitCopyCredentialConfirmOK {
+		state.clickCopyCredentialConfirmDialog(hitCopyCredentialConfirmOK)
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
+	return gfx.EventResult{}, false
+}
+
+// declareCopyCredentialConfirmDialog warns that plaintext credentials will be
+// placed on the system clipboard and automatically cleared after a short TTL.
+func (state *State) declareCopyCredentialConfirmDialog(c ui.C) {
+	m := state.messages
+	pending := state.copyCredentialConfirm
+	title := m.CopyCredentialConfirmTitle
+	if pending.includeInfo {
+		title = m.CopyCredentialInfoConfirmTitle
+	}
+	target := strings.TrimSpace(pending.host.Label)
+	if target == "" {
+		target = strings.TrimSpace(pending.host.Address)
+	}
+	seconds := secretClipboardDisplaySeconds(state.secretClipboardClearAfter())
+	description := fmt.Sprintf(m.CopyCredentialConfirmDescriptionFmt, target, seconds)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), dialogViewport(c), 520, description, 0)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: title, Description: description, Width: 520, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitCopyCredentialConfirmDismiss, CloseID: hitCopyCredentialConfirmClose, InitialFocusID: hitCopyCredentialConfirmCancel,
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitCopyCredentialConfirmCancel, Label: m.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitCopyCredentialConfirmOK, Label: m.CopyCredentialConfirmAction, Variant: components.ButtonDestructive},
+		)
+	})
+}
+
 func (state *State) copyHostCredential(host Host) {
-	cred, ok := state.resolveHostCredentialForCopy(host, false, func() {
+	title := state.messages.CopyCredential
+	cred, ok := state.resolveHostCredentialForCopy(host, false, title, func() {
 		state.copyHostCredential(host)
 	})
 	if !ok {
 		return
 	}
 	if cred.privateKey != "" {
-		state.copyConnectionText(cred.privateKey)
+		state.copySecretClipboardText(title, cred.privateKey)
 		return
 	}
 	if cred.password != "" {
-		state.copyConnectionText(cred.password)
+		state.copySecretClipboardText(title, cred.password)
+		return
+	}
+	state.showActionInfo(title, state.messages.CopyCredentialMissing)
+}
+
+func (state *State) copyHostConnectionInfo(host Host) {
+	state.copyConnectionText(state.formatConnectionInfo(host, false, resolvedCopyCredential{}))
+}
+
+func (state *State) copyHostConnectionInfoWithCredentials(host Host) {
+	title := state.messages.CopyConnectionInfoWithCredentials
+	cred, ok := state.resolveHostCredentialForCopy(host, true, title, func() {
+		state.copyHostConnectionInfoWithCredentials(host)
+	})
+	if !ok {
+		return
+	}
+	if cred.privateKey == "" && cred.password == "" {
+		state.showActionInfo(title, state.messages.CopyCredentialMissing)
+		return
+	}
+	state.copySecretClipboardText(title, state.formatConnectionInfo(host, true, cred))
+}
+
+func (state *State) secretClipboardClearAfter() time.Duration {
+	if state.secretClipboardTTL > 0 {
+		return state.secretClipboardTTL
+	}
+	return defaultSecretClipboardTTL
+}
+
+func secretClipboardDisplaySeconds(d time.Duration) int {
+	seconds := int(math.Ceil(d.Seconds()))
+	if seconds < 1 {
+		return 1
+	}
+	return seconds
+}
+
+// copySecretClipboardText copies a sensitive value to the system clipboard and
+// arms a one-shot timer to clear the clipboard once the TTL expires (only if
+// the clipboard still holds the same content).
+func (state *State) copySecretClipboardText(title, value string) {
+	if value == "" || state.options.SetClipboardText == nil {
+		return
+	}
+	if err := state.options.SetClipboardText(value); err != nil {
+		state.showActionError(title, err.Error())
+		return
+	}
+	state.stopSecretClipboardClear()
+	ttl := state.secretClipboardClearAfter()
+	state.secretClipboard.serial++
+	serial := state.secretClipboard.serial
+	state.secretClipboard.digest = sha256.Sum256([]byte(value))
+	state.secretClipboard.active = true
+	state.secretClipboard.timer = time.AfterFunc(ttl, func() {
+		state.aiPost(func(s *State) {
+			s.clearSecretClipboardIfMatch(serial)
+		})
+	})
+	state.showActionInfo(title, fmt.Sprintf(state.messages.CopyCredentialCopiedAutoClearFmt, secretClipboardDisplaySeconds(ttl)))
+}
+
+// clearSecretClipboardIfMatch clears the system clipboard if this timer is
+// still current and the clipboard text still matches the copied secret's hash.
+func (state *State) clearSecretClipboardIfMatch(serial uint64) {
+	if !state.secretClipboard.active || state.secretClipboard.serial != serial {
+		return
+	}
+	digest := state.secretClipboard.digest
+	state.stopSecretClipboardClear()
+	if state.options.ClipboardText == nil || state.options.SetClipboardText == nil {
+		return
+	}
+	current, err := state.options.ClipboardText()
+	if err != nil {
+		return
+	}
+	currentDigest := sha256.Sum256([]byte(current))
+	if subtle.ConstantTimeCompare(currentDigest[:], digest[:]) != 1 {
+		return
+	}
+	if err := state.options.SetClipboardText(""); err == nil {
+		state.status = state.messages.CopyCredentialCleared
 	}
 }
 
-func (state *State) copyHostConnectionInfo(host Host, includeCredentials bool) {
-	var cred resolvedCopyCredential
-	if includeCredentials {
-		var ok bool
-		cred, ok = state.resolveHostCredentialForCopy(host, true, func() {
-			state.copyHostConnectionInfo(host, true)
-		})
-		if !ok {
-			return
-		}
+// stopSecretClipboardClear cancels any pending credential auto-clear timer and
+// scrubs the stored digest.
+func (state *State) stopSecretClipboardClear() {
+	if state.secretClipboard.timer != nil {
+		state.secretClipboard.timer.Stop()
+		state.secretClipboard.timer = nil
 	}
-	state.copyConnectionText(state.formatConnectionInfo(host, includeCredentials, cred))
+	state.secretClipboard.active = false
+	clear(state.secretClipboard.digest[:])
 }
 
 // copyConnectionText places what a connection copy row offers on the clipboard.
@@ -289,23 +452,26 @@ func (state *State) copyConnectionText(value string) {
 	}
 	if err := state.options.SetClipboardText(value); err != nil {
 		state.status = err.Error()
+		return
 	}
+	// A non-sensitive copy replaces whatever secret was scheduled to expire.
+	state.stopSecretClipboardClear()
 }
 
-// hasCopyableConnectionInfo reports whether at least one entry in the Copy Info
-// submenu can act on host, without touching the vault on the top-level menu
-// paint.
-func (state *State) hasCopyableConnectionInfo(host Host) bool {
-	if connectionHostAddress(host) != "" || connectionAddressAndPort(host) != "" || host.Label != "" || state.connectionCopyUsername(host) != "" {
+// hasCopyableMoreInfo reports whether at least one entry in the Copy Info
+// submenu can act on host, without touching the vault or OS keystore.
+func (state *State) hasCopyableMoreInfo(host Host) bool {
+	if state.connectionCopyUsername(host) != "" || state.hostCredentialMayExist(host) {
 		return true
 	}
 	return state.formatConnectionInfo(host, false, resolvedCopyCredential{}) != ""
 }
 
 // addCopyInfoSubmenu adds the shared "Copy Info >" row used by both the session
-// tab menu and the host card/list menu.
+// tab menu and the host card/list menu. The top-level quick copy actions (IP,
+// IP:PORT, Connection Name) stay one click away on the parent menu.
 func (state *State) addCopyInfoSubmenu(c ui.C, rows *menuRows, triggerID gfx.ID, host Host, disabled bool) {
-	rowDisabled := disabled || !state.hasCopyableConnectionInfo(host)
+	rowDisabled := disabled || !state.hasCopyableMoreInfo(host)
 	rows.addSubmenu(components.ContextMenuItem{
 		ID:       triggerID,
 		Label:    state.messages.CopyInfo,
@@ -320,20 +486,17 @@ func (state *State) addCopyInfoSubmenu(c ui.C, rows *menuRows, triggerID gfx.ID,
 }
 
 // declareCopyInfoSubmenu declares the right-hand submenu choices for copying
-// individual fields, credentials, or formatted connection info (with or without
-// credentials).
+// username, credentials, or formatted connection info (with or without
+// credentials). It never reads the vault or keystore while open.
 func (state *State) declareCopyInfoSubmenu(c ui.C, menu *ui.MenuItems, host Host) {
 	menu.RowHeight(contextMenuRow)
 	m := state.messages
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 
-	hostAddress := connectionHostAddress(host)
-	address := connectionAddressAndPort(host)
-	name := host.Label
 	username := state.connectionCopyUsername(host)
-	hasCredential := state.hostCredentialAvailable(host)
+	mayHaveCredential := state.hostCredentialMayExist(host)
 	hasInfo := state.formatConnectionInfo(host, false, resolvedCopyCredential{}) != ""
-	hasCredInfo := hasInfo && hasCredential
+	mayHaveCredInfo := hasInfo && mayHaveCredential
 
 	addItem := func(label string, ico gfx.Icon, disabled bool, action func()) {
 		if menu.Item(label).Icon(ico).Disabled(disabled).Clicked() {
@@ -341,27 +504,17 @@ func (state *State) declareCopyInfoSubmenu(c ui.C, menu *ui.MenuItems, host Host
 		}
 	}
 
-	addItem(m.CopyHostAddress, icon(iconCopy), hostAddress == "", func() {
-		state.copyConnectionText(hostAddress)
-	})
-	addItem(m.CopyAddressAndPort, icon(iconCopy), address == "", func() {
-		state.copyConnectionText(address)
-	})
-	addItem(m.CopyConnectionName, icon(iconCopy), name == "", func() {
-		state.copyConnectionText(name)
-	})
-	menu.Separator()
 	addItem(m.CopyUsername, icon(iconCopy), username == "", func() {
 		state.copyConnectionText(username)
 	})
-	addItem(m.CopyCredential, icon(iconKey), !hasCredential, func() {
-		state.copyHostCredential(host)
+	addItem(m.CopyCredential, icon(iconKey), !mayHaveCredential, func() {
+		state.askCopyCredentialConfirm(host, false)
 	})
 	menu.Separator()
 	addItem(m.CopyConnectionInfo, icon(iconLink), !hasInfo, func() {
-		state.copyHostConnectionInfo(host, false)
+		state.copyHostConnectionInfo(host)
 	})
-	addItem(m.CopyConnectionInfoWithCredentials, icon(iconKey), !hasCredInfo, func() {
-		state.copyHostConnectionInfo(host, true)
+	addItem(m.CopyConnectionInfoWithCredentials, icon(iconKey), !mayHaveCredInfo, func() {
+		state.askCopyCredentialConfirm(host, true)
 	})
 }

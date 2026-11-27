@@ -2,12 +2,11 @@ package workbench
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/i18n"
@@ -52,7 +51,7 @@ func TestCopyInfoSubmenuOpensToTheRightOnTabAndHostMenus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	assertSubmenu := func(name string, openMenu func()) {
+	assertSubmenu := func(name string, openMenu func(), topLevelLabels []string) {
 		t.Helper()
 		t.Run(name, func(t *testing.T) {
 			openMenu()
@@ -61,26 +60,31 @@ func TestCopyInfoSubmenuOpensToTheRightOnTabAndHostMenus(t *testing.T) {
 			if !ok {
 				t.Fatal("Copy Info trigger row missing")
 			}
-			firstSub, ok := submenuRowByLabel(canvas, state.messages.CopyHostAddress)
+			firstSub, ok := submenuRowByLabel(canvas, state.messages.CopyUsername)
 			if !ok {
-				t.Fatal("Copy IP submenu row did not open")
+				t.Fatal("Copy Username submenu row did not open")
 			}
 			if firstSub.Bounds.X < trigger.Bounds.X+trigger.Bounds.Width-2 {
 				t.Fatalf("submenu opened at X=%.1f, expected to the right of trigger [%.1f..%.1f]",
 					firstSub.Bounds.X, trigger.Bounds.X, trigger.Bounds.X+trigger.Bounds.Width)
 			}
+			// Top-level quick copy actions remain on the parent menu.
+			for _, label := range topLevelLabels {
+				row, found := submenuRowByLabel(canvas, label)
+				if !found || row.Disabled || row.Bounds.X >= trigger.Bounds.X+trigger.Bounds.Width-2 {
+					t.Errorf("top-level row %q: found=%v disabled=%v bounds=%+v, want enabled on parent menu", label, found, row.Disabled, row.Bounds)
+				}
+			}
+			// Submenu holds only the new username, credential, and formatted info items.
 			for _, label := range []string{
-				state.messages.CopyHostAddress,
-				state.messages.CopyAddressAndPort,
-				state.messages.CopyConnectionName,
 				state.messages.CopyUsername,
 				state.messages.CopyCredential,
 				state.messages.CopyConnectionInfo,
 				state.messages.CopyConnectionInfoWithCredentials,
 			} {
 				row, found := submenuRowByLabel(canvas, label)
-				if !found || row.Disabled {
-					t.Errorf("submenu row %q: found=%v disabled=%v, want enabled", label, found, row.Disabled)
+				if !found || row.Disabled || row.Bounds.X < trigger.Bounds.X+trigger.Bounds.Width-2 {
+					t.Errorf("submenu row %q: found=%v disabled=%v bounds=%+v, want enabled in submenu", label, found, row.Disabled, row.Bounds)
 				}
 			}
 		})
@@ -88,17 +92,17 @@ func TestCopyInfoSubmenuOpensToTheRightOnTabAndHostMenus(t *testing.T) {
 
 	assertSubmenu("host menu", func() {
 		rightClickHost(state, target.ID)
-	})
+	}, []string{state.messages.CopyAddressAndPort, state.messages.CopyConnectionName})
 
 	openHost(state)
 	state.newHostSession(target)
 	workspace := state.deck.ActiveWorkspace()
 	assertSubmenu("tab menu", func() {
 		rightClickTab(state, hitTabList.At(int(workspace)))
-	})
+	}, []string{state.messages.CopyHostAddress, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName})
 }
 
-func TestCopyInfoSubmenuCopiesAllFieldsAndCredentialsFromHostAndTabMenus(t *testing.T) {
+func TestCopyInfoSubmenuCopiesAllFieldsAndConfirmsCredentialsFromHostAndTabMenus(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	useChinese(t, state)
 	target := state.hosts[1]
@@ -111,8 +115,10 @@ func TestCopyInfoSubmenuCopiesAllFieldsAndCredentialsFromHostAndTabMenus(t *test
 		copied = value
 		return nil
 	}
+	state.options.ClipboardText = func() (string, error) {
+		return copied, nil
+	}
 
-	wantAddressPort := net.JoinHostPort(target.Address, strconv.Itoa(int(target.Port)))
 	wantUser := state.login(target)
 	wantInfo := strings.Join([]string{
 		fmt.Sprintf("%s: %s", state.messages.CopyInfoFieldName, target.Label),
@@ -124,46 +130,157 @@ func TestCopyInfoSubmenuCopiesAllFieldsAndCredentialsFromHostAndTabMenus(t *test
 	wantInfoWithCreds := wantInfo + "\n" + fmt.Sprintf("%s: P@ssw0rd!99", state.messages.FieldPassword)
 
 	cases := []struct {
-		label string
-		want  string
+		label       string
+		want        string
+		needsPrompt bool
 	}{
-		{state.messages.CopyHostAddress, target.Address},
-		{state.messages.CopyAddressAndPort, wantAddressPort},
-		{state.messages.CopyConnectionName, target.Label},
-		{state.messages.CopyUsername, wantUser},
-		{state.messages.CopyCredential, "P@ssw0rd!99"},
-		{state.messages.CopyConnectionInfo, wantInfo},
-		{state.messages.CopyConnectionInfoWithCredentials, wantInfoWithCreds},
+		{state.messages.CopyUsername, wantUser, false},
+		{state.messages.CopyCredential, "P@ssw0rd!99", true},
+		{state.messages.CopyConnectionInfo, wantInfo, false},
+		{state.messages.CopyConnectionInfoWithCredentials, wantInfoWithCreds, true},
 	}
 
-	for _, tc := range cases {
-		copied = ""
-		rightClickHost(state, target.ID)
-		chooseCopyInfoSubmenu(t, state, tc.label)
-		if state.hostMenu.open {
-			t.Fatalf("host menu stayed open after %q", tc.label)
-		}
-		if copied != tc.want {
-			t.Fatalf("host menu %q copied:\n%s\nwant:\n%s", tc.label, copied, tc.want)
+	runCases := func(source string, openMenu func(), isOpen func() bool) {
+		t.Helper()
+		for _, tc := range cases {
+			copied = ""
+			openMenu()
+			chooseCopyInfoSubmenu(t, state, tc.label)
+			if isOpen() {
+				t.Fatalf("%s stayed open after %q", source, tc.label)
+			}
+			if tc.needsPrompt {
+				if state.modal != modalCopyCredentialConfirm || copied != "" {
+					t.Fatalf("%s %q: modal=%v copied=%q, want confirmation before copying secret", source, tc.label, state.modal, copied)
+				}
+				state.Click(hitCopyCredentialConfirmOK)
+			}
+			if state.modal != modalNone || copied != tc.want {
+				t.Fatalf("%s %q: modal=%v copied:\n%s\nwant:\n%s", source, tc.label, state.modal, copied, tc.want)
+			}
 		}
 	}
+
+	runCases("host menu", func() {
+		rightClickHost(state, target.ID)
+	}, func() bool { return state.hostMenu.open })
 
 	state.newHostSession(target)
 	workspace := state.deck.ActiveWorkspace()
-	for _, tc := range cases {
-		copied = ""
+	runCases("tab menu", func() {
 		rightClickTab(state, hitTabList.At(int(workspace)))
-		chooseCopyInfoSubmenu(t, state, tc.label)
-		if state.tabMenu.open {
-			t.Fatalf("tab menu stayed open after %q", tc.label)
-		}
-		if copied != tc.want {
-			t.Fatalf("tab menu %q copied:\n%s\nwant:\n%s", tc.label, copied, tc.want)
-		}
+	}, func() bool { return state.tabMenu.open })
+}
+
+func TestCopyCredentialConfirmCanBeCanceledAndConfirmedByKeyboard(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	target := state.hosts[1]
+	secretName, _ := hostPasswordSecretName(target)
+	if err := state.secrets.vault.Set(secretName, "top-secret"); err != nil {
+		t.Fatal(err)
+	}
+	var copied string
+	state.options.SetClipboardText = func(value string) error {
+		copied = value
+		return nil
+	}
+
+	// Cancel via Cancel button.
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	if state.modal != modalCopyCredentialConfirm {
+		t.Fatalf("modal = %v, want modalCopyCredentialConfirm", state.modal)
+	}
+	state.Click(hitCopyCredentialConfirmCancel)
+	if state.modal != modalNone || copied != "" {
+		t.Fatalf("after cancel: modal=%v copied=%q", state.modal, copied)
+	}
+
+	// Cancel via Escape.
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	result := state.Key(gfx.KeyEvent{Key: gfx.KeyEscape})
+	if !result.Handled || state.modal != modalNone || copied != "" {
+		t.Fatalf("after Escape: handled=%v modal=%v copied=%q", result.Handled, state.modal, copied)
+	}
+
+	// Confirm via Enter when confirm button is focused.
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	result = state.Key(gfx.KeyEvent{Key: gfx.KeyEnter, Target: hitCopyCredentialConfirmOK})
+	if !result.Handled || state.modal != modalNone || copied != "top-secret" {
+		t.Fatalf("after Enter on confirm: handled=%v modal=%v copied=%q", result.Handled, state.modal, copied)
 	}
 }
 
-func TestCopyInfoSubmenuResolvesSharedCredentialAndDisablesMissingCredentials(t *testing.T) {
+func TestCopiedCredentialAutoClearsClipboardOnlyWhenUnchanged(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.secretClipboardTTL = 25 * time.Millisecond
+	target := state.hosts[1]
+	secretName, _ := hostPasswordSecretName(target)
+	if err := state.secrets.vault.Set(secretName, "ephemeral-secret"); err != nil {
+		t.Fatal(err)
+	}
+
+	clipboard := ""
+	state.options.SetClipboardText = func(value string) error {
+		clipboard = value
+		return nil
+	}
+	state.options.ClipboardText = func() (string, error) {
+		return clipboard, nil
+	}
+
+	// 1. Unchanged clipboard is cleared automatically once TTL elapses.
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	state.Click(hitCopyCredentialConfirmOK)
+	if clipboard != "ephemeral-secret" {
+		t.Fatalf("clipboard = %q, want copied secret", clipboard)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		state.Wake()
+		if clipboard == "" {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if clipboard != "" || state.status != state.messages.CopyCredentialCleared {
+		t.Fatalf("after TTL: clipboard=%q status=%q, want cleared clipboard and status", clipboard, state.status)
+	}
+
+	// 2. If another app replaced the clipboard before TTL expires, Motty leaves it untouched.
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	state.Click(hitCopyCredentialConfirmOK)
+	if clipboard != "ephemeral-secret" {
+		t.Fatalf("second copy clipboard = %q", clipboard)
+	}
+	clipboard = "user copied something else"
+	time.Sleep(60 * time.Millisecond)
+	state.Wake()
+	if clipboard != "user copied something else" {
+		t.Fatalf("timer overwrote newer clipboard content: %q", clipboard)
+	}
+
+	// 3. A subsequent non-sensitive copy cancels the pending secret clear timer.
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	state.Click(hitCopyCredentialConfirmOK)
+	rightClickHost(state, target.ID)
+	chooseMenu(t, state, hitHostMenuName)
+	if clipboard != target.Label {
+		t.Fatalf("non-sensitive copy clipboard = %q, want %q", clipboard, target.Label)
+	}
+	time.Sleep(60 * time.Millisecond)
+	state.Wake()
+	if clipboard != target.Label {
+		t.Fatalf("canceled timer cleared non-sensitive copy: %q", clipboard)
+	}
+}
+
+func TestCopyInfoSubmenuResolvesSharedCredentialAndReportsMissingSecretsOnClick(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	cred := credential{ID: "cred_shared_ops", Name: "Shared Ops", User: "ops-shared"}
 	state.credentials = append(state.credentials, cred)
@@ -184,23 +301,34 @@ func TestCopyInfoSubmenuResolvesSharedCredentialAndDisablesMissingCredentials(t 
 	}
 	rightClickHost(state, sharedHost.ID)
 	chooseCopyInfoSubmenu(t, state, state.messages.CopyConnectionInfoWithCredentials)
+	state.Click(hitCopyCredentialConfirmOK)
 	if !strings.Contains(copied, "User: ops-shared") || !strings.Contains(copied, "Password: shared-secret-pw") {
 		t.Fatalf("shared credential copy = %q, want inherited user and shared password", copied)
 	}
 
-	// Host with no saved password and no pinned key disables Copy Credential and
-	// Copy Connection Info (with Credentials), while keeping plain Copy Connection Info enabled.
+	// Host with no saved password when the vault holds other secrets:
+	// submenu stays enabled without probing the vault, and reports missing credential on click+confirm.
+	copied = ""
 	plainHost := state.hosts[0]
 	rightClickHost(state, plainHost.ID)
-	canvas := openCopyInfoSubmenu(t, state)
-	if row, ok := submenuRowByLabel(canvas, state.messages.CopyCredential); !ok || !row.Disabled {
-		t.Fatalf("CopyCredential on passwordless host: found=%v disabled=%v, want disabled", ok, row.Disabled)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	state.Click(hitCopyCredentialConfirmOK)
+	if copied != "" || state.status != state.messages.CopyCredentialMissing {
+		t.Fatalf("missing password on click: copied=%q status=%q, want empty clipboard and missing notice", copied, state.status)
 	}
-	if row, ok := submenuRowByLabel(canvas, state.messages.CopyConnectionInfoWithCredentials); !ok || !row.Disabled {
-		t.Fatalf("CopyConnectionInfoWithCredentials on passwordless host: found=%v disabled=%v, want disabled", ok, row.Disabled)
+
+	// With an empty vault and no pinned key, credential actions are disabled purely from vault.Len()==0.
+	emptyState := newTestState(t, testOptions(t))
+	rightClickHost(emptyState, emptyState.hosts[0].ID)
+	canvas := openCopyInfoSubmenu(t, emptyState)
+	if row, ok := submenuRowByLabel(canvas, emptyState.messages.CopyCredential); !ok || !row.Disabled {
+		t.Fatalf("CopyCredential with empty vault: found=%v disabled=%v, want disabled", ok, row.Disabled)
 	}
-	if row, ok := submenuRowByLabel(canvas, state.messages.CopyConnectionInfo); !ok || row.Disabled {
-		t.Fatalf("CopyConnectionInfo on passwordless host: found=%v disabled=%v, want enabled", ok, row.Disabled)
+	if row, ok := submenuRowByLabel(canvas, emptyState.messages.CopyConnectionInfoWithCredentials); !ok || !row.Disabled {
+		t.Fatalf("CopyConnectionInfoWithCredentials with empty vault: found=%v disabled=%v, want disabled", ok, row.Disabled)
+	}
+	if row, ok := submenuRowByLabel(canvas, emptyState.messages.CopyConnectionInfo); !ok || row.Disabled {
+		t.Fatalf("CopyConnectionInfo with empty vault: found=%v disabled=%v, want enabled", ok, row.Disabled)
 	}
 }
 
@@ -226,6 +354,7 @@ func TestCopyInfoSubmenuHandlesProtocolsAndPrivateKeyCredentials(t *testing.T) {
 		t.Fatalf("VNC password-only CopyUsername: found=%v disabled=%v, want disabled", ok, row.Disabled)
 	}
 	clickPageMenuRow(t, state, state.messages.CopyConnectionInfoWithCredentials)
+	state.Click(hitCopyCredentialConfirmOK)
 	if strings.Contains(copied, "User:") || !strings.Contains(copied, "Protocol: VNC") || !strings.Contains(copied, "Password: vnc-pass") {
 		t.Fatalf("VNC copy with credentials = %q", copied)
 	}
@@ -254,12 +383,14 @@ func TestCopyInfoSubmenuHandlesProtocolsAndPrivateKeyCredentials(t *testing.T) {
 		t.Fatalf("key-auth CopyConnectionInfoWithCredentials: found=%v disabled=%v, want enabled", ok, row.Disabled)
 	}
 	clickPageMenuRow(t, state, state.messages.CopyCredential)
+	state.Click(hitCopyCredentialConfirmOK)
 	if copied != fakePEM {
 		t.Fatalf("key-auth CopyCredential = %q, want PEM %q", copied, fakePEM)
 	}
 
 	rightClickHost(state, keyHost.ID)
 	chooseCopyInfoSubmenu(t, state, state.messages.CopyConnectionInfoWithCredentials)
+	state.Click(hitCopyCredentialConfirmOK)
 	if !strings.Contains(copied, "Key passphrase: key-pass-42") || !strings.Contains(copied, "Private key:\n"+strings.TrimRight(fakePEM, "\n")) || strings.Contains(copied, "Password:") {
 		t.Fatalf("key-auth copy with credentials = %q", copied)
 	}
@@ -290,7 +421,7 @@ func TestCopyInfoSubmenuHandlesProtocolsAndPrivateKeyCredentials(t *testing.T) {
 	}
 }
 
-func TestCopyInfoSubmenuUnlocksLegacyVaultBeforeCopyingCredentials(t *testing.T) {
+func TestCopyInfoSubmenuUnlocksLegacyVaultAfterConfirmation(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	target := state.hosts[1]
 	secretName, _ := hostPasswordSecretName(target)
@@ -308,6 +439,10 @@ func TestCopyInfoSubmenuUnlocksLegacyVaultBeforeCopyingCredentials(t *testing.T)
 
 	rightClickHost(state, target.ID)
 	chooseCopyInfoSubmenu(t, state, state.messages.CopyConnectionInfoWithCredentials)
+	if state.modal != modalCopyCredentialConfirm || copied != "" {
+		t.Fatalf("before confirm: modal=%v copied=%q, want confirmation dialog first", state.modal, copied)
+	}
+	state.Click(hitCopyCredentialConfirmOK)
 	if state.modal != modalVaultUnlock || copied != "" {
 		t.Fatalf("locked legacy vault: modal=%v copied=%q, want unlock prompt before copy", state.modal, copied)
 	}
@@ -334,7 +469,7 @@ func TestCopyInfoSubmenuKeyboardNavigationAndLocalTab(t *testing.T) {
 	windowKeyRoutes(state, gfx.KeyEvent{Key: gfx.KeyRight, Target: trigger.ID})
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	firstSub, ok := submenuRowByLabel(&canvas, state.messages.CopyHostAddress)
+	firstSub, ok := submenuRowByLabel(&canvas, state.messages.CopyUsername)
 	if !ok {
 		t.Fatal("Right arrow did not open the Copy Info submenu")
 	}
@@ -345,30 +480,24 @@ func TestCopyInfoSubmenuKeyboardNavigationAndLocalTab(t *testing.T) {
 	}
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
-	if _, stillOpen := submenuRowByLabel(&canvas, state.messages.CopyHostAddress); stillOpen {
+	if _, stillOpen := submenuRowByLabel(&canvas, state.messages.CopyUsername); stillOpen {
 		t.Fatal("Left arrow left the Copy Info submenu open")
 	}
 	state.hostMenu.open = false
 
-	// Local terminal tab: Copy Info stays enabled for Copy Connection Name while
-	// remote-only entries stay disabled.
+	// Local terminal tab: top-level Copy Connection Name stays one-click enabled
+	// while Copy Info submenu is disabled because local tabs have no remote fields.
 	state.openLocalTerminal()
 	workspace := state.deck.ActiveWorkspace()
 	rightClickTab(state, hitTabList.At(int(workspace)))
-	subCanvas := openCopyInfoSubmenu(t, state)
-	if row, ok := submenuRowByLabel(subCanvas, state.messages.CopyConnectionName); !ok || row.Disabled {
-		t.Fatalf("local tab CopyConnectionName: found=%v disabled=%v, want enabled", ok, row.Disabled)
+	canvas = gfx.Canvas{}
+	state.Paint(&canvas, size)
+	if hit, ok := hitByID(&canvas, hitTabMenuCopyName); !ok || hit.Disabled {
+		t.Fatalf("local tab top-level CopyConnectionName: found=%v disabled=%v, want enabled", ok, hit.Disabled)
 	}
-	for _, label := range []string{
-		state.messages.CopyHostAddress,
-		state.messages.CopyAddressAndPort,
-		state.messages.CopyUsername,
-		state.messages.CopyCredential,
-		state.messages.CopyConnectionInfo,
-		state.messages.CopyConnectionInfoWithCredentials,
-	} {
-		if row, ok := submenuRowByLabel(subCanvas, label); !ok || !row.Disabled {
-			t.Errorf("local tab %q: found=%v disabled=%v, want disabled", label, ok, row.Disabled)
+	for _, id := range []gfx.ID{hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyInfo} {
+		if hit, ok := hitByID(&canvas, id); !ok || !hit.Disabled {
+			t.Errorf("local tab item %d: found=%v disabled=%v, want disabled", id, ok, hit.Disabled)
 		}
 	}
 }
@@ -395,9 +524,9 @@ func (k *countingDeniedKeystore) Delete(service, account string) error {
 	return k.mem.Delete(service, account)
 }
 
-// Painting an open Copy Info submenu repeatedly must probe the keystore at most
-// once per menu opening so a denied keystore never triggers a loop of OS prompts.
-func TestCopyInfoSubmenuProbesKeystoreAtMostOncePerOpen(t *testing.T) {
+// Expanding and repainting the Copy Info submenu must never touch the OS
+// keystore; the vault is read only after the user clicks and confirms.
+func TestCopyInfoSubmenuDoesNotProbeKeystoreUntilConfirmedClick(t *testing.T) {
 	ks := &countingDeniedKeystore{mem: &memKeys{}}
 	options := testOptions(t)
 	options.Keystore = ks
@@ -417,7 +546,27 @@ func TestCopyInfoSubmenuProbesKeystoreAtMostOncePerOpen(t *testing.T) {
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
 	}
+	if ks.loads != 0 {
+		t.Fatalf("keystore Load calls while submenu open = %d, want 0", ks.loads)
+	}
+
+	// Clicking Copy Credential opens confirmation without touching the keystore yet.
+	clickPageMenuRow(t, state, state.messages.CopyCredential)
+	if state.modal != modalCopyCredentialConfirm || ks.loads != 0 {
+		t.Fatalf("after clicking Copy Credential: modal=%v loads=%d, want confirm modal and 0 keystore loads", state.modal, ks.loads)
+	}
+
+	// Canceling still never touches the keystore.
+	state.Click(hitCopyCredentialConfirmCancel)
+	if ks.loads != 0 {
+		t.Fatalf("keystore Load calls after cancel = %d, want 0", ks.loads)
+	}
+
+	// Only confirming actually reads the vault/keystore.
+	rightClickHost(state, target.ID)
+	chooseCopyInfoSubmenu(t, state, state.messages.CopyCredential)
+	state.Click(hitCopyCredentialConfirmOK)
 	if ks.loads != 1 {
-		t.Fatalf("keystore Load calls across 6 submenu paints = %d, want 1", ks.loads)
+		t.Fatalf("keystore Load calls after confirm = %d, want 1", ks.loads)
 	}
 }

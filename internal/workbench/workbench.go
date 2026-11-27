@@ -543,7 +543,6 @@ type State struct {
 	verticalTabs       verticalTabs
 	tabMenu            tabMenu
 	hostMenu           hostMenu
-	copyInfoProbe      copyInfoPasswordProbe
 	hostPrivacy        hostPrivacyState
 	localShellPicker   localShellPicker
 	snippetMenu        snippetMenu
@@ -1168,9 +1167,14 @@ type State struct {
 	keyPassphraseDescription    string
 	keyPassphraseInput          dialogField
 	clipboardRequest            remoteClipboardRequest
-	autofillRules               autofillUI
-	credentialForm              credentialUI
-	proxyProfileForm            proxyProfileUI
+
+	// Pending credential copy confirmation and clipboard auto-clear timer.
+	copyCredentialConfirm copyCredentialConfirm
+	secretClipboard       secretClipboardState
+	secretClipboardTTL    time.Duration
+	autofillRules         autofillUI
+	credentialForm        credentialUI
+	proxyProfileForm      proxyProfileUI
 	// proxyProfileReturn is the modal the profile dialog returns to when the
 	// host proxy dialog opened it to make a profile for itself; modalNone otherwise.
 	proxyProfileReturn modalKind
@@ -1249,6 +1253,7 @@ func (state *State) Close() {
 	// save still waiting is dropped rather than fired after the store closes.
 	state.stopTerminalZoomSave()
 	state.stopInlineSnippetSave()
+	state.stopSecretClipboardClear()
 	state.closeAI()
 	state.closeHistory()
 	state.stopSyncTimer()
@@ -1965,6 +1970,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalSessionLink:
 		state.clickSessionLinkDialog(id)
+		return
+	case modalCopyCredentialConfirm:
+		state.clickCopyCredentialConfirmDialog(id)
 		return
 	case modalHostImportResult:
 		state.clickHostImportResult(id)
@@ -3431,6 +3439,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.sessionLinkKey(event); handled {
+		return result
+	}
+	if result, handled := state.copyCredentialConfirmKey(event); handled {
 		return result
 	}
 	if result, handled := state.terminalFindKey(event); handled {

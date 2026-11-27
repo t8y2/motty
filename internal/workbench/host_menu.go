@@ -17,6 +17,8 @@ var (
 	hitHostMenuDismiss  = tree.ID(hostMenuHits, "host-menu-dismiss")
 	hitHostMenuConnect  = tree.ID(hostMenuHits, "host-menu-connect")
 	hitHostMenuSFTP     = tree.ID(hostMenuHits, "host-menu-sftp")
+	hitHostMenuAddress  = tree.ID(hostMenuHits, "host-menu-copy-address")
+	hitHostMenuName     = tree.ID(hostMenuHits, "host-menu-copy-name")
 	hitHostMenuCopyInfo = tree.ID(hostMenuHits, "host-menu-copy-info")
 	hitHostMenuEdit     = tree.ID(hostMenuHits, "host-menu-edit")
 	hitHostMenuCopy     = tree.ID(hostMenuHits, "host-menu-copy")
@@ -72,7 +74,6 @@ func (state *State) openHostMenuOn(canvas *gfx.Canvas, id gfx.ID, host Host) {
 	}
 	state.selectedHostID = host.ID
 	state.hostBlankMenu.open = false
-	state.copyInfoProbe = copyInfoPasswordProbe{}
 	state.hostMenu = hostMenu{open: true, host: host.ID, checked: state.hostSelected(host.ID), newTab: id.Scope() == hitNewTabHostList, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
 }
@@ -105,6 +106,9 @@ func (state *State) declareHostMenu(c ui.C) {
 	}
 	rows.separate()
 	host, _ := state.hostByID(state.hostMenu.host)
+	address := connectionAddressAndPort(host)
+	rows.add(components.ContextMenuItem{ID: hitHostMenuAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: several || address == ""})
+	rows.add(components.ContextMenuItem{ID: hitHostMenuName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: several || host.Label == ""})
 	state.addCopyInfoSubmenu(c, &rows, hitHostMenuCopyInfo, host, several)
 	rows.add(components.ContextMenuItem{ID: hitHostMenuCopy, Label: messages.CopyHost, Icon: icon(iconCopy)})
 	rows.add(components.ContextMenuItem{ID: hitHostMenuPaste, Label: messages.PasteHost, Icon: icon(iconPaste), Disabled: len(state.hostClipboard) == 0})
@@ -136,6 +140,10 @@ func (state *State) chooseHostMenu(id gfx.ID) {
 		}
 	case hitHostMenuSFTP:
 		state.openHostSFTPWindow(host)
+	case hitHostMenuAddress:
+		state.copyConnectionText(connectionAddressAndPort(host))
+	case hitHostMenuName:
+		state.copyConnectionText(host.Label)
 	case hitHostMenuEdit:
 		state.openEditHostID(host.ID)
 	case hitHostMenuCopy:

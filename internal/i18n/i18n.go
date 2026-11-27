@@ -458,6 +458,13 @@ type Messages struct {
 	CopyConnectionInfoWithCredentials      string
 	CopyInfoFieldName                      string
 	CopyInfoFieldProtocol                  string
+	CopyCredentialConfirmTitle             string
+	CopyCredentialInfoConfirmTitle         string
+	CopyCredentialConfirmDescriptionFmt    string
+	CopyCredentialConfirmAction            string
+	CopyCredentialCopiedAutoClearFmt       string
+	CopyCredentialCleared                  string
+	CopyCredentialMissing                  string
 	MenuPaste                              string
 	MenuPasteSelection                     string
 	MenuSelectAll                          string

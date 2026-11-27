@@ -3,8 +3,10 @@
 package workbench
 
 import (
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -13,10 +15,9 @@ import (
 	"github.com/vivaui/viva/headless"
 )
 
-// TestCopyInfoSubmenuHeadless verifies the Copy Info submenu end-to-end through
-// the headless driver on both the session tab right-click menu and the host
-// card right-click menu, and writes PNG screenshots when
-// MOTTY_COPY_INFO_SCREENSHOTS is set.
+// TestCopyInfoSubmenuHeadless verifies the top-level quick copy actions, the
+// Copy Info submenu, and the credential confirmation dialog end-to-end through
+// the headless driver on both the host card menu and the session tab menu.
 func TestCopyInfoSubmenuHeadless(t *testing.T) {
 	dir := os.Getenv("MOTTY_COPY_INFO_SCREENSHOTS")
 	_, options := newWorld(t)
@@ -24,6 +25,9 @@ func TestCopyInfoSubmenuHeadless(t *testing.T) {
 	options.SetClipboardText = func(value string) error {
 		copied = value
 		return nil
+	}
+	options.ClipboardText = func() (string, error) {
+		return copied, nil
 	}
 	state := newTestState(t, options)
 	useChinese(t, state)
@@ -66,7 +70,7 @@ func TestCopyInfoSubmenuHeadless(t *testing.T) {
 		return gfx.Hit{}
 	}
 
-	// 1. Host card right-click menu -> Copy Info submenu.
+	// 1. Host card right-click menu -> one-click Copy IP:PORT stays at top level.
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +83,18 @@ func TestCopyInfoSubmenuHeadless(t *testing.T) {
 	}
 	if !state.hostMenu.open {
 		t.Fatal("host card context menu did not open")
+	}
+	wantAddr := net.JoinHostPort(target.Address, strconv.Itoa(int(target.Port)))
+	if err := view.Click(center(menuRow(state.messages.CopyAddressAndPort))); err != nil {
+		t.Fatal(err)
+	}
+	if state.hostMenu.open || copied != wantAddr {
+		t.Fatalf("host top-level Copy IP:PORT: open=%v copied=%q want=%q", state.hostMenu.open, copied, wantAddr)
+	}
+
+	// 2. Host card right-click menu -> Copy Info submenu -> confirm credential copy.
+	if err := view.RightClick(hostCard.Bounds.X+80, hostCard.Bounds.Y+hostCard.Bounds.Height/2); err != nil {
+		t.Fatal(err)
 	}
 	trigger := menuRow(state.messages.CopyInfo)
 	if err := view.Click(center(trigger)); err != nil {
@@ -103,11 +119,29 @@ func TestCopyInfoSubmenuHeadless(t *testing.T) {
 	if err := view.Click(center(credRow)); err != nil {
 		t.Fatal(err)
 	}
-	if state.hostMenu.open || !strings.Contains(copied, "Prod@2026!") {
-		t.Fatalf("host card copy with credentials: open=%v copied=%q", state.hostMenu.open, copied)
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if state.hostMenu.open || state.modal != modalCopyCredentialConfirm || copied != "" {
+		t.Fatalf("host card credential confirm: open=%v modal=%v copied=%q", state.hostMenu.open, state.modal, copied)
+	}
+	if dir != "" {
+		if err := view.Screenshot(filepath.Join(dir, "copy-credential-confirm.png")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	confirmBtn, ok := hitByIDSnapshot(view.Snapshot().Hits, hitCopyCredentialConfirmOK)
+	if !ok {
+		t.Fatal("credential confirmation button missing")
+	}
+	if err := view.Click(center(confirmBtn)); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || !strings.Contains(copied, "Prod@2026!") {
+		t.Fatalf("host card copy with credentials after confirm: modal=%v copied=%q", state.modal, copied)
 	}
 
-	// 2. Session tab right-click menu -> Copy Info submenu.
+	// 3. Session tab right-click menu -> Copy Info submenu -> confirm credential copy.
 	if err := view.RightClick(hostCard.Bounds.X+80, hostCard.Bounds.Y+hostCard.Bounds.Height/2); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +182,17 @@ func TestCopyInfoSubmenuHeadless(t *testing.T) {
 	if err := view.Click(center(credRow)); err != nil {
 		t.Fatal(err)
 	}
-	if state.tabMenu.open || !strings.Contains(copied, "Prod@2026!") {
-		t.Fatalf("tab menu copy with credentials: open=%v copied=%q", state.tabMenu.open, copied)
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	confirmBtn, ok = hitByIDSnapshot(view.Snapshot().Hits, hitCopyCredentialConfirmOK)
+	if !ok {
+		t.Fatal("tab credential confirmation button missing")
+	}
+	if err := view.Click(center(confirmBtn)); err != nil {
+		t.Fatal(err)
+	}
+	if state.tabMenu.open || state.modal != modalNone || !strings.Contains(copied, "Prod@2026!") {
+		t.Fatalf("tab menu copy with credentials: open=%v modal=%v copied=%q", state.tabMenu.open, state.modal, copied)
 	}
 }

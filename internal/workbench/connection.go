@@ -617,6 +617,7 @@ const (
 	modalAgentHosts
 	modalAppLock
 	modalRecordingPlayback
+	modalCopyCredentialConfirm
 )
 
 // tone colors a session's headline.

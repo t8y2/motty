@@ -3013,6 +3013,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareLocalProxyDialog(c)
 	case modalSessionLink:
 		state.declareSessionLinkDialog(c)
+	case modalCopyCredentialConfirm:
+		state.declareCopyCredentialConfirmDialog(c)
 	case modalDeleteRule:
 		state.declareDeleteRuleDialog(c)
 	case modalUpdate:
