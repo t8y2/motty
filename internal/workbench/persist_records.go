@@ -261,6 +261,7 @@ var syncedSettings = map[string]bool{
 	"tab_title_mode":               true,
 	"terminal_show_latency":        true,
 	"toolbars":                     true,
+	"toast_position":               true,
 	"terminal_bell_off":            true,
 	"terminal_link_plain_click":    true,
 	"terminal_input_click_off":     true,

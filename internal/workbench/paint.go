@@ -250,7 +250,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		state.paintDesktopDetails(canvas, session, bounds)
 		state.endMenus()
 		state.tooltip.Paint(canvas, state.Theme(), state.windowRect(), components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
-		state.fileNotices.paint(canvas, state.Theme(), state.windowRect())
+		state.fileNotices.paintAt(canvas, state.Theme(), state.windowRect(), state.toastPlacement.position())
 		return
 	}
 	// The shell normally paints one opaque root. A terminal can instead show
@@ -362,7 +362,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	if _, formatting := canvas.Hovered().In(hitNoteFormats); !formatting {
 		state.tooltip.Paint(canvas, state.Theme(), viewport, components.TooltipOptions{Layer: tooltipLayer, SideOffset: tooltipGap}, components.HoverTooltipDelay)
 	}
-	state.fileNotices.paint(canvas, state.Theme(), gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)})
+	state.fileNotices.paintAt(canvas, state.Theme(), gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}, state.toastPlacement.position())
 	if !state.workspaceTemplateFocusPending.IsZero() {
 		if state.activeSection == sectionWorkspaces && state.modal == modalNone {
 			canvas.RequestFocus(state.workspaceTemplateFocusPending)

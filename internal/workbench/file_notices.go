@@ -130,7 +130,11 @@ func (notices *fileNotices) click(id gfx.ID) bool {
 	notices.removeItem(id)
 	return true
 }
-func (notices *fileNotices) paint(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect) {
+
+// paintAt draws the notices in the corner the notification-position setting
+// picks. A window that has no setting keeps the top center Motty has always
+// used.
+func (notices *fileNotices) paintAt(canvas *gfx.Canvas, theme gfx.Theme, bounds gfx.Rect, position components.ToastPosition) {
 	now := time.Now()
 	for {
 		id, ok := notices.queue.Expire(now)
@@ -142,7 +146,7 @@ func (notices *fileNotices) paint(canvas *gfx.Canvas, theme gfx.Theme, bounds gf
 	offset := float32(0)
 	for _, item := range notices.items {
 		snapshot := components.ToastSnapshot{Title: item.title, Description: item.detail, Type: item.kind, OffsetY: offset}
-		layout := components.PaintToast(canvas, theme, bounds, snapshot, components.ToastOptions{Layer: tooltipLayer + 1, DismissID: item.id, ActionID: item.action, ActionLabel: item.actionLabel, Position: components.ToastTopCenter})
+		layout := components.PaintToast(canvas, theme, bounds, snapshot, components.ToastOptions{Layer: tooltipLayer + 1, DismissID: item.id, ActionID: item.action, ActionLabel: item.actionLabel, Position: position})
 		offset += layout.Bounds.Height + 8
 		if canvas.Hovered() == item.id || canvas.Focused() == item.id {
 			notices.queue.Pause(item.id, now)
