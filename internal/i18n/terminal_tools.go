@@ -1126,9 +1126,6 @@ type ToolsMessages struct {
 	BgRemove                          string
 	BgPickerTitle                     string
 	BgVisibility                      string
-	BgSubtle                          string
-	BgMedium                          string
-	BgStrong                          string
 	BgLoading                         string
 	BgErrFmt                          string
 	BgErrTooLarge                     string
