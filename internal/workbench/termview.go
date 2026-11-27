@@ -141,6 +141,9 @@ func (cache *rowCache) rowWithLogical(line term.Row, cols, cursor int, covered c
 	if inactive {
 		epoch |= 2
 	}
+	if pal.hideApplicationBackground {
+		epoch |= 4
+	}
 	entry := cache.entries[line.ID]
 	if entry == nil {
 		if cache.entries == nil {
@@ -214,7 +217,7 @@ func resolveCell(cell term.Cell, pal *palette, inactive bool) cellStyle {
 		fg = brighten(fg)
 	}
 	style := cellStyle{fg: pal.termColor(fg, pal.termFG)}
-	if cell.BG != 0 {
+	if cell.BG != 0 && !pal.hideApplicationBackground {
 		style.bg, style.hasBG = pal.termColor(cell.BG, pal.terminal), true
 	}
 	if cell.Attr&term.Inverse != 0 {

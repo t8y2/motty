@@ -89,7 +89,8 @@ func (state *State) switchLook(theme gfx.Theme, switchState gfx.State, progress 
 // palette is every color the workbench paints with. Switching the theme swaps
 // one pointer; nothing else about painting changes.
 type palette struct {
-	dark bool
+	hideApplicationBackground bool
+	dark                      bool
 
 	shell        gfx.Color // window bar, sidebar and the frame around the workspace
 	workspace    gfx.Color // main content, dialogs
