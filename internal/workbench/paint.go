@@ -611,17 +611,13 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 		// scroll route (and its backdrop) decide where the event goes.
 		return state.windowPage().RouteWheel(event)
 	}
-	panel := &state.ai.panel
-	if panel.rect.Width > 0 && pointInRect(event.X, event.Y, panel.rect) && state.aiBackgroundScrollBlocked() {
-		return gfx.EventResult{Handled: true}
-	}
-	if result, handled := state.aiPanelScroll(event); handled {
-		return result
-	}
 	// A window dialog owns the wheel over its backdrop. Ask the window's own
 	// handler before the page: the page hands the wheel to the scroll area,
 	// table or list under the pointer first, and those lie behind the dialog
-	// too, so the page would scroll them out from under it.
+	// too, so the page would scroll them out from under it. It also comes
+	// before the assistant's panel: a dialog is centred in the window and can
+	// lie over the panel, and the wheel there is the dialog's, not the panel's
+	// to swallow.
 	if state.modal != modalNone {
 		if state.modal == modalProxyBatchAssociate {
 			// The jump picker's open list and the candidates are the page's.
@@ -630,6 +626,13 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 			return result
 		}
 		return state.Scroll(event)
+	}
+	panel := &state.ai.panel
+	if panel.rect.Width > 0 && pointInRect(event.X, event.Y, panel.rect) && state.aiBackgroundScrollBlocked() {
+		return gfx.EventResult{Handled: true}
+	}
+	if result, handled := state.aiPanelScroll(event); handled {
+		return result
 	}
 	// The notes panel's preview is an overlay of the panes: its scroll area is
 	// laid out outside the page's flow, so the wheel is applied here to keep it

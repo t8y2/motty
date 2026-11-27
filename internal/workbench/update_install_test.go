@@ -821,3 +821,34 @@ func TestDownloadFailureDueToProxyOffersDirectRetry(t *testing.T) {
 	}
 	assertDirectTransportClient(t, updater.prepareClient())
 }
+
+// The dialog is centred in the window, so with the assistant's panel open it
+// lies partly over the panel. The wheel over that part is the dialog's: the
+// panel used to swallow it, and the notes scrolled only where the dialog did
+// not overlap the panel.
+func TestTheReleaseNotesScrollOverTheAssistantPanel(t *testing.T) {
+	release := offeredRelease
+	release.Notes = strings.Repeat("- a line of the release notes\n", 60)
+	updater, quits, opened := &fakeUpdater{}, 0, []string(nil)
+	state := updateWindowOffering(t, release, updater, &quits, &opened)
+	state.ai.open = true
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1000, Height: 700}
+	state.Paint(&canvas, size)
+
+	notes, panel := &state.update.notes, state.ai.panel.rect
+	if notes.max <= 0 || panel.Width <= 0 {
+		t.Fatalf("notes can scroll %g, the panel is %+v", notes.max, panel)
+	}
+	over := intersectRect(notes.box.Rect(), panel)
+	if over.Width <= 0 || over.Height <= 0 {
+		t.Fatalf("the notes %+v do not lie over the panel %+v", notes.box.Rect(), panel)
+	}
+	before := notes.scroll
+	state.scrollWindow(gfx.ScrollEvent{
+		X: over.X + over.Width/2, Y: over.Y + over.Height/2, DeltaY: 40, Precise: true, Viewport: size,
+	})
+	if notes.scroll <= before {
+		t.Fatalf("the wheel over the dialog and the panel left the notes at %g", notes.scroll)
+	}
+}
