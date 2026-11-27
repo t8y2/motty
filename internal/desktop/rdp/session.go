@@ -300,10 +300,6 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	// Standard RDP Security is requested explicitly, so a connected session
 	// that asked for it has only RC4 under an unauthenticated server key.
 	session.info = desktop.Info{Protocol: "RDP", Name: host, Encrypted: !opts.StandardSecurity}
-	go func() {
-		<-client.Done()
-		session.finish(nil)
-	}()
 	return session, nil
 }
 
@@ -570,7 +566,11 @@ func (session *Session) Close() error {
 	session.pointerShape = desktop.PointerShape{}
 	session.pointerVersion++
 	session.mu.Unlock()
-	return session.client.Close()
+	err := session.client.Close()
+	// The library reports an ending it did not cause through OnDisconnect;
+	// closing is the caller's own ending and has no report.
+	session.finish(nil)
+	return err
 }
 
 // SetActive suppresses the server's picture while nobody sees it, and asks for a
