@@ -118,34 +118,108 @@ func previewLimitMessage(messages i18n.Messages, mb int) string {
 	return fmt.Sprintf(messages.FileWindow.TooLargeFmt, strconv.Itoa(normalizeFilePreviewMB(mb))+" MB")
 }
 
-// filePreviewEdit is the stepper's field editor: the number is typed here while
-// it has the keyboard, and the stored setting follows when the edit commits.
-type filePreviewEdit struct {
+// numberStepperEdit is the editable number between a stepper's − and + buttons:
+// the number is typed here while the field has the keyboard, and the stored
+// setting follows when the edit commits. digits bounds what the field accepts.
+type numberStepperEdit struct {
 	input   text.Editor
 	field   ui.Field
 	editing bool
 	bound   bool
+	digits  int
 }
 
-// previewDigit accepts the characters the field may hold.
-func previewDigit(r rune) bool { return r >= '0' && r <= '9' }
+// numberDigit accepts the characters a stepper's field may hold.
+func numberDigit(r rune) bool { return r >= '0' && r <= '9' }
 
-// newFilePreviewInput is the field's editor, holding value with the digits and
+// newNumberInput is the field's editor, holding value with the digits and
 // length the field accepts.
-func newFilePreviewInput(value string) text.Editor {
+func newNumberInput(value string, digits int) text.Editor {
 	var editor text.Editor
-	editor.Restrict(previewDigit, 7)
+	editor.Restrict(numberDigit, digits)
 	editor.Insert(value)
 	return editor
 }
 
+// begin opens the field for typing, seeded with value and selected whole, so
+// the first digit replaces it.
+func (edit *numberStepperEdit) begin(value, digits int) {
+	if edit.editing {
+		return
+	}
+	edit.digits = digits
+	edit.input = newNumberInput(strconv.Itoa(value), digits)
+	edit.input.SetSelection(text.Range{Start: 0, End: edit.input.RuneCount()})
+	edit.editing = true
+}
+
+// commit stores what was typed, if it is a number, and closes the edit. An
+// empty or malformed value is not a number, so the setting stays as it was.
+func (edit *numberStepperEdit) commit() (int, bool) {
+	if !edit.editing {
+		return 0, false
+	}
+	edit.editing = false
+	value := strings.TrimSpace(edit.input.String())
+	edit.input = newNumberInput("", edit.digits)
+	number, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	return number, true
+}
+
+// bind gives the field the editor the application reads. The editor keeps its
+// address for the state's life, so a new number replaces its contents, not it.
+func (edit *numberStepperEdit) bind(digits int) {
+	if edit.bound {
+		return
+	}
+	edit.bound = true
+	edit.digits = digits
+	edit.input.Restrict(numberDigit, digits)
+	edit.field.Bind(&edit.input)
+	edit.field.Alignment = gfx.AlignCenter
+}
+
+// declare paints the number between a stepper's − and + buttons, showing the
+// stored value unless an edit is open.
+func (edit *numberStepperEdit) declare(c ui.C, id gfx.ID, label string, width float32, value, digits int) ui.Box {
+	edit.bind(digits)
+	focused := false
+	if canvas := c.Canvas(); canvas != nil {
+		focused = canvas.Focused() == id
+	}
+	if focused {
+		if !edit.editing {
+			edit.begin(value, digits)
+		}
+	} else if !edit.editing {
+		stored := strconv.Itoa(value)
+		if edit.input.String() != stored {
+			edit.input.SetSelection(text.Range{Start: 0, End: edit.input.RuneCount()})
+			edit.input.Insert(stored)
+		}
+	}
+	return ui.TextField(c, &edit.field, label, "", ui.WithID(id)).Size(width, 32)
+}
+
+// The scrollback setting is a count of lines a terminal keeps above its screen.
+// The stepper moves it in thousands between the bounds the memory budget was
+// sized for; the field accepts any count inside the same bounds.
+const (
+	minTerminalScrollback  = 1000
+	maxTerminalScrollback  = 100000
+	terminalScrollbackStep = 1000
+)
+
+// normalizeTerminalScrollback makes a saved count a usable one: a count inside
+// the range is kept, anything else (a damaged file) is the default.
 func normalizeTerminalScrollback(value int) int {
-	switch value {
-	case 1000, 5000, 10000, 50000, 100000:
-		return value
-	default:
+	if value < minTerminalScrollback || value > maxTerminalScrollback {
 		return scrollbackLines
 	}
+	return value
 }
 
 func normalizeConnectionTimeoutSeconds(value int) int {
@@ -652,6 +726,12 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		changed = state.setTerminalFontSize(state.terminalFontSize + 1)
 	case hitSettingsFontSizeReset:
 		changed = state.setTerminalFontSize(terminalFontSizeDefault)
+	case hitSettingsScrollbackMinus:
+		changed = state.stepTerminalScrollback(-terminalScrollbackStep)
+	case hitSettingsScrollbackPlus:
+		changed = state.stepTerminalScrollback(terminalScrollbackStep)
+	case hitSettingsScrollbackValue:
+		state.beginScrollbackEdit()
 	case hitSettingsShareToggle:
 		if state.shareConnections == shareConnectionsOff {
 			changed = state.setShareConnections(shareConnectionsOn)
@@ -681,7 +761,7 @@ func (state *State) clickSettings(id gfx.ID) bool {
 }
 
 func (state *State) setTerminalScrollback(value int) bool {
-	value = normalizeTerminalScrollback(value)
+	value = min(max(value, minTerminalScrollback), maxTerminalScrollback)
 	if state.terminalScrollback == value {
 		return false
 	}
@@ -812,7 +892,6 @@ var (
 	settingsGutterChoices          = [...]terminalGutter{gutterOff, gutterNumbers, gutterTime, gutterBoth}
 	settingsIntenseChoices         = [...]terminalIntense{intenseBoth, intenseBright, intenseBold, intensePlain}
 	settingsCursorThicknessChoices = [...]cursorThickness{cursorThin, cursorNormal, cursorThick}
-	settingsScrollbackChoices      = [...]int{1000, 5000, 10000, 50000, 100000}
 	settingsClipboardChoices       = [...]terminalClipboardPolicy{terminalClipboardBlock, terminalClipboardAsk, terminalClipboardAllow}
 	settingsCursorStyleChoices     = [...]terminalCursorStyle{cursorBlock, cursorBar, cursorUnderline}
 	settingsTabTitleChoices        = [...]tabTitleMode{tabTitleConnection, tabTitleTerminal, tabTitleDirectory}
@@ -889,20 +968,6 @@ func (state *State) settingsCursorThicknessLabel(mode cursorThickness) string {
 	return m.CursorNormal
 }
 
-func (state *State) settingsScrollbackLabel(lines int) string {
-	switch lines {
-	case 1000:
-		return "1,000"
-	case 10000:
-		return "10,000"
-	case 50000:
-		return "50,000"
-	case 100000:
-		return "100,000"
-	}
-	return "5,000"
-}
-
 func (state *State) settingsClipboardLabel(policy terminalClipboardPolicy) string {
 	switch policy {
 	case terminalClipboardBlock:
@@ -977,22 +1042,14 @@ func (state *State) settingsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionSettings {
 		return gfx.EventResult{}, false
 	}
-	// The preview stepper's field commits on Enter and on leaving the field;
-	// Escape puts the stored number back without changing it.
-	if state.settingsCategory == settingsFiles && state.filePreviewEdit.editing {
-		if event.Target != hitSettingsPreviewValue {
-			state.commitFilePreviewEdit()
-		} else {
-			switch event.Key {
-			case gfx.KeyEnter:
-				state.commitFilePreviewEdit()
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			case gfx.KeyEscape:
-				state.filePreviewEdit.editing = false
-				return gfx.EventResult{Handled: true, Repaint: true}, true
-			case gfx.KeyTab:
-				state.commitFilePreviewEdit()
-			}
+	if state.settingsCategory == settingsFiles {
+		if result, handled := state.stepperKey(event, &state.filePreviewEdit, hitSettingsPreviewValue, state.commitFilePreviewEdit); handled {
+			return result, true
+		}
+	}
+	if state.settingsCategory == settingsTerminal {
+		if result, handled := state.stepperKey(event, &state.scrollbackEdit, hitSettingsScrollbackValue, state.commitScrollbackEdit); handled {
+			return result, true
 		}
 	}
 	if event.Target == hitSettingsLocalShell && localShellSettingVisible() && !state.localShellMenu.open && (event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {

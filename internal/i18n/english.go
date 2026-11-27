@@ -387,7 +387,7 @@ var EnglishMessages = Messages{
 	SettingsTerminalFontSystem:             "System Mono",
 	SettingsTerminalFontClassic:            "Classic Mono",
 	SettingsTerminalScrollback:             "Scrollback lines",
-	SettingsTerminalScrollbackDescription:  "Choose how much history new terminal tabs retain.",
+	SettingsTerminalScrollbackDescription:  "History lines kept for new terminal tabs, from 1,000 to 100,000.",
 	SettingsConnectionTimeout:              "Connection timeout",
 	SettingsConnectionTimeoutDescription:   "Bounds each TCP attempt before authentication.",
 	SettingsConnectionKeepAlive:            "SSH liveness probe",

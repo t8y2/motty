@@ -387,7 +387,7 @@ var ChineseMessages = Messages{
 	SettingsTerminalFontSystem:             "系统等宽",
 	SettingsTerminalFontClassic:            "经典等宽",
 	SettingsTerminalScrollback:             "回滚行数",
-	SettingsTerminalScrollbackDescription:  "选择新终端标签页保留的历史行数。",
+	SettingsTerminalScrollbackDescription:  "新终端标签页保留的历史行数，1,000 至 100,000。",
 	SettingsConnectionTimeout:              "连接超时",
 	SettingsConnectionTimeoutDescription:   "认证前每次 TCP 连接的等待上限。",
 	SettingsConnectionKeepAlive:            "SSH 存活探测",

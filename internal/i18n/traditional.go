@@ -387,7 +387,7 @@ var TraditionalMessages = Messages{
 	SettingsTerminalFontSystem:             "系統等寬",
 	SettingsTerminalFontClassic:            "經典等寬",
 	SettingsTerminalScrollback:             "回捲行數",
-	SettingsTerminalScrollbackDescription:  "選擇新終端機分頁保留的歷史行數。",
+	SettingsTerminalScrollbackDescription:  "新終端機分頁保留的歷史行數，1,000 至 100,000。",
 	SettingsConnectionTimeout:              "連線逾時",
 	SettingsConnectionTimeoutDescription:   "認證前每次 TCP 連線的等待上限。",
 	SettingsConnectionKeepAlive:            "SSH 存活探測",

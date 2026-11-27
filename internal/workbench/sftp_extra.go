@@ -335,47 +335,18 @@ var (
 
 func (state *State) settingsParallelLabel(count int) string { return strconv.Itoa(count) }
 
-// filePreviewPointer keeps a press on the stepper's field from placing a caret:
-// the whole number is selected so typing replaces it.
-func (state *State) filePreviewPointer(event gfx.PointerEvent) (gfx.EventResult, bool) {
-	if state.modal != modalNone || state.activeSection != sectionSettings || state.settingsCategory != settingsFiles {
-		return gfx.EventResult{}, false
-	}
-	if event.Kind == gfx.PointerDown && event.Target == hitSettingsPreviewValue &&
-		(event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) {
-		state.beginFilePreviewEdit()
-		return gfx.EventResult{Focus: hitSettingsPreviewValue, FocusVisible: true, Handled: true, Repaint: true}, true
-	}
-	return gfx.EventResult{}, false
-}
-
 // beginFilePreviewEdit opens the stepper's field for typing, seeded with the
 // stored number and selected whole, so the first digit replaces it.
 func (state *State) beginFilePreviewEdit() {
-	edit := &state.filePreviewEdit
-	if edit.editing {
-		return
-	}
-	edit.input = newFilePreviewInput(strconv.Itoa(state.filePreviewMB))
-	edit.input.SetSelection(text.Range{Start: 0, End: edit.input.RuneCount()})
-	edit.editing = true
+	state.filePreviewEdit.begin(state.filePreviewMB, 7)
 }
 
 // commitFilePreviewEdit stores what was typed in the field, if it is a number,
 // and closes the edit. An empty or malformed value leaves the setting alone.
 func (state *State) commitFilePreviewEdit() {
-	edit := &state.filePreviewEdit
-	if !edit.editing {
-		return
+	if mb, ok := state.filePreviewEdit.commit(); ok {
+		state.setFilePreviewMB(mb)
 	}
-	edit.editing = false
-	value := strings.TrimSpace(edit.input.String())
-	edit.input = newFilePreviewInput("")
-	mb, err := strconv.Atoi(value)
-	if err != nil {
-		return
-	}
-	state.setFilePreviewMB(mb)
 }
 
 // setFilePreviewMB stores the chosen size and saves the state file.
@@ -394,41 +365,10 @@ func (state *State) stepFilePreview(delta int) {
 	state.setFilePreviewMB(state.filePreviewMB + delta)
 }
 
-// bindFilePreviewField binds the stepper's handle to the editor the application
-// reads. The editor keeps its address for the state's life.
-func (state *State) bindFilePreviewField() {
-	edit := &state.filePreviewEdit
-	if edit.bound {
-		return
-	}
-	edit.bound = true
-	edit.input.Restrict(previewDigit, 7)
-	edit.field.Bind(&edit.input)
-	edit.field.Alignment = gfx.AlignCenter
-}
-
 // declareFilePreviewField declares the number between the − and + buttons,
 // showing the stored size unless an edit is open.
 func (state *State) declareFilePreviewField(c ui.C) ui.Box {
-	edit := &state.filePreviewEdit
-	state.bindFilePreviewField()
-	focused := false
-	if canvas := c.Canvas(); canvas != nil {
-		focused = canvas.Focused() == hitSettingsPreviewValue
-	}
-	if focused {
-		if !edit.editing {
-			state.beginFilePreviewEdit()
-		}
-	} else if !edit.editing {
-		stored := strconv.Itoa(state.filePreviewMB)
-		if edit.input.String() != stored {
-			edit.input.SetSelection(text.Range{Start: 0, End: edit.input.RuneCount()})
-			edit.input.Insert(stored)
-		}
-	}
-	return ui.TextField(c, &edit.field, state.messages.Tools.FilesPreviewLimit, "", ui.WithID(hitSettingsPreviewValue)).
-		Size(filePreviewValueWidth, 32)
+	return state.filePreviewEdit.declare(c, hitSettingsPreviewValue, state.messages.Tools.FilesPreviewLimit, filePreviewValueWidth, state.filePreviewMB, 7)
 }
 
 func (state *State) settingsPathLabel(input bool) string {
