@@ -1227,3 +1227,15 @@ func TestADefaultHostReachesAServerThatOnlyOffersGroupExchange(t *testing.T) {
 		t.Fatalf("negotiated %q", connected.Negotiated.KeyExchange)
 	}
 }
+
+func TestIsRemoteForwardRefused(t *testing.T) {
+	if !IsRemoteForwardRefused(errors.New("portforward: listen on 127.0.0.1:8080: ssh: tcpip-forward request denied by peer")) {
+		t.Fatal("IsRemoteForwardRefused = false, want true for tcpip-forward denial")
+	}
+	if IsRemoteForwardRefused(errors.New("connection refused")) {
+		t.Fatal("IsRemoteForwardRefused = true, want false for unrelated error")
+	}
+	if IsRemoteForwardRefused(nil) {
+		t.Fatal("IsRemoteForwardRefused(nil) = true, want false")
+	}
+}

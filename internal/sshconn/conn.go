@@ -536,6 +536,16 @@ func IsChannelRefused(err error) bool {
 	return errors.As(err, &refused) && refused.Reason == ssh.Prohibited
 }
 
+// IsRemoteForwardRefused reports whether err is the server declining a
+// tcpip-forward request, such as when AllowTcpForwarding is disabled or
+// PermitListen forbids the requested listener.
+func IsRemoteForwardRefused(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "tcpip-forward request denied by peer")
+}
+
 // Listen asks the authenticated SSH server to open one remote listener.
 func (conn *Conn) Listen(network, address string) (net.Listener, error) {
 	return conn.ListenContext(context.Background(), network, address, nil)
