@@ -107,6 +107,10 @@ func (state *State) installTerminalHandlers(session *Session) {
 	t.pageIdentity(sessionID)
 	h := &t.handlers
 	h.Role = gfx.RoleTerminal
+	// The grid is text the user selects, so the pointer over it is the I-beam,
+	// as over any terminal; a part painted over the control (the scrollbar, the
+	// accept-suggestion badge) declares its own.
+	h.Cursor = gfx.PointerCursorText
 	// The terminal's input is the application's own routing: a key the
 	// application acts on (a shortcut, the completion list, the key that
 	// activates a pane) is handled before the terminal encodes it, and the

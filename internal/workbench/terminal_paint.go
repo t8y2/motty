@@ -668,7 +668,7 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 
 	if declareHit {
 		canvas.HitWithOptions(id, geometry.area, t.accessibleName(state.messages.LabelTerminalFmt, session.Address), gfx.HitOptions{
-			Role: gfx.RoleTerminal, Autofocus: session.ID == state.activeSessionID,
+			Role: gfx.RoleTerminal, Cursor: gfx.PointerCursorText, Autofocus: session.ID == state.activeSessionID,
 		})
 	}
 	if hintShown {
