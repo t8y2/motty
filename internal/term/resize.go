@@ -215,14 +215,19 @@ func (t *Terminal) clearStalePrompt() {
 	}
 	rows := len(t.promptSaved)
 	t.promptStale = false
-	t.dropPromptRows()
 	last := min(row+rows-1, len(t.main.lines)-1)
 	for y := row; y <= last; y++ {
 		if t.images != nil {
 			t.images.dropLine(t.main.lines[y].id)
 		}
 		t.main.lines[y] = t.recycle(t.main.lines[y])
+		// The shell's redraw replaces the display copy with the prompt row it
+		// stands for, which is not new output: the row keeps the time of the
+		// saved row it replaces, so the gutter keeps showing when the prompt
+		// appeared rather than when the resize was drawn.
+		t.main.lines[y].at = t.promptSaved[y-row].at
 	}
+	t.dropPromptRows()
 }
 
 // capturePromptRows keeps the rows from the prompt at row as the shell drew
@@ -275,6 +280,10 @@ func (t *Terminal) paintPromptLine(dst, src *line) {
 		dst.hyperlinks = &links
 	}
 	dst.wrapped = src.wrapped
+	// The copy holds the prompt the saved row drew, so it carries the saved
+	// row's time: a resize is not new output, and the gutter must not show the
+	// moment of the resize as the moment the prompt appeared.
+	dst.at = src.at
 }
 
 // dropPromptRows releases the saved prompt rows.
@@ -424,15 +433,26 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 // from the oldest end; the line count since the start follows the change.
 func (t *Terminal) refillHistory(lines []*line) {
 	oldCount := t.histCount
-	if drop := len(lines) - t.histMax; drop > 0 {
+	// A reflow rebuilds the rows, so a cached row number no longer names a row.
+	t.logicalNumbers.valid = false
+	rows := len(lines)
+	if drop := rows - t.histMax; drop > 0 {
 		if t.images != nil {
 			for _, l := range lines[:drop] {
 				t.images.dropLine(l.id)
 			}
 		}
+		// A reflow can leave more rows than the history holds; the rows it
+		// drops leave from the oldest end in order, like dropOldest's do.
+		for _, l := range lines[:drop] {
+			t.noteDropped(l)
+		}
 		lines = lines[drop:]
 	}
-	t.scrolled = t.scrolled - uint64(oldCount) + uint64(len(lines))
+	// A reflow produces rows and drops them in the same step, so the rows it
+	// dropped still count as lines ever pushed: the rows after them keep the
+	// numbers they showed before the resize.
+	t.scrolled = t.scrolled - uint64(oldCount) + uint64(rows)
 	if len(lines) > 0 && t.hist == nil {
 		t.hist = make([]*line, t.histMax)
 	}

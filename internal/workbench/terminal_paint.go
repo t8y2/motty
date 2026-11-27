@@ -519,6 +519,11 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 	canvas.Clip(geometry.area)
 	t.cache.begin()
 	t.prepareLogicalLines()
+	if gutterShown {
+		// The strip numbers logical lines, so it survives a resize's rewrap;
+		// see paintGutter.
+		t.gutterNumbers, t.gutterHeads = t.screen.LogicalLineNumbers(t.gutterNumbers, t.gutterHeads)
+	}
 	if cap(t.rowIDs) < rows {
 		t.rowIDs = make([]uint64, rows)
 	} else {

@@ -323,3 +323,71 @@ func TestGutterAutoWidthResizesLiveShellOnWake(t *testing.T) {
 		t.Fatalf("shell resize = %v, want [%d %d]", got, after.cols, after.rows)
 	}
 }
+
+func countExact(texts []string, want string) int {
+	count := 0
+	for _, text := range texts {
+		if text == want {
+			count++
+		}
+	}
+	return count
+}
+
+// A resize rewraps lines into more or fewer rows. The strip skips the rows a
+// line gains, every number is painted once wherever the wrap falls, and the
+// times stay what they were: a rewrap is not new output, so the clock must not
+// move to the resize.
+func TestGutterSkipsRewrappedRowsAndKeepsNumbersAndTimes(t *testing.T) {
+	state, session, _ := selectionState()
+	state.viewport.Width = 600
+	stamp := time.Date(2026, 1, 2, 3, 4, 5, 0, time.Local).Unix()
+	clock := stamp
+	state.wallClock = func() int64 { return clock }
+	state.setTerminalGutter(gutterBoth)
+	cols, _ := session.term.screen.Size()
+	session.term.write([]byte(strings.Repeat("ab", cols) + "\r\nbeta\r\ngamma"))
+	want := time.Unix(stamp, 0).Format("15:04:05")
+
+	var canvas gfx.Canvas
+	state.paintGrid(&canvas, session, state.layoutForSession(session.ID))
+	texts := gutterTexts(&canvas)
+	for _, number := range []string{"1", "2", "3"} {
+		if got := countExact(texts, number); got != 1 {
+			t.Fatalf("number %s painted %d times in %q", number, got, texts)
+		}
+	}
+	// Every line was written in the same second, so each of the three lines
+	// shows it once on the row that begins it.
+	if got := countExact(texts, want); got != 3 {
+		t.Fatalf("time %s painted %d times in %q", want, got, texts)
+	}
+
+	clock += 3600
+	later := time.Unix(clock, 0).Format("15:04:05")
+	state.Resize(gfx.Size{Width: 600 - 4*state.cellWidth, Height: state.viewport.Height})
+	canvas.Reset()
+	state.paintGrid(&canvas, session, state.layoutForSession(session.ID))
+	texts = gutterTexts(&canvas)
+	for _, number := range []string{"1", "2", "3"} {
+		if got := countExact(texts, number); got != 1 {
+			t.Fatalf("number %s painted %d times after narrowing in %q", number, got, texts)
+		}
+	}
+	if got, gotLater := countExact(texts, want), countExact(texts, later); got != 3 || gotLater != 0 {
+		t.Fatalf("times after narrowing: %s painted %d times, %s painted %d times in %q", want, got, later, gotLater, texts)
+	}
+
+	state.Resize(gfx.Size{Width: 600, Height: state.viewport.Height})
+	canvas.Reset()
+	state.paintGrid(&canvas, session, state.layoutForSession(session.ID))
+	texts = gutterTexts(&canvas)
+	for _, number := range []string{"1", "2", "3"} {
+		if got := countExact(texts, number); got != 1 {
+			t.Fatalf("number %s painted %d times after widening in %q", number, got, texts)
+		}
+	}
+	if got, gotLater := countExact(texts, want), countExact(texts, later); got != 3 || gotLater != 0 {
+		t.Fatalf("times after widening: %s painted %d times, %s painted %d times in %q", want, got, later, gotLater, texts)
+	}
+}
