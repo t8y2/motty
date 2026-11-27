@@ -154,7 +154,6 @@ type AIPanelMessages struct {
 	// each scope lets run without asking, in this conversation only. The chip
 	// carries its scope's name alone; the hint says what the name controls.
 	AutoScopeHint       string
-	AutoScopeBusy       string // why the chip waits while work is running
 	AutoScopeLowDesc    string
 	AutoScopeMediumDesc string
 	AutoScopeHighDesc   string

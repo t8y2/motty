@@ -706,12 +706,10 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 		panel.reasoningMenu = false
 		panel.modelMenu = !panel.modelMenu
 	case id == hitAIAutoScope:
-		if !state.aiScopeLocked() {
-			panel.targetOpen = false
-			panel.modelMenu = false
-			panel.reasoningMenu = false
-			panel.autoMenu = !panel.autoMenu
-		}
+		panel.targetOpen = false
+		panel.modelMenu = false
+		panel.reasoningMenu = false
+		panel.autoMenu = !panel.autoMenu
 	case id == hitAIReasoningChip:
 		panel.targetOpen = false
 		panel.modelMenu = false
@@ -1249,7 +1247,7 @@ func (state *State) aiPanelKeyGesture(event gfx.KeyEvent) (gfx.EventResult, bool
 	// reached by the next Up or Down; there is no way to name it before it is
 	// declared.
 	if event.Target == hitAIAutoScope && !panel.autoMenu && !event.Repeat &&
-		(event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) && !state.aiScopeLocked() {
+		(event.Key == gfx.KeyDown || event.Key == gfx.KeyUp) {
 		panel.targetOpen = false
 		panel.modelMenu = false
 		panel.reasoningMenu = false

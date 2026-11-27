@@ -1499,7 +1499,6 @@ var englishAIPanel = AIPanelMessages{
 	RiskCritical: "Critical risk",
 
 	AutoScopeHint:       "What runs without asking in this conversation",
-	AutoScopeBusy:       "Finish this request or answer the approval first",
 	AutoScopeLowDesc:    "Read-only checks run on their own; changes ask first.",
 	AutoScopeMediumDesc: "Read-only checks and bounded changes run; deletes, privilege changes, service stops and commands that run unreviewed code ask.",
 	AutoScopeHighDesc:   "Everything below critical runs; critical steps still ask for the typed word.",

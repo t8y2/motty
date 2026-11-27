@@ -243,7 +243,7 @@ func (state *State) declareAIComposerRow(c ui.C, body *aiBody) {
 				body.reasoningChip = state.declareAIReasoningChip(c)
 			}
 			if ai.mode == agent.ModeAgent {
-				body.scopeChip = state.declareAIAutoScopeChip(c, running || len(ai.approvals) > 0)
+				body.scopeChip = state.declareAIAutoScopeChip(c)
 			}
 			ui.Spacer(c)
 		})
@@ -256,7 +256,7 @@ func (state *State) declareAIComposerRow(c ui.C, body *aiBody) {
 				body.reasoningChip = state.declareAIReasoningChip(c)
 			}
 			if ai.mode == agent.ModeAgent && !wrap {
-				body.scopeChip = state.declareAIAutoScopeChip(c, running || len(ai.approvals) > 0)
+				body.scopeChip = state.declareAIAutoScopeChip(c)
 			}
 		}
 		ui.Spacer(c)
@@ -574,10 +574,9 @@ func (state *State) declareAIModelChip(c ui.C) ui.Box {
 // approval scope of this conversation and opens the scopes to pick from. The chip
 // carries the scope name alone: a prefix such as "Auto:" reads as a second,
 // unexplained word, and the hint and the menu say what the name controls. Only
-// Agent mode runs commands, so only it shows the chip; a request already running
-// or waiting for an answer keeps the scope it started with, which is why locked
-// disables the chip but still names it.
-func (state *State) declareAIAutoScopeChip(c ui.C, locked bool) ui.Box {
+// Agent mode runs commands, so only it shows the chip. It stays live while a
+// request runs: the request takes the new scope from its next action on.
+func (state *State) declareAIAutoScopeChip(c ui.C) ui.Box {
 	pal, m := state.pal, state.messages.AIPanel
 	level := state.aiAutoUpTo()
 	label := state.aiScopeName(level)
@@ -589,12 +588,8 @@ func (state *State) declareAIAutoScopeChip(c ui.C, locked bool) ui.Box {
 	if canvas := c.Canvas(); canvas != nil && (canvas.Pressed() == hitAIAutoScope || canvas.Hovered() == hitAIAutoScope) || state.ai.panel.autoMenu {
 		fill = pal.surfaceHot
 	}
-	hint := m.AutoScopeHint
-	if locked {
-		hint = m.AutoScopeBusy
-	}
 	return ui.Row(c).Height(aiSendSize-4).PadX(9).Gap(4).Shrink(0).Items(ui.Center).Background(fill).Radius((aiSendSize-4)/2).
-		HitWith(hitAIAutoScope, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint, Disabled: locked, Expanded: state.ai.panel.autoMenu}).Children(func() {
+		HitWith(hitAIAutoScope, label, gfx.HitOptions{Role: gfx.RoleButton, Hint: m.AutoScopeHint, Expanded: state.ai.panel.autoMenu}).Children(func() {
 		ui.Icon(c, lucideIcons[icon]).Size(12, 12).Color(foreground).Shrink(0)
 		ui.Text(c, label).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(foreground).Ellipsis()
 		ui.Icon(c, lucideIcons[iconChevronDown]).Size(12, 12).Color(pal.muted).Shrink(0).MarginSides(0, 0, 0, 2)

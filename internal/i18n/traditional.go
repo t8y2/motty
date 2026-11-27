@@ -1499,7 +1499,6 @@ var traditionalAIPanel = AIPanelMessages{
 	RiskCritical: "極高風險",
 
 	AutoScopeHint:       "本次對話中哪些操作無需確認即可執行",
-	AutoScopeBusy:       "請先結束目前請求或處理待確認的操作",
 	AutoScopeLowDesc:    "只讀檢查自動執行，改動類操作先確認。",
 	AutoScopeMediumDesc: "只讀檢查和小範圍改動自動執行；刪除、改權限、停服務與執行無法審閱的程式碼仍先確認。",
 	AutoScopeHighDesc:   "極高風險以下都自動執行，極高風險仍需輸入確認詞。",

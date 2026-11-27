@@ -138,6 +138,36 @@ func TestLowRiskRunsWithoutAskingAndOthersAsk(t *testing.T) {
 	}
 }
 
+// A scope changed while the gate is in use decides the calls after it, both
+// ways, and never lets a critical action run without the word.
+func TestScopeChangeAppliesToTheNextCall(t *testing.T) {
+	backend := &fakeBackend{}
+	asked := 0
+	scope := NewScope(risk.Low)
+	g := Gate{Backend: backend, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low}, Scope: scope, Approver: func(context.Context, Request) (bool, string, error) {
+		asked++
+		return false, "", nil
+	}}
+	run := func(command string) Result {
+		return g.Run(context.Background(), tools.NameTerminalExec, []byte(`{"command":"`+command+`"}`))
+	}
+	if res := run("mkdir /tmp/x"); !res.Denied || asked != 1 {
+		t.Fatalf("medium under a low scope: %+v asked %d", res, asked)
+	}
+	scope.Set(risk.Medium)
+	if res := run("mkdir /tmp/x"); res.IsError || asked != 1 || backend.execs.Load() != 1 {
+		t.Fatalf("medium after raising the scope: %+v asked %d", res, asked)
+	}
+	scope.Set(risk.Low)
+	if res := run("mkdir /tmp/x"); !res.Denied || asked != 2 || backend.execs.Load() != 1 {
+		t.Fatalf("medium after lowering the scope: %+v asked %d", res, asked)
+	}
+	scope.Set(risk.High)
+	if res := run("rm -rf /"); !res.Denied || asked != 3 || backend.execs.Load() != 1 {
+		t.Fatalf("critical under a high scope: %+v asked %d", res, asked)
+	}
+}
+
 func TestDeclinedActionNeverReachesTheBackend(t *testing.T) {
 	backend := &fakeBackend{}
 	g := Gate{Backend: backend, Policy: risk.Policy{Enabled: true}, Approver: func(context.Context, Request) (bool, string, error) { return false, "", nil }}

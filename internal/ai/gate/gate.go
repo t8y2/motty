@@ -131,9 +131,13 @@ type Gate struct {
 	NotesWriteFullAccess bool
 	Backend              Backend
 	Policy               risk.Policy
-	Mode                 Mode
-	Approver             Approver // nil means nothing that needs approval can run
-	Outputs              *OutputStore
+	// Scope, when set, is the AutoUpTo of Policy that the user can change while
+	// the request runs: each decision reads it, so a change applies from the
+	// next action on. An approval already asked stays asked.
+	Scope    *Scope
+	Mode     Mode
+	Approver Approver // nil means nothing that needs approval can run
+	Outputs  *OutputStore
 	// Target is an in-app request's immutable default. References contains only
 	// sessions explicitly mentioned in this question. Nil Target retains the
 	// external MCP contract; references never change the default.
@@ -573,6 +577,9 @@ func (g Gate) execMany(ctx context.Context, name string, args tools.TerminalExec
 // about.
 func (g Gate) ask(ctx context.Context, tool string, kind tools.Kind, session, summary string, assessment risk.Assessment, otherSessions ...string) *Result {
 	policy := g.Policy
+	if g.Scope != nil {
+		policy.AutoUpTo = g.Scope.Level()
+	}
 	if g.Mode == ModeAuto && policy.AutoUpTo < risk.Medium {
 		policy.AutoUpTo = risk.Medium
 	}

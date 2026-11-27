@@ -1499,7 +1499,6 @@ var chineseAIPanel = AIPanelMessages{
 	RiskCritical: "极高风险",
 
 	AutoScopeHint:       "本次对话中哪些操作无需确认即可执行",
-	AutoScopeBusy:       "请先结束当前请求或处理待确认的操作",
 	AutoScopeLowDesc:    "只读检查自动执行，改动类操作先确认。",
 	AutoScopeMediumDesc: "只读检查和小范围改动自动执行；删除、改权限、停服务与执行无法审阅的代码仍先确认。",
 	AutoScopeHighDesc:   "极高风险以下都自动执行，极高风险仍需输入确认词。",

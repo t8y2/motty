@@ -112,6 +112,9 @@ type aiRun struct {
 	// provider takes them (a native agent loop in Agent mode).
 	steers    aiSteers
 	steerable bool
+	// scope is the conversation's approval scope as the run's gate reads it;
+	// picking another scope while the run goes moves it for the next action.
+	scope *gate.Scope
 }
 
 // aiSettings are the assistant's choices, kept in the AI database.
@@ -394,6 +397,7 @@ func (state *State) reloadAISettings() {
 	if !failed {
 		ai.settings = settings
 		ai.agentTransferRoots = transferRoots
+		state.aiApplyScope() // a conversation following the setting follows it mid-request too
 	}
 	// Model reasoning settings can change in another window while this panel stays open.
 	if models, err := ai.store.Models(); err == nil {
@@ -582,11 +586,14 @@ func (state *State) aiProvider(provider store.Provider) llm.Provider {
 	return llm.NewOpenAI(config)
 }
 
-// aiGate is the door the assistant's tool calls go through.
+// aiGate is the door the assistant's tool calls go through. Its scope starts
+// at the conversation's and follows it while the request runs.
 func (state *State) aiGate(mode gate.Mode) gate.Gate {
+	level := state.aiAutoUpTo()
 	return gate.Gate{
 		Backend:  state.ai.backend,
-		Policy:   risk.Policy{Enabled: true, AutoUpTo: state.aiAutoUpTo()},
+		Policy:   risk.Policy{Enabled: true, AutoUpTo: level},
+		Scope:    gate.NewScope(level),
 		Mode:     mode,
 		Approver: state.aiApprover,
 	}
@@ -603,25 +610,24 @@ func (state *State) aiAutoUpTo() risk.Level {
 
 // aiSetAutoUpTo picks the scope of this conversation. Picking the setting's own
 // scope clears the pick instead of pinning a duplicate, so the chip goes back to
-// following the setting. A scope that is fixed for a running request refuses the
-// pick here, so no caller can change it behind the request's back.
+// following the setting. A request already running takes the new scope from
+// its next action on; a question it already asked still waits for its answer.
 func (state *State) aiSetAutoUpTo(level risk.Level) {
-	if state.aiScopeLocked() {
-		return
-	}
 	if level == state.ai.settings.autoUpTo {
 		state.ai.autoUpTo = nil
-		return
+	} else {
+		picked := level
+		state.ai.autoUpTo = &picked
 	}
-	picked := level
-	state.ai.autoUpTo = &picked
+	state.aiApplyScope()
 }
 
-// aiScopeLocked reports whether this conversation's scope must stay as it is: a
-// request in flight was started under it, and an approval waiting for an answer
-// belongs to one.
-func (state *State) aiScopeLocked() bool {
-	return state.ai.run != nil || state.ai.pendingRun != nil || len(state.ai.approvals) > 0
+// aiApplyScope hands the conversation's scope to the request in flight, whose
+// gate reads it at each decision.
+func (state *State) aiApplyScope() {
+	if run := state.ai.run; run != nil && run.scope != nil {
+		run.scope.Set(state.aiAutoUpTo())
+	}
 }
 
 // aiApprover is called from the agent's goroutine. It shows the question in the
@@ -1003,6 +1009,7 @@ func (state *State) aiSend() bool {
 		stats: stats, usageBase: usageBase, cancel: cancel, open: -1, providerID: provider.ID,
 		target: target, extras: extras, references: references, targetKey: targetKey, attachments: refs,
 		backend: backend, steerable: ai.mode == agent.ModeAgent && agent.Steerable(config.Provider),
+		scope: config.Gate.Scope,
 	}
 	config.Steer = run.steers.take
 	ai.run = run
@@ -1012,7 +1019,6 @@ func (state *State) aiSend() bool {
 	}
 	backend.uploadRun = run
 	ai.lastRun = nil
-	ai.panel.autoMenu = false // the scope is fixed while the request runs
 	if backend.defaultDone != nil && len(backend.bindings) == 1 {
 		go state.aiWatchTarget(ctx, run, backend.defaultDone)
 	}
