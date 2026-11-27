@@ -3,11 +3,13 @@ package sftpclient
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -193,6 +195,7 @@ func TestWorkerCancelInterruptsDownloadAndRemovesPartialFile(t *testing.T) {
 // network: the folders listed and the paths removed come back in order.
 type treeRemote struct {
 	*fakeRemote
+	mu         sync.Mutex // removals are pipelined, so the fake is called concurrently
 	dirs       map[string][]os.FileInfo
 	links      map[string]string
 	failRemove map[string]error
@@ -201,6 +204,8 @@ type treeRemote struct {
 }
 
 func (remote *treeRemote) ReadDir(directory string) ([]os.FileInfo, error) {
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
 	remote.listed = append(remote.listed, directory)
 	entries, ok := remote.dirs[directory]
 	if !ok {
@@ -210,6 +215,8 @@ func (remote *treeRemote) ReadDir(directory string) ([]os.FileInfo, error) {
 }
 
 func (remote *treeRemote) Lstat(name string) (os.FileInfo, error) {
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
 	if _, ok := remote.links[name]; ok {
 		return fakeInfo{name: path.Base(name), mode: os.ModeSymlink | 0o777}, nil
 	}
@@ -225,6 +232,8 @@ func (remote *treeRemote) Lstat(name string) (os.FileInfo, error) {
 }
 
 func (remote *treeRemote) Remove(name string) error {
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
 	if err := remote.failRemove[name]; err != nil {
 		return err
 	}
@@ -233,6 +242,8 @@ func (remote *treeRemote) Remove(name string) error {
 }
 
 func (remote *treeRemote) RemoveDirectory(name string) error {
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
 	if err := remote.failRemove[name]; err != nil {
 		return err
 	}
@@ -267,9 +278,24 @@ func TestWorkerEmptiesAFolderFromTheBottomUpWithoutFollowingLinks(t *testing.T) 
 	if slices.Contains(remote.listed, "/elsewhere") {
 		t.Fatal("the link was followed: the folder it points at was emptied")
 	}
+	// Removals are pipelined, so only the order that matters is fixed: a folder
+	// goes after everything inside it.
 	want := []string{"/data/a.txt", "/data/sub/b.txt", "/data/sub", "/data/outside", "/data"}
-	if !slices.Equal(remote.removed, want) {
-		t.Fatalf("removed %q, want %q", remote.removed, want)
+	if len(remote.removed) != len(want) {
+		t.Fatalf("removed %q, want the same entries as %q", remote.removed, want)
+	}
+	for _, entry := range want {
+		if !slices.Contains(remote.removed, entry) {
+			t.Fatalf("removed %q, missing %q", remote.removed, entry)
+		}
+	}
+	for _, folder := range []string{"/data/sub", "/data"} {
+		position := slices.Index(remote.removed, folder)
+		for _, inside := range remote.removed[position+1:] {
+			if strings.HasPrefix(inside, folder+"/") {
+				t.Fatalf("%s was removed before %s inside it: %q", folder, inside, remote.removed)
+			}
+		}
 	}
 	if len(remote.dirs["/elsewhere"]) != 1 {
 		t.Fatalf("what the link points at = %+v", remote.dirs["/elsewhere"])
@@ -386,6 +412,8 @@ func TestWorkerForceRemovalTreatsAMissingPathAsRemoved(t *testing.T) {
 type endlessRemote struct{ *treeRemote }
 
 func (remote endlessRemote) ReadDir(directory string) ([]os.FileInfo, error) {
+	remote.mu.Lock()
+	defer remote.mu.Unlock()
 	remote.listed = append(remote.listed, directory)
 	return []os.FileInfo{fakeInfo{name: "again", mode: os.ModeDir | 0o755}}, nil
 }
@@ -489,5 +517,53 @@ func TestWorkerListNamesSkipsOwnerAndLinkWork(t *testing.T) {
 	}
 	if remote.lookups != 0 {
 		t.Fatalf("the names listing followed %d links", remote.lookups)
+	}
+}
+
+// pipelinedRemote holds every file removal until several are in flight at once,
+// which a removal that sends one request and waits for its answer never reaches.
+type pipelinedRemote struct {
+	*treeRemote
+	arrived chan struct{}
+	release chan struct{}
+}
+
+func (remote *pipelinedRemote) Remove(name string) error {
+	remote.arrived <- struct{}{}
+	select {
+	case <-remote.release:
+	case <-time.After(5 * time.Second):
+		return errors.New("removals were sent one at a time")
+	}
+	return remote.treeRemote.Remove(name)
+}
+
+func TestWorkerRemovalKeepsSeveralRequestsInFlight(t *testing.T) {
+	const files = 8
+	entries := make([]os.FileInfo, 0, files)
+	for index := range files {
+		entries = append(entries, fakeInfo{name: fmt.Sprintf("f%d.js", index), size: 1})
+	}
+	remote := &pipelinedRemote{
+		treeRemote: newTreeRemote(map[string][]os.FileInfo{"/data": entries}, nil),
+		arrived:    make(chan struct{}, files),
+		release:    make(chan struct{}),
+	}
+	worker := NewWorker(func() (Remote, error) { return remote, nil }, nil)
+	defer worker.Close()
+
+	if !worker.RemoveDirectory("/data") {
+		t.Fatal("the removal was not queued")
+	}
+	for range files {
+		select {
+		case <-remote.arrived:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the removal did not send its requests ahead of the answers")
+		}
+	}
+	close(remote.release)
+	if result := waitResult(t, worker); result.Err != nil || result.Removed != files+1 {
+		t.Fatalf("remove directory result = %+v", result)
 	}
 }
