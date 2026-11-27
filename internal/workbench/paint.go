@@ -92,6 +92,7 @@ const (
 	iconCloseOthers
 	iconCloseRight
 	iconSparkles
+	iconDices
 	iconTransfer
 	iconBug
 	iconInfo
@@ -2885,6 +2886,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconCloseOthers:         icons.ListX,
 	iconCloseRight:          icons.ArrowRightToLine,
 	iconSparkles:            icons.Sparkles,
+	iconDices:               icons.Dices,
 	iconTransfer:            icons.ArrowUpDown,
 	iconBug:                 icons.Bug,
 	iconInfo:                icons.Info,
@@ -3222,6 +3224,7 @@ func (state *State) declareHostFormBody(c ui.C, title string) {
 		form.colorSwatchBoxes[index] = ui.Box{}
 	}
 	form.colorPickerBox = ui.Box{}
+	form.randomColorBox = ui.Box{}
 	chrome := &state.chrome
 	chrome.hostDialogTitle = title
 	if chrome.hostFormViewportDraw == nil {

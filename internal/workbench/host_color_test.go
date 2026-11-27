@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
@@ -324,5 +325,29 @@ func TestColoredHostsKeepSelectionAndBadgeContrast(t *testing.T) {
 				t.Fatal("a selected colored card paints its icon badge in the card's own color")
 			}
 		})
+	}
+}
+
+// TestRandomHostColorIsAValidColorOtherThanTheCurrentOne walks the random button
+// as a user does: it fills the form with a colour the host accepts, and pressing
+// it again never leaves the colour as it was.
+func TestRandomHostColorIsAValidColorOtherThanTheCurrentOne(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.openEditHostID(state.hosts[0].ID)
+	state.Click(hitHostColors.At(5))
+	for range 50 {
+		before := state.editor.value(fieldColor)
+		state.Click(hitHostRandomColor)
+		after := state.editor.value(fieldColor)
+		if normalized, ok := normalizeHostColor(after); !ok || normalized == "" {
+			t.Fatalf("the random color %q is not a color the host accepts", after)
+		}
+		if strings.EqualFold(after, before) {
+			t.Fatalf("the random color is the one the form already had: %q", after)
+		}
+	}
+	state.Click(hitDialogSubmit)
+	if state.modal != modalNone || state.hosts[0].Color == "" || state.hosts[0].Color == "#3b82f6" {
+		t.Fatalf("the random color was not saved: modal %v, color %q", state.modal, state.hosts[0].Color)
 	}
 }

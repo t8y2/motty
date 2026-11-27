@@ -605,6 +605,7 @@ type Messages struct {
 	ColorPickerApply                     string
 	ColorPickerInvalid                   string
 	ColorNone                            string
+	ColorRandom                          string
 	ColorGreen                           string
 	ColorYellow                          string
 	ColorOrange                          string

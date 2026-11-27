@@ -627,6 +627,7 @@ var TraditionalMessages = Messages{
 	ColorPickerApply:                     "確定",
 	ColorPickerInvalid:                   "請輸入有效的十六進位制色值",
 	ColorNone:                            "無顏色",
+	ColorRandom:                          "隨機顏色",
 	ColorGreen:                           "綠色",
 	ColorYellow:                          "黃色",
 	ColorOrange:                          "橙色",

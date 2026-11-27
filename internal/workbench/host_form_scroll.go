@@ -89,11 +89,12 @@ type hostFormScroll struct {
 	passwordField   ui.FormFieldState
 	passwordControl ui.Box
 	// colorValue is the picker's staged colour, colorState its open panel, and
-	// colorSwatchBoxes/colorPickerBox the page controls for the tab ring.
+	// colorSwatchBoxes/colorPickerBox/randomColorBox the page controls for the tab ring.
 	colorValue       gfx.Color
 	colorState       ui.ColorPickerState
 	colorSwatchBoxes [len(hostColors)]ui.Box
 	colorPickerBox   ui.Box
+	randomColorBox   ui.Box
 	// algoLayout is the algorithm mode this frame's advanced rows were laid out
 	// for, before the page's choice writes the mode a click chose.
 	algoLayout algoMode
