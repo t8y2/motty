@@ -133,6 +133,7 @@ func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
 		want   bool
 	}{
 		{name: "SSH password prompt", prompt: "root@example.com's password:", want: true},
+		{name: "GateShell bracketed SSH password prompt", prompt: "[root@10.169.156.26:22] Password:", want: true},
 		{name: "sudo password prompt", prompt: "[sudo] password for root:", want: true},
 		{name: "passphrase prompt", prompt: "Enter passphrase for key '/home/user/.ssh/id_ed25519':", want: true},
 		{name: "Chinese password prompt", prompt: "请输入密码：", want: true},
@@ -629,6 +630,39 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 		}
 		if results := session.LoginCommandResults(); len(results) != 0 {
 			t.Fatalf("interactive sudo step was recorded as a successful command: %+v", results)
+		}
+	})
+
+	t.Run("GateShell bracketed SSH password prompt sends configured secret", func(t *testing.T) {
+		const password = "configured-password"
+		state, shell, now := loginCommandSession(t, "ssh root@10.169.156.26:22\n"+password+"\necho after")
+		session := &state.sessions[0]
+		token := session.term.folderToken
+
+		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		shell.say("\x1b]133;A;motty=" + token + "\x07\r\n[root@10.169.156.26:22] Password:")
+		state.Wake()
+		*now += loginCommandGrace
+		state.Wake()
+
+		if aborted := session.LoginCommandAborted(); aborted != "" {
+			t.Fatalf("GateShell password prompt aborted the configured password: %q", aborted)
+		}
+		if shell.typed() != "ssh root@10.169.156.26:22\r"+password+"\r" {
+			t.Fatalf("configured password was not sent as a secret reply: %q", shell.typed())
+		}
+		if results := session.LoginCommandResults(); len(results) != 0 {
+			t.Fatalf("password handoff recorded a command result before authentication completed: %+v", results)
+		}
+		if strings.Contains(state.status, password) || strings.Contains(string(session.term.screen.AppendRetainedText(nil)), password) {
+			t.Fatal("configured password was displayed in the status bar or terminal")
+		}
+
+		shell.say("\x1b]133;A;motty=" + token + "\x07root@host:~# \x1b]133;B;motty=" + token + "\x07")
+		state.Wake()
+		if shell.typed() != "ssh root@10.169.156.26:22\r"+password+"\recho after\r" {
+			t.Fatalf("next command did not run after authentication: %q", shell.typed())
 		}
 	})
 

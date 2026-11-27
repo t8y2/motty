@@ -18,7 +18,7 @@ var (
 	// loginPasswordPrompt matches an explicit password prompt, including the
 	// common OpenSSH "user@host's password:" and key passphrase forms. Other
 	// secret prompts, such as verification codes and tokens, remain blocked.
-	loginPasswordPrompt = regexp.MustCompile(`(?i)^\s*(?:\[sudo\]\s*)?(?:(?:[\w.-]+@[\w.:-]+(?:['’]s)?\s+)?(?:password|passwd|passphrase|passcode)|(?:please\s+)?(?:enter|type|input)\s+(?:your\s+)?(?:password|passwd|passphrase|passcode)|(?:please\s+)?(?:请输入|输入)(?:登录)?(?:密码|口令)|密码|口令)(?:\s+for\b[^:：?？]*)?\s*[:：?？]\s*$`)
+	loginPasswordPrompt = regexp.MustCompile(`(?i)^\s*(?:\[sudo\]\s*)?(?:(?:\[[\w.-]+@[\w.:-]+\]|[\w.-]+@[\w.:-]+(?:['’]s)?)\s+)?(?:password|passwd|passphrase|passcode|(?:please\s+)?(?:enter|type|input)\s+(?:your\s+)?(?:password|passwd|passphrase|passcode)|(?:please\s+)?(?:请输入|输入)(?:登录)?(?:密码|口令)|密码|口令)(?:\s+for\b[^:：?？]*)?\s*[:：?？]\s*$`)
 
 	// These are REPL and database prompts where sending the next configured line
 	// is a valid handoff. Pager prompts and Vim's colon prompt are deliberately
