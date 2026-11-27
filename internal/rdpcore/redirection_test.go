@@ -31,6 +31,8 @@ import (
 	"motty/internal/rdpcore/protocol/lic"
 	"motty/internal/rdpcore/protocol/mcs"
 	"motty/internal/rdpcore/protocol/pdu"
+	"motty/internal/rdpcore/protocol/rdstls"
+	"motty/internal/rdpcore/protocol/x224"
 )
 
 // The server here replays how GNOME Remote Desktop 46 receives a remote
@@ -106,7 +108,7 @@ func (r rigRedirection) encode() []byte {
 	field(utf16z(r.username))
 	field(utf16z(r.password))
 	flags |= pdu.LBRedirectionGUID
-	field(utf16z(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef"))))
+	field(rigRedirectionGUID())
 	flags |= pdu.LBTargetCertificate
 	container := binary.LittleEndian.AppendUint32(nil, 32)     // CERT_cert_file_element
 	container = binary.LittleEndian.AppendUint32(container, 1) // ENCODING_TYPE_ASN1_DER
@@ -130,6 +132,60 @@ func (r rigRedirection) encode() []byte {
 	return encoded
 }
 
+// rigRedirectionGUID is the LB_REDIRECTION_GUID the scripted server issues: the
+// Base64 text of 16 octets as UTF-16LE with its terminator, as GNOME Remote
+// Desktop sends it.
+func rigRedirectionGUID() []byte {
+	return encodedRigUTF16(base64.StdEncoding.EncodeToString([]byte("0123456789abcdef")) + "\x00")
+}
+
+// rigRDSTLS plays the server side of MS-RDSTLS (2.2) the way FreeRDP's does:
+// it sends the Capabilities PDU, then compares the password credentials it
+// gets with the redirection it issued, and answers with the result code.
+func rigRDSTLS(conn net.Conn, want [3]string) error {
+	if _, err := conn.Write([]byte{1, 0, 1, 0, 1, 0, 1, 0}); err != nil {
+		return err
+	}
+	var head [6]byte
+	if _, err := io.ReadFull(conn, head[:]); err != nil {
+		return fmt.Errorf("reading the Authentication Request: %w", err)
+	}
+	if !bytes.Equal(head[:], []byte{1, 0, 2, 0, 1, 0}) { // Version, PduType AUTHREQ, DataType PASSWORD_CREDS
+		return fmt.Errorf("Authentication Request starts % x", head)
+	}
+	field := func() ([]byte, error) {
+		var n [2]byte
+		if _, err := io.ReadFull(conn, n[:]); err != nil {
+			return nil, err
+		}
+		data := make([]byte, binary.LittleEndian.Uint16(n[:]))
+		_, err := io.ReadFull(conn, data)
+		return data, err
+	}
+	var fields [4][]byte
+	for i := range fields {
+		var err error
+		if fields[i], err = field(); err != nil {
+			return fmt.Errorf("reading field %d: %w", i, err)
+		}
+	}
+	text := func(b []byte) string { return strings.TrimRight(decodeRigUTF16(b), "\x00") }
+	result := uint32(0)
+	switch {
+	case !bytes.Equal(fields[0], rigRedirectionGUID()):
+		result = 0x00000005 // ACCESS_DENIED
+	case text(fields[1]) != want[1] || text(fields[2]) != want[0] || text(fields[3]) != want[2]:
+		result = 0x0000052E // LOGON_FAILURE
+	}
+	if _, err := conn.Write(binary.LittleEndian.AppendUint32([]byte{1, 0, 4, 0, 1, 0}, result)); err != nil {
+		return err
+	}
+	if result != 0 {
+		return fmt.Errorf("refused the credentials with %#x: user %q domain %q password %q", result, text(fields[1]), text(fields[2]), text(fields[3]))
+	}
+	return nil
+}
+
 // rigStage is when a script sends its redirection. A redirection may end
 // any phase of the connection sequence (MS-RDPBCGR 1.3.2).
 type rigStage int
@@ -146,6 +202,12 @@ type rigScript struct {
 	// logon is the account (domain, user, password) the connection must
 	// present over CredSSP.
 	logon [3]string
+	// rdstls, when set, makes the server offer MS-RDSTLS to a client that asks
+	// for it, and holds that exchange to this account (domain, user,
+	// password). GNOME Remote Desktop's handover daemon does, and for a client
+	// that did not ask it expects over NLA the account of the first
+	// connection instead (logon).
+	rdstls *[3]string
 	// redirect is sent at stage, once the connection is active by default.
 	redirect *rigRedirection
 	stage    rigStage
@@ -162,6 +224,7 @@ type rigScript struct {
 type rigConnection struct {
 	cookie  string // the Connection Request's cookie or routingToken, CRLF included
 	logon   [3]string
+	rdstls  bool // the connection authenticated over RDSTLS, not CredSSP
 	cluster mcs.ClientClusterData
 }
 
@@ -172,12 +235,14 @@ type rigServer struct {
 	scripts   []rigScript
 	forever   bool // connections past the scripts repeat the last one
 
-	listener   net.Listener
-	accepted   atomic.Int32
-	release    chan struct{}
-	followed   chan struct{}
-	followOnce sync.Once
-	abortOnce  sync.Once
+	listener         net.Listener
+	accepted         atomic.Int32 // connections that ran a script
+	failuresExpected atomic.Bool
+	declined         atomic.Int32 // RDSTLS requests a server without it answered with TLS
+	release          chan struct{}
+	followed         chan struct{}
+	followOnce       sync.Once
+	abortOnce        sync.Once
 
 	mu         sync.Mutex
 	seen       []rigConnection
@@ -244,7 +309,14 @@ func (s *rigServer) script(index int) rigScript {
 	return s.scripts[len(s.scripts)-1]
 }
 
+// expectFailures keeps the connection failures the script causes on purpose
+// from failing the test.
+func (s *rigServer) expectFailures() { s.failuresExpected.Store(true) }
+
 func (s *rigServer) fail(err error) {
+	if s.failuresExpected.Load() {
+		return
+	}
 	s.mu.Lock()
 	s.serverErrs = append(s.serverErrs, err)
 	s.mu.Unlock()
@@ -262,39 +334,66 @@ func (s *rigServer) acceptLoop() {
 		if err != nil {
 			return
 		}
-		index := int(s.accepted.Add(1))
-		if index > 1 {
-			// The client is back: the redirecting server can let go of it.
-			s.followOnce.Do(func() { close(s.followed) })
-		}
 		go func() {
 			defer conn.Close()
 			conn.SetDeadline(time.Now().Add(15 * time.Second))
-			_, err := s.play(conn, s.script(index))
+			request, err := readTPKT(conn)
 			if err != nil {
+				s.fail(fmt.Errorf("reading the Connection Request: %w", err))
+				return
+			}
+			if len(request) < 15 || request[1] != 0xE0 {
+				s.fail(fmt.Errorf("not an X.224 Connection Request: % x", request))
+				return
+			}
+			if rigRequested(request)&x224.ProtocolRDSTLS != 0 && s.script(int(s.accepted.Load())+1).rdstls == nil {
+				// A server without RDSTLS selects the TLS the client asked for
+				// beside it, and the client starts over.
+				s.declined.Add(1)
+				conn.Write(rigConnectionConfirm(x224.ProtocolSSL))
+				return
+			}
+			index := int(s.accepted.Add(1))
+			if index > 1 {
+				// The client is back: the redirecting server can let go of it.
+				s.followOnce.Do(func() { close(s.followed) })
+			}
+			if _, err := s.play(conn, s.script(index), request); err != nil {
 				s.fail(fmt.Errorf("connection %d: %w", index, err))
 			}
 		}()
 	}
 }
 
+// rigRequested is the protocols an X.224 Connection Request asks for.
+func rigRequested(request []byte) uint32 {
+	if n := len(request); n >= 8 && request[n-8] == 1 { // RDP_NEG_REQ
+		return binary.LittleEndian.Uint32(request[n-4:])
+	}
+	return 0
+}
+
+// rigConnectionConfirm is a Connection Confirm selecting protocol.
+func rigConnectionConfirm(protocol uint32) []byte {
+	return binary.LittleEndian.AppendUint32([]byte{3, 0, 0, 19, 14, 0xd0, 0, 0, 0, 0, 0, 2, 0, 8, 0}, protocol)
+}
+
 // play runs one connection: X.224, TLS, CredSSP, MCS and the connection
 // sequence up to the Font Map, then the script's ending.
-func (s *rigServer) play(conn net.Conn, script rigScript) (rigConnection, error) {
+func (s *rigServer) play(conn net.Conn, script rigScript, request []byte) (rigConnection, error) {
 	var seen rigConnection
-	request, err := readTPKT(conn)
-	if err != nil {
-		return seen, err
-	}
-	if len(request) < 15 || request[1] != 0xE0 {
-		return seen, fmt.Errorf("not an X.224 Connection Request: % x", request)
-	}
+	var err error
 	seen.cookie = string(request[7 : int(request[0])+1-8])
 	if script.refuse {
 		return seen, nil
 	}
-	// Connection Confirm selecting NLA (PROTOCOL_HYBRID).
-	if _, err := conn.Write([]byte{3, 0, 0, 19, 14, 0xd0, 0, 0, 0, 0, 0, 2, 0, 8, 0, 2, 0, 0, 0}); err != nil {
+	// Connection Confirm selecting RDSTLS where the client asked for it and the
+	// server has it, else NLA (PROTOCOL_HYBRID).
+	protocol := x224.ProtocolHybrid
+	if script.rdstls != nil && rigRequested(request)&x224.ProtocolRDSTLS != 0 {
+		protocol = x224.ProtocolRDSTLS
+	}
+	if _, err := conn.Write(rigConnectionConfirm(protocol)); err != nil {
 		return seen, err
 	}
 
@@ -302,9 +401,17 @@ func (s *rigServer) play(conn net.Conn, script rigScript) (rigConnection, error)
 	if err := secured.Handshake(); err != nil {
 		return seen, err
 	}
-	seen.logon, err = credsspRigAuthenticate(secured, s.publicKey, script.logon)
-	if err != nil {
-		return seen, fmt.Errorf("CredSSP: %w", err)
+	if protocol == x224.ProtocolRDSTLS {
+		seen.rdstls = true
+		if err := rigRDSTLS(secured, *script.rdstls); err != nil {
+			return seen, fmt.Errorf("RDSTLS: %w", err)
+		}
+		seen.logon = *script.rdstls
+	} else {
+		seen.logon, err = credsspRigAuthenticate(secured, s.publicKey, script.logon)
+		if err != nil {
+			return seen, fmt.Errorf("CredSSP: %w", err)
+		}
 	}
 
 	// Channel connection: MCS Connect Initial and Response, Erect Domain,
@@ -970,6 +1077,107 @@ func TestServerRedirectionFollowsGnomeRemoteDesktopHandover(t *testing.T) {
 	}
 }
 
+// GNOME Remote Desktop's handover daemon takes a client that announces Windows
+// for mstsc. Unless the client asks for RDSTLS it then expects the account of
+// the first connection over NLA, so presenting the redirection's account that
+// way is refused with STATUS_LOGON_FAILURE: the failure reported against
+// version 0.4.37. The redirection's password is the cookie of RDSTLS, which the
+// client has to present over it.
+func TestRedirectionCookieIsPresentedOverRDSTLS(t *testing.T) {
+	cert := newRigCertificate(t)
+	handover := rigRedirection{
+		token:    rigToken,
+		username: rigHandoverUser,
+		password: rigHandoverPassword,
+		certDER:  cert.Certificate[0],
+	}
+	server := newRigServer(t, cert, []rigScript{
+		{logon: [3]string{"", rigUser, rigSecret}, redirect: &handover, abortUnfollowed: true},
+		{
+			logon:  [3]string{"", rigUser, rigSecret},
+			rdstls: &[3]string{"", handover.username, handover.password},
+		},
+	}, false)
+
+	client, err := NewClient(rigOptions(t, server, cert))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	var pictures atomic.Int32
+	client.OnBitmap(func(*BitmapUpdate) { pictures.Add(1) })
+	disconnected := rigDisconnected(client)
+	reconnected := make(chan struct{}, 1)
+	client.OnReconnected(func() {
+		select {
+		case reconnected <- struct{}{}:
+		default:
+		}
+	})
+
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	rigAwait(t, "the handover", reconnected, disconnected)
+	if err := rigWaitForPictures(&pictures); err != nil {
+		t.Fatal(err)
+	}
+	connections := server.connections()
+	if len(connections) != 2 {
+		t.Fatalf("the server saw %d connections, want the login and the redirected session", len(connections))
+	}
+	if connections[0].rdstls || !connections[1].rdstls {
+		t.Errorf("RDSTLS on the login = %v, on the redirected session = %v; want only the redirected session", connections[0].rdstls, connections[1].rdstls)
+	}
+	if want := "Cookie: msts=" + rigToken + "\r\n"; connections[1].cookie != want {
+		t.Errorf("reconnected with routingToken %q, want %q", connections[1].cookie, want)
+	}
+	if got := server.declined.Load(); got != 0 {
+		t.Errorf("%d connections were started over, want none", got)
+	}
+}
+
+// A server that refuses the cookie ends the attempt: the account is not tried
+// again some other way.
+func TestRDSTLSRefusalIsNotRetried(t *testing.T) {
+	cert := newRigCertificate(t)
+	handover := rigRedirection{
+		token:    rigToken,
+		username: rigHandoverUser,
+		password: rigHandoverPassword,
+		certDER:  cert.Certificate[0],
+	}
+	server := newRigServer(t, cert, []rigScript{
+		{logon: [3]string{"", rigUser, rigSecret}, redirect: &handover, abortUnfollowed: true},
+		{
+			logon:  [3]string{"", handover.username, handover.password},
+			rdstls: &[3]string{"", handover.username, "another password"},
+		},
+	}, false)
+	server.expectFailures()
+
+	client, err := NewClient(rigOptions(t, server, cert))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	disconnected := rigDisconnected(client)
+	if err := client.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	select {
+	case err := <-disconnected:
+		if !errors.Is(err, ErrAuthFailed) || !errors.Is(err, rdstls.ErrRefused) {
+			t.Errorf("the session ended with %v, want a refused RDSTLS authentication", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the session did not end")
+	}
+	if got := server.accepted.Load(); got != 2 {
+		t.Errorf("accepted %d connections, want the login and one RDSTLS attempt", got)
+	}
+}
+
 // A connection broker hands the session over the same way before the
 // capabilities exchange, names another host and a session to reconnect to.
 func TestServerRedirectionBeforeActivationToAnotherHost(t *testing.T) {
@@ -1019,9 +1227,18 @@ func TestServerRedirectionBeforeActivationToAnotherHost(t *testing.T) {
 	default:
 	}
 	mu.Lock()
-	want := []string{listener, "session-host.example:" + strconv.Itoa(port)}
-	if len(dialed) != 2 || dialed[0] != want[0] || dialed[1] != want[1] {
-		t.Errorf("dialed %q, want %q (the redirection names a host, the port stays)", dialed, want)
+	// The first connection goes to the host asked for; every one after the
+	// redirection to the host it names, on the same port (the server need not
+	// offer RDSTLS, so more than one connection may follow).
+	session := "session-host.example:" + strconv.Itoa(port)
+	if len(dialed) < 2 || dialed[0] != listener {
+		t.Errorf("dialed %q, want the login at %q and then the session", dialed, listener)
+	}
+	for _, addr := range dialed[1:] {
+		if addr != session {
+			t.Errorf("dialed %q, want %q after the redirection (the redirection names a host, the port stays)", dialed, session)
+			break
+		}
 	}
 	mu.Unlock()
 	if certificateChecks.Load() != 1 {

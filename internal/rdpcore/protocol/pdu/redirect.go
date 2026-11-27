@@ -55,6 +55,10 @@ type RedirectInfo struct {
 	Domain   string
 	Password []byte // cleartext password or opaque cookie; see LB_PASSWORD
 
+	// RedirectionGUID is the LB_REDIRECTION_GUID the server issued for the
+	// session, opaque; the RDSTLS authentication returns it unchanged.
+	RedirectionGUID []byte
+
 	// LoadBalanceInfo is the routingToken of the next X.224 Connection Request,
 	// as the server spelled it.
 	LoadBalanceInfo []byte
@@ -170,10 +174,11 @@ func DecodeRedirectPDU(data []byte, enhanced bool) (*RedirectInfo, error) {
 	}
 
 	if ri.Flags&LBRedirectionGUID != 0 {
-		_, n, err := readRedirectBlob(data, off)
+		b, n, err := readRedirectBlob(data, off)
 		if err != nil {
 			return nil, fmt.Errorf("RedirectionGuid: %w", err)
 		}
+		ri.RedirectionGUID = b
 		off += n
 	}
 

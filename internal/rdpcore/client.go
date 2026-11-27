@@ -58,6 +58,7 @@ import (
 	"motty/internal/rdpcore/protocol/pdu"
 	"motty/internal/rdpcore/protocol/pointer"
 	"motty/internal/rdpcore/protocol/rdpsnd"
+	"motty/internal/rdpcore/protocol/rdstls"
 	"motty/internal/rdpcore/protocol/rle"
 	"motty/internal/rdpcore/protocol/sec"
 	"motty/internal/rdpcore/protocol/tpkt"
@@ -73,7 +74,7 @@ const (
 	StateConnecting
 	StateX224Negotiation
 	StateTLSHandshake
-	StateCredSSPAuth
+	StateAuthentication // CredSSP, or RDSTLS for a redirected session
 	StateMCSConnect
 	StateSecurityExchange
 	StateLicensing
@@ -89,7 +90,7 @@ func (s ConnectionState) String() string {
 		"Connecting",
 		"X.224 Negotiation",
 		"TLS Handshake",
-		"CredSSP Auth",
+		"Authentication",
 		"MCS Connect",
 		"Security Exchange",
 		"Licensing",
@@ -433,11 +434,40 @@ func (c *Client) credentials() (domain, username, password string) {
 	return domain, username, password
 }
 
+// redirectionHoldsCookie reports whether the redirection in flight carries its
+// password as the cookie MS-RDSTLS presents back (MS-RDPBCGR 2.2.13.1).
+func (c *Client) redirectionHoldsCookie() bool {
+	const flags = pdu.LBPassword | pdu.LBPasswordIsPKEncrypted
+	return c.redirection != nil && c.redirection.Flags&flags == flags && len(c.redirection.Password) > 0
+}
+
+// rdstlsAuth authenticates the redirected session over RDSTLS, as the
+// reference clients do for a redirection that holds its password as a cookie.
+func (c *Client) rdstlsAuth() error {
+	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "RDSTLS authentication")
+	domain, username, _ := c.credentials()
+	err := rdstls.Authenticate(c.tlsConn, c.logNla, rdstls.Credentials{
+		RedirectionGUID: c.redirection.RedirectionGUID,
+		Username:        username,
+		Domain:          domain,
+		Password:        c.redirection.Password,
+	})
+	if err == nil {
+		c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "RDSTLS authentication successful")
+		return nil
+	}
+	if errors.Is(err, rdstls.ErrRefused) {
+		return fmt.Errorf("%w: RDSTLS: %w", ErrAuthFailed, err)
+	}
+	return fmt.Errorf("%w: RDSTLS: %w", ErrNegotiationFailed, err)
+}
+
 // redirectPassword is the password of a redirection as text, or empty when the
 // field is not one. With LB_PASSWORD_IS_PK_ENCRYPTED the field is a cookie
-// for MS-RDSTLS, which this client does not speak; GNOME Remote Desktop sets
+// for MS-RDSTLS, which rdstlsAuth presents as it is; GNOME Remote Desktop sets
 // that flag anyway and puts the session's cleartext password there, so the
-// text is used as the password and only an unreadable blob is refused.
+// text is also what a fallback to NLA authenticates with, and an unreadable
+// blob gives no password.
 func redirectPassword(ri *pdu.RedirectInfo) string {
 	if len(ri.Password) < 4 || len(ri.Password)%2 != 0 {
 		return ""
@@ -516,7 +546,7 @@ func (c *Client) connect() error {
 			if c.selectedProtocol == x224.ProtocolHybrid {
 				// CredSSP path — initial TLS failed, will probe below.
 				initialTLSErr = err
-			} else if c.opts.LegacyTLS {
+			} else if c.opts.LegacyTLS && c.selectedProtocol == x224.ProtocolSSL {
 				// ProtocolSSL: probe pinned TLS versions (1.2 -> 1.1 -> 1.0) only when LegacyTLS is enabled.
 				tlsFallbackOK := false
 				tlsVersions := []uint16{tls.VersionTLS12, tls.VersionTLS11, tls.VersionTLS10}
@@ -540,6 +570,16 @@ func (c *Client) connect() error {
 				c.Close()
 				return err
 			}
+		}
+	}
+
+	// Step 3a: RDSTLS authentication (a redirected session whose password is
+	// the redirecting server's cookie).
+	if c.selectedProtocol == x224.ProtocolRDSTLS {
+		c.setState(StateAuthentication)
+		if err := c.rdstlsAuth(); err != nil {
+			c.Close()
+			return err
 		}
 	}
 
@@ -715,16 +755,26 @@ func (c *Client) negotiateX224WithFallback() error {
 	type attempt struct {
 		protos uint32
 		label  string
+		// require is the protocol the server must select for the attempt to
+		// stand; zero accepts what it selects.
+		require uint32
 	}
 	// Protocol sets to try, in order of preference.
 	var attempts []attempt
 	if c.opts.Security == SecurityStandard {
-		attempts = []attempt{{x224.ProtocolRDP, "RDP Security"}}
+		attempts = []attempt{{x224.ProtocolRDP, "RDP Security", 0}}
 	} else {
-		attempts = []attempt{
-			{x224.ProtocolSSL | x224.ProtocolHybrid, "TLS+NLA"},
-			{x224.ProtocolSSL, "TLS"},
+		if c.redirectionHoldsCookie() {
+			// The reference clients answer such a redirection with RDSTLS, and
+			// a server that sets the password aside for it (GNOME Remote
+			// Desktop does for a client it takes to be mstsc) takes no other
+			// account. RDSTLS is asked for together with TLS, as they do.
+			attempts = append(attempts, attempt{x224.ProtocolRDSTLS | x224.ProtocolSSL, "RDSTLS", x224.ProtocolRDSTLS})
 		}
+		attempts = append(attempts,
+			attempt{x224.ProtocolSSL | x224.ProtocolHybrid, "TLS+NLA", 0},
+			attempt{x224.ProtocolSSL, "TLS", 0},
+		)
 	}
 
 	var lastErr error
@@ -741,6 +791,9 @@ func (c *Client) negotiateX224WithFallback() error {
 		}
 
 		err := c.negotiateX224(a.protos)
+		if err == nil && a.require != 0 && c.selectedProtocol != a.require {
+			err = fmt.Errorf("%w: the server did not select %s", ErrNegotiationFailed, x224.ProtocolName(a.require))
+		}
 		if err == nil {
 			return nil
 		}
@@ -906,7 +959,7 @@ func (c *Client) upgradeTLS() error {
 
 // tryCredSSP attempts CredSSP authentication on the current TLS connection.
 func (c *Client) tryCredSSP() error {
-	c.setState(StateCredSSPAuth)
+	c.setState(StateAuthentication)
 	err := c.credsspAuth()
 	if c.rawNTLM || !errors.Is(err, nla.ErrNegotiateToken) {
 		return err
@@ -922,7 +975,7 @@ func (c *Client) tryCredSSP() error {
 	if c.selectedProtocol != x224.ProtocolHybrid {
 		return fmt.Errorf("%w: the server did not select NLA for raw NTLM", ErrNegotiationFailed)
 	}
-	c.setState(StateCredSSPAuth)
+	c.setState(StateAuthentication)
 	return c.credsspAuth()
 }
 
