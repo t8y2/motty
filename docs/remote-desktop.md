@@ -357,18 +357,21 @@ cursor, so the remote's arrow, I-beam and resize shapes are the ones the
 remote system drew (`internal/desktop/rdp/session.go`, `desktop.PointerShape`).
 A hidden pointer hides this one; a system pointer is the ordinary arrow.
 
-One kind of shape a system cursor cannot draw: the monochrome inverting
-pointers of Windows' **Windows Inverted** schemes, whose body shows the inverse
-of whatever is behind it (MS-RDPBCGR's AND/XOR masks, `XOR=1` over `AND=1`).
-Motty keeps those pixels apart in the decode
+One kind of shape a system cursor image cannot express on its own: the
+monochrome inverting pointers of Windows' **Windows Inverted** schemes, whose
+body shows the inverse of whatever is behind it (MS-RDPBCGR's AND/XOR masks,
+`XOR=1` over `AND=1`). Motty keeps those pixels apart in the decode
 (`internal/rdpcore/protocol/pointer`: `PointerUpdate.Invert`) instead of
-picking a color for them, and over the picture it hides the system cursor and
-paints the shape itself, each inverting pixel the inverse of the picture under
-it read from the presented surface (`gfx.Surface.Pixel`). Over the bars the
-ordinary arrow is shown, since the picture is not there to be inverted. This
-is the only pointer Motty paints rather than hands to the system; every other
-shape is still the system's own cursor, and the painted one follows the
-picture at the display's device pixels.
+picking a color for them, and for the pointer's place makes a cursor image in
+which each of them is the inverse of the picture under it read from the
+presented surface (`gfx.Surface.Pixel`). The system draws that image as the
+pointer and moves it like any other, so it keeps the hardware pointer's
+smoothness and the picture is not repainted as it moves; the image is made
+again only when the pointer reaches pixels with another picture under them or
+that picture changes, and the picture hit asks for it at each pointer place
+through `gfx.HitOptions.CursorImageAt`. Over the bars the ordinary arrow is
+shown, since the picture is not there to be inverted. One image pixel is one
+device pixel, as for every shape the remote names.
 
 ### Quality and bandwidth
 
@@ -610,12 +613,13 @@ On the **Windows 11 test VM** (`tools/winenv`), with clipboard sharing on: a pic
 copied on this computer reached the session's clipboard (`Clipboard.GetImage`
 returned the same 320x200 picture, corner pixels included) and pasted into the
 remote Paint, shown in a capture of the session. The same VM, with the **Windows
-Inverted** pointer scheme (its `*_i.cur` files) applied: the headless Motty build
-showed the arrow's body as the inverse of the wallpaper under it — orange over the
-blue wallpaper, near-black over the light taskbar — instead of the black body with
-a white edge it drew before; the shape decoded from that session is
-`internal/rdpcore/protocol/pointer/testdata/inverted-arrow.bin`, and the session
-reported the system cursor hidden over the picture (`cursor` -> `shape=11`).
+Inverted** pointer scheme (its `*_i.cur` files) applied, is where the inverted
+arrow of `internal/rdpcore/protocol/pointer/testdata/inverted-arrow.bin` came
+from. The pointer is now handed to the system as a cursor picture: over Notepad's
+text, an inverting I-beam reached the system at the pointer's place as a 64x64
+picture whose body was the inverse of the white page under it (`cursor` ->
+`image=64x64 hot=19,20 scale=2`), and moving the pointer did not repaint the
+picture.
 The workbench's certificate question (new, trusted, changed, rejected) is
 covered by a unit test with a fake server. Not exercised: a domain-joined server,
 Windows Server editions, Windows 10, an RD Gateway, Kerberos, a real window,
@@ -629,5 +633,4 @@ a console session, and xrdp ignores the field.
 ## Follow-ups
 
 * VeNCrypt/TLS with a certificate trust prompt like the SSH host-key prompt.
-* A cursor shape drawn locally (needs a hidden-cursor option in Viva).
 * Telling a covered or minimized window apart (Viva).

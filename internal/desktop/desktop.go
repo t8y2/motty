@@ -376,9 +376,10 @@ const (
 // Invert, when not empty, holds one entry per pixel for those that show the
 // inverse of the picture behind them instead of a color: the remote's
 // monochrome inverting pointer, whose body is white over a dark picture and
-// black over a light one. No system can draw such a cursor from a static
-// image, so the workbench paints those pixels over the picture itself; the
-// BGRA entry there is transparent and says nothing.
+// black over a light one. A static system cursor cannot express that, so the
+// workbench makes a picture of the shape for the pointer's place, each
+// inverting pixel the inverse of the picture under it, and hands that to the
+// system as the pointer; the BGRA entry there is transparent and says nothing.
 type PointerShape struct {
 	Width, Height int
 	HotX, HotY    int
@@ -387,8 +388,10 @@ type PointerShape struct {
 }
 
 // PointerSource is a Session whose remote system names its pointer's shape.
-// The workbench shows the bitmap as the local pointer over the picture: the
-// system draws it, except the inverting pixels, which it paints itself.
+// The workbench hands the bitmap to the system as the local pointer over the
+// picture, which draws and moves it like any pointer. A shape with inverting
+// pixels becomes a picture made for the pointer's place, so it follows what
+// lies under the pointer.
 type PointerSource interface {
 	Session
 	// PointerShape returns what the remote last said about its pointer, the
