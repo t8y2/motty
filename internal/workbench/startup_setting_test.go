@@ -2,11 +2,101 @@ package workbench
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 )
+
+func TestPreparedLocalStartupUsesTheShellPickerChoice(t *testing.T) {
+	dir := t.TempDir()
+	detected := localshell.Choice{Name: "Default shell", Path: filepath.Join(dir, "default-shell"), Default: true}
+	picked := localshell.Choice{Name: "My shell", Path: filepath.Join(dir, "picked-shell")}
+	for _, tc := range []struct {
+		name, requested string
+		want            localshell.Choice
+	}{
+		{"detected default", "", detected},
+		{"picked shell", picked.Path, picked},
+		{"removed shell", filepath.Join(dir, "removed"), detected},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := newTabState(t)
+			closeShells(t, state)
+			state.startupEnabled, state.startupLocal, state.restorePending = true, tc.requested == "", true
+			state.startupShell, state.localShell = tc.requested, ""
+			state.localShellMenu.loaded = false
+			state.localShellMenu.discover = func() []localshell.Choice { return []localshell.Choice{detected, picked} }
+			state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
+			state.localStartupCommands = map[string]string{localStartupKey(tc.want.Path): "echo ready"}
+			state.PrepareInitialLocalSessions()
+			state.Wake()
+			if len(state.sessions) != 1 {
+				t.Fatalf("got %d local sessions", len(state.sessions))
+			}
+			s := &state.sessions[0]
+			if got := s.conn.(*localConn).shell; got != tc.want.Path {
+				t.Fatalf("program = %q; want %q", got, tc.want.Path)
+			}
+			s.term.armInitialization(state, s)
+			if s.term.login.line != "echo ready" {
+				t.Fatalf("startup command = %q", s.term.login.line)
+			}
+			wantLabel, wantOverride := state.messages.LocalTerminalTitle, ""
+			if tc.want == picked {
+				wantLabel, wantOverride = picked.Name, picked.Path
+			}
+			if s.Title != wantLabel || s.host.localShell != wantOverride {
+				t.Errorf("tab title / saved shell = %q / %q; want %q / %q", s.Title, s.host.localShell, wantLabel, wantOverride)
+			}
+		})
+	}
+}
+
+func TestPreparedLocalStartupIsNotOpenedAgainOnFirstWake(t *testing.T) {
+	state := newTabState(t)
+	closeShells(t, state)
+	state.startupLocal = true
+	state.startupReuse = false
+	state.restorePending = true
+	state.PrepareInitialLocalSessions()
+	prepared := len(state.sessions)
+	if prepared != 1 || state.startupLocalPrepared == 0 {
+		t.Fatalf("prepared sessions=%d marker=%d, want one prepared local session", prepared, state.startupLocalPrepared)
+	}
+	state.Wake()
+	if len(state.sessions) != prepared {
+		t.Fatalf("first Wake opened a duplicate local session: %d -> %d", prepared, len(state.sessions))
+	}
+	if state.startupLocalPrepared != 0 {
+		t.Fatal("first Wake did not consume the prepared local session")
+	}
+}
+
+func TestInitialLocalPrepareDoesNotDiscoverShellsBeforeTheWindow(t *testing.T) {
+	state := newTabState(t)
+	closeShells(t, state)
+	state.startupLocal = true
+	state.startupReuse = false
+	state.restorePending = true
+	state.localShell = ""
+	state.localShellMenu.loaded = false
+	discovered := false
+	state.localShellMenu.discover = func() []localshell.Choice {
+		discovered = true
+		return []localshell.Choice{{Name: "slow shell", Path: "/bin/sh", Default: true}}
+	}
+	state.localShellMenu.discoverWSL = func(context.Context) []localshell.Choice { return nil }
+
+	state.PrepareInitialLocalSessions()
+	if discovered {
+		t.Fatal("preparing the first local terminal synchronously discovered shells")
+	}
+	if len(state.sessions) != 1 || state.sessions[0].host.localShell != "" {
+		t.Fatalf("prepared local session = %+v, want one session using the platform default shell", state.sessions)
+	}
+}
 
 // TestStartupOpensWhatTheSettingsAsk checks that the first Wake opens the local
 // terminal and the chosen hosts, and drops a host that left the catalog.

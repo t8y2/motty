@@ -36,6 +36,9 @@ type localConn struct {
 	wslUser           string
 	wslDirectory      string
 	wslNoGUI          bool
+	backgroundShell   bool
+	prepareOnWake     bool // first-frame screen exists; resolve its shell once the window is available
+	pickedAtStartup   bool // only a new tab chosen by the startup picker needs its title resolved
 	networkProxy      networkProxyMode
 	lookupSystemProxy func() systemproxy.Settings
 }
@@ -74,10 +77,13 @@ func (conn *localConn) OpenShell(config sshconn.ShellConfig) (Shell, error) {
 	return shell, nil
 }
 
-// opensShellSlowly: following the system proxy runs the platform's settings
-// tool, which can take a while when a desktop service is stuck, so such a shell
-// opens off the window's thread. Otherwise starting a process is quick.
-func (conn *localConn) opensShellSlowly() bool { return conn.networkProxy == networkProxySystem }
+// opensShellSlowly reports that starting a local shell may wait on the desktop
+// or the shell process itself. Startup restores set backgroundShell so the
+// first frame can publish its text input surface without waiting for the
+// process; system-proxy shells keep the older asynchronous behavior as well.
+func (conn *localConn) opensShellSlowly() bool {
+	return conn.backgroundShell || conn.networkProxy == networkProxySystem
+}
 
 // proxyEnvironment is the proxy variables the shell is started with on top of
 // the ones it inherits: none unless the terminal follows the system. A WSL

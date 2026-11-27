@@ -161,6 +161,7 @@ func (state *State) paintsHostsPage() bool {
 
 // Paint renders the application from state using stable hit identities.
 func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
+	state.discardBlurredStartupText(canvas.Focused())
 	defer state.devEndPaint(canvas, size)
 	canvas.SetTree(&tree)
 	if state.appLocked() {
@@ -535,6 +536,14 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 			w.activate()
 		}
 	}
+	deactivate := config.OnDeactivate
+	config.OnDeactivate = func() gfx.EventResult {
+		state.discardBlurredStartupText(gfx.ID{})
+		if deactivate != nil {
+			return deactivate()
+		}
+		return gfx.EventResult{}
+	}
 	// A lock may arrive between the previous paint and the next input. Do not
 	// let a stale business control in the page consume that event before the
 	// workbench handler can check the profile lock.
@@ -578,6 +587,7 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 		return pointer(event)
 	}
 	config.TextInput = func(context app.TextInputContext) *app.TextInput {
+		state.discardBlurredStartupText(context.ID)
 		if (state.appAccessBlocked() || state.modal == modalAppLock) && state.appLockEditor(context.ID) == nil {
 			return nil
 		}

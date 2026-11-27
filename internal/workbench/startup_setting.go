@@ -8,6 +8,7 @@ import (
 
 	"motty/internal/localshell"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 )
@@ -199,6 +200,85 @@ func (state *State) startupWanted() bool {
 		(state.startupEnabled && (state.startupLocal || state.startupShell != "" || len(state.startupHosts) > 0))
 }
 
+// startupSession finds a tab the launch choices can reuse. For a local
+// terminal the tab's own shell must match, not just the host.
+func (state *State) startupSession(hostID uint32, shell string) *Session {
+	if state.startupReuse {
+		for i := range state.sessions {
+			s := &state.sessions[i]
+			if s.HostID == hostID && (hostID != localHostID || strings.EqualFold(s.host.localShell, shell)) {
+				return s
+			}
+		}
+	}
+	return nil
+}
+
+// PrepareInitialLocalSessions gives local tabs their input surface before the
+// first paint. The first Wake resolves their shells and opens remote sessions.
+func (state *State) PrepareInitialLocalSessions() {
+	if !state.restorePending {
+		return
+	}
+	state.preparingInitialLocal = true
+	defer func() { state.preparingInitialLocal = false }()
+	state.startRestoredLocalSessions()
+	if !state.startupEnabled || (!state.startupLocal && state.startupShell == "") {
+		return
+	}
+	shell := state.startupShell
+	shown := state.startupSession(localHostID, shell)
+	if shown == nil {
+		state.pendingWorkspace, state.pendingPane = 0, 0
+		if shell != "" {
+			// The window can show the saved name until the first Wake resolves it.
+			shown = state.openLocalTerminalWith(localshell.Choice{Path: shell, Name: filepath.Base(shell)})
+			if shown != nil {
+				shown.conn.(*localConn).pickedAtStartup = true
+			}
+		} else {
+			shown = state.openLocalTerminal()
+		}
+	}
+	if shown == nil {
+		return
+	}
+	state.startupLocalPrepared = shown.ID
+	state.activeSection = sectionTerminal
+	state.ActivatePane(shown.ID)
+}
+
+// Resolve a prepared tab without replacing its terminal: the native input
+// method may already have an active composition on that screen.
+func (state *State) resolvePreparedLocalSessions() {
+	for i := range state.sessions {
+		s := &state.sessions[i]
+		pending, ok := s.conn.(*localConn)
+		if !ok || !pending.prepareOnWake {
+			continue
+		}
+		if pending.pickedAtStartup {
+			choice := state.resolveStartupShell()
+			s.host.localShell = choice.Path
+			s.host.Label = state.messages.LocalTerminalTitle
+			if choice.Path == "" {
+				// Text entered for the named program must not go to its fallback.
+				s.term.startupText = nil
+				s.term.preedit = app.TextState{}
+			} else {
+				s.host.Label = choice.Name
+			}
+			if !s.customTitle {
+				state.renameSession(s, s.host.Label)
+				state.rebuildTabOptions()
+			}
+		}
+		conn := state.localConnection(s, s.host)
+		conn.backgroundShell = true
+		s.conn = conn
+	}
+}
+
 // openStartupSessions opens what the settings ask a launch to open: a local
 // terminal, then the chosen hosts. Like the restored tabs' dialing, it runs
 // once, from the first Wake, where the window exists and the catalog is loaded.
@@ -209,32 +289,23 @@ func (state *State) openStartupSessions() {
 	if !state.startupEnabled || (!state.startupLocal && state.startupShell == "" && len(state.startupHosts) == 0) {
 		return
 	}
-	// locate finds the open session of a host; on this machine the session's
-	// own shell counts, so a launch reuses the shell it was asked to open.
-	locate := func(hostID uint32, shell string) *Session {
-		for index := range state.sessions {
-			session := &state.sessions[index]
-			if session.HostID != hostID {
-				continue
-			}
-			if hostID == localHostID && !strings.EqualFold(session.host.localShell, shell) {
-				continue
-			}
-			return session
-		}
-		return nil
-	}
 	var shown *Session
+	preparedLocal := state.startupLocalPrepared != 0
 	if state.startupLocal || state.startupShell != "" {
-		shell := state.startupShell
-		if existing := locate(localHostID, shell); existing != nil && state.startupReuse {
-			shown = existing
+		if state.startupLocalPrepared != 0 {
+			shown, _ = state.sessionByIDPointer(state.startupLocalPrepared)
+			state.startupLocalPrepared = 0
 		} else {
-			state.pendingWorkspace, state.pendingPane = 0, 0
-			if shell != "" {
-				shown = state.openLocalTerminalWith(state.resolveStartupShell())
+			shell := state.startupShell
+			if existing := state.startupSession(localHostID, shell); existing != nil {
+				shown = existing
 			} else {
-				shown = state.openLocalTerminal()
+				state.pendingWorkspace, state.pendingPane = 0, 0
+				if shell != "" {
+					shown = state.openLocalTerminalWith(state.resolveStartupShell())
+				} else {
+					shown = state.openLocalTerminal()
+				}
 			}
 		}
 	}
@@ -245,7 +316,7 @@ func (state *State) openStartupSessions() {
 			continue
 		}
 		kept = append(kept, id)
-		if existing := locate(host.ID, ""); existing != nil && state.startupReuse {
+		if existing := state.startupSession(host.ID, ""); existing != nil {
 			shown = existing
 			continue
 		}
@@ -256,5 +327,11 @@ func (state *State) openStartupSessions() {
 	if shown != nil {
 		state.setActiveSection(sectionTerminal)
 		state.ActivatePane(shown.ID)
+		// createHostSession deliberately skips persistence while the first
+		// terminal is prepared before OpenWindow. Save after that window has
+		// presented its first frame, keeping startup I/O off the capture path.
+		if preparedLocal {
+			state.save()
+		}
 	}
 }

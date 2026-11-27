@@ -273,6 +273,7 @@ func (find *terminalFind) fillFromSelection(selection *terminalSelection, screen
 // open or still holds a previous query, and the field's text is selected in
 // either case, so pasting a new query replaces what is there.
 func (state *State) openTerminalFind(session *Session) gfx.EventResult {
+	state.discardBlurredStartupText(hitTerminalFindField)
 	find := &session.term.find
 	opening := !find.open
 	find.open = true

@@ -830,6 +830,10 @@ type State struct {
 	// startupEnabled is the feature switch of what a launch opens: off, the
 	// launch opens nothing but the choices are kept for when it turns on again.
 	startupEnabled bool
+	// startupLocalPrepared names the local session opened before the native
+	// window's first paint. The first Wake consumes it so it does not open a
+	// duplicate local tab or focus a different restored tab.
+	startupLocalPrepared uint32
 	// startupReuse also applies to ordinary host opens. An explicit new tab,
 	// pane, or duplicate still starts a separate session.
 	startupReuse  bool
@@ -921,7 +925,10 @@ type State struct {
 	shareConnections        shareConnectionsPolicy
 	tooltip                 components.HoverTooltip
 	selectTypeahead         selectTypeahead
-	restorePending          bool // restored tabs have not yet been connected (see connectRestoredSessions)
+	restorePending          bool                   // restored tabs have not yet been connected (see connectRestoredSessions)
+	savedActiveWorkspace    layoutcore.WorkspaceID // the tab that was active in the saved window
+	preparingInitialLocal   bool                   // local startup sessions use the background shell path
+	startupTextSession      uint32                 // the one terminal holding early input for the focused control
 	terminalClipboard       terminalClipboardPolicy
 	terminalIntense         terminalIntense
 
@@ -1431,6 +1438,7 @@ func (state *State) loadApplicationProfile() {
 	// connection's wake-ups would have nowhere to go and its progress would
 	// never reach the screen.
 	state.restorePending = state.startupWanted()
+	state.savedActiveWorkspace = state.deck.ActiveWorkspace()
 	switch {
 	case err != nil:
 		state.status = fmt.Sprintf(state.messages.StatusSaveFailedFmt, err)
@@ -3709,7 +3717,9 @@ func (state *State) createHostSessionWithConnection(host Host, address string, c
 	state.fitTerminals()
 	state.fitSFTP(state.viewport)
 	state.rebuildTabOptions()
-	state.save()
+	if !state.preparingInitialLocal {
+		state.save()
+	}
 	return session
 }
 

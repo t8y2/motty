@@ -702,6 +702,13 @@ func (state *State) startConnectionMode(session *Session, host Host, automatic b
 	session.desktopTunnel = false
 	if host.isLocal() {
 		// A shell on this machine: nothing to dial, so it is connected at once.
+		if state.preparingInitialLocal {
+			conn := newLocalConn(host.localShell, state.networkProxy)
+			conn.backgroundShell, conn.prepareOnWake = true, true
+			session.conn = conn
+			state.finishStartingConnection(session, automatic)
+			return
+		}
 		session.conn = state.localConnection(session, host)
 		state.finishStartingConnection(session, automatic)
 		// There is no goroutine to report that it is connected, so say so now:
@@ -939,6 +946,7 @@ func (state *State) Wake() {
 	}
 	if state.restorePending {
 		state.restorePending = false
+		state.resolvePreparedLocalSessions()
 		// Local shells first: they dial nothing, so they need not share the
 		// bound on how many connections one restore opens.
 		state.startRestoredLocalSessions()

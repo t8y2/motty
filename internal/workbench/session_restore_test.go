@@ -9,6 +9,25 @@ import (
 	"motty/internal/sshconn"
 )
 
+func TestStartupLocalSessionReachesStoreAfterFirstWake(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	closeShells(t, state)
+	state.startupEnabled, state.startupLocal, state.restorePending = true, true, true
+	state.PrepareInitialLocalSessions()
+	if len(state.sessions) != 1 || !state.sessions[0].isLocal() {
+		t.Fatal("no local session prepared for the first frame")
+	}
+	if before := newTestState(t, options); len(before.sessions) != 0 {
+		t.Fatal("preparing the first frame wrote the new local session to the store")
+	}
+	state.Wake()
+	after := newTestState(t, options)
+	if len(after.sessions) != 1 || after.sessions[0].HostID != localHostID {
+		t.Fatalf("after the first wake, restored %d sessions; want the prepared local tab", len(after.sessions))
+	}
+}
+
 func TestSessionsRestoreWithoutDialingAndReconnectOnEnter(t *testing.T) {
 	world, options := newWorld(t)
 	first := newTestState(t, options)

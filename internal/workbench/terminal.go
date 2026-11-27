@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
+	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/autofill"
 	"motty/internal/charset"
@@ -121,6 +124,7 @@ type terminal struct {
 	ended                 bool             // the shell finished, or never started
 	shellOpened           time.Duration    // when the shell was asked for, to give a silent one up
 	opening               chan shellResult // a shell being opened in the background, until pump collects it
+	startupText           []byte           // printable text committed before the first local shell attaches
 	followPath            string           // latest shell directory awaiting a safe attached file panel
 	followSeq             uint64           // names that report, so a kept one is applied once
 	reportedHome          string           // home reported by this shell, in the same path form as cwd
@@ -1213,7 +1217,11 @@ func releaseShell(shell Shell) {
 // abandonShell lets go of a shell still being opened: it is closed when it
 // arrives, since nothing is left to take it.
 func (t *terminal) abandonShell() {
-	if t == nil || t.opening == nil {
+	if t == nil {
+		return
+	}
+	t.startupText = nil
+	if t.opening == nil {
 		return
 	}
 	result := t.opening
@@ -1228,6 +1236,11 @@ func (t *terminal) abandonShell() {
 // shellOpened is what becomes of a session once its shell is, or is not, open.
 func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	t := session.term
+	earlyText := t.startupText
+	t.startupText = nil
+	if state.startupTextSession == session.ID {
+		state.startupTextSession = 0
+	}
 	if err != nil && session.shared && session.containerCommand == "" {
 		// A server limits how many shells one connection may carry. Where the
 		// borrowed connection is full, connect separately instead of failing.
@@ -1303,8 +1316,15 @@ func (state *State) shellOpened(session *Session, shell Shell, err error) {
 	})
 	t.screen.SetCellPixels(state.cellPixelWidth, state.cellPixelHeight)
 	t.armInitialization(state, session)
+	if local, ok := session.conn.(*localConn); ok && local.backgroundShell && (t.preedit.Composing || len(earlyText) > 0) {
+		t.pauseInitialization()
+	}
 	state.startInjection(session, shell)
 	state.describe(session)
+	if len(earlyText) > 0 && state.acceptsStartupText(session) &&
+		!state.guardTerminalText(session, app.TextEvent{Kind: app.TextInsert, Text: string(earlyText)}) {
+		state.typed(session, earlyText)
+	}
 }
 
 func (session *Session) shellPending() bool {
@@ -2031,6 +2051,26 @@ func (state *State) noteTerminalInputGap(session *Session) {
 	log.Printf("motty: terminal input has no surface: %s", note)
 }
 
+// Early text belongs to the focused local terminal alone. Do not replay it
+// into a changed input target or a broadcast whose recipients may have changed.
+func (state *State) acceptsStartupText(session *Session) bool {
+	return session.isLocal() && state.activeSection == sectionTerminal && state.activeSessionID == session.ID &&
+		state.modal == modalNone && !state.terminalMenu.open && !state.broadcastOn() && !state.appAccessBlocked() &&
+		!session.term.ended && !session.term.transferHoldsInput
+}
+
+// Once the keyboard leaves the terminal, coming back starts a new batch.
+func (state *State) discardBlurredStartupText(focus gfx.ID) {
+	id := state.startupTextSession
+	if id == 0 || id == state.activeSessionID && !focus.IsZero() && focus == state.activeTerminalFocusHit() {
+		return
+	}
+	if session, ok := state.sessionByIDPointer(id); ok && session.term != nil {
+		session.term.startupText = nil
+	}
+	state.startupTextSession = 0
+}
+
 // terminalText applies a text-system event to a session's terminal.
 func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.TextState {
 	var session *Session
@@ -2063,6 +2103,18 @@ func (state *State) terminalText(sessionID uint32, event app.TextEvent) app.Text
 	switch event.Kind {
 	case app.TextInsert:
 		t.preedit = app.TextState{}
+		if local, ok := session.conn.(*localConn); ok && local.backgroundShell && t.shell == nil &&
+			(local.prepareOnWake || t.opening != nil) && state.acceptsStartupText(session) {
+			// Only committed text is safe to hold. Never defer Enter, control
+			// sequences or a paste; they can act on an unseen prompt.
+			const maxStartupText = 4096
+			if len(event.Text) <= maxStartupText-len(t.startupText) && utf8.ValidString(event.Text) &&
+				strings.IndexFunc(event.Text, unicode.IsControl) < 0 {
+				t.startupText = append(t.startupText, event.Text...)
+				state.startupTextSession = session.ID
+			}
+			return app.TextState{Redraw: true}
+		}
 		if state.modal == modalTerminalInput || state.guardTerminalText(session, event) {
 			return app.TextState{Redraw: true}
 		}
@@ -2195,6 +2247,12 @@ func (state *State) terminalKey(session *Session, event gfx.KeyEvent) gfx.EventR
 		return state.copySelection(session)
 	}
 	if t.shell == nil {
+		if event.Key == gfx.KeyBackspace && event.Modifiers == 0 && !event.Release &&
+			!t.preedit.Composing && len(t.startupText) > 0 && state.acceptsStartupText(session) {
+			end := text.PreviousGraphemeBoundary(string(t.startupText), len(t.startupText))
+			t.startupText = t.startupText[:end]
+			return handled
+		}
 		// Nothing is listening: Enter starts the session again.
 		if event.Key == gfx.KeyEnter && !event.Repeat && state.canReconnect(session) {
 			state.reconnect(session)

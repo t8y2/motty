@@ -8,12 +8,84 @@ import (
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
 	"motty/internal/localshell"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 	"motty/internal/systemproxy"
 )
+
+func TestLocalShellOpeningDoesNotBlockTheWindow(t *testing.T) {
+	conn := newLocalConn("shell", networkProxyDirect)
+	conn.backgroundShell = true
+	opener, ok := interface{}(conn).(slowShellOpener)
+	if !ok || !opener.opensShellSlowly() {
+		t.Fatal("local shell opening must use the background shell path")
+	}
+}
+
+func TestInitialLocalRestorePublishesTextInputBeforeTheFirstWindowWake(t *testing.T) {
+	options := testOptions(t)
+	previous := newTestState(t, options)
+	ids := previous.restoreSessions([]savedSession{{Local: true}}, 1)
+	previous.restoreWorkspaceDeck(nil, ids)
+	previous.activeSection = sectionTerminal
+	previous.save()
+	state := newTestState(t, options)
+	closeShells(t, state)
+	state.PrepareInitialLocalSessions()
+	session := &state.sessions[0]
+	if session.restored || session.term == nil {
+		t.Fatalf("initial local session = restored %v, term %v", session.restored, session.term != nil)
+	}
+	// openWorkbenchWindow prepaints the canvas before passing it to Viva.
+	var canvas gfx.Canvas
+	size := gfx.Size{Width: 1400, Height: 900}
+	state.Paint(&canvas, size)
+	driver, err := app.NewDriver(state.WindowConfig(app.Config{
+		Width: 1400, Height: 900, Paint: state.Paint, Tree: Tree(), TextInput: state.TerminalInput,
+	}), &canvas)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(driver.Close)
+	if focus := driver.Snapshot().Focused; focus.IsZero() || focus != state.activeTerminalFocusHit() {
+		t.Fatalf("first frame focused %v, want the restored terminal %v", focus, state.activeTerminalFocusHit())
+	}
+	if session.term.shell != nil {
+		t.Fatal("the first frame waited for the shell")
+	}
+	session.term.recording.start(state.now())
+	if err := driver.Compose("ni"); err != nil {
+		t.Fatalf("first frame cannot start composition: %v", err)
+	}
+	if preedit := session.term.preedit; !preedit.Composing || preedit.Value != "ni" {
+		t.Fatalf("first frame composition = %+v", preedit)
+	}
+	waitUntil(t, state, "local shell attachment", func() bool { return session.term.shell != nil || session.err != nil })
+	if session.err != nil {
+		t.Fatal(session.err)
+	}
+	if err := driver.Paint(); err != nil {
+		t.Fatal(err)
+	}
+	if preedit := session.term.preedit; !preedit.Composing || preedit.Value != "ni" {
+		t.Fatalf("shell attachment changed composition: %+v", preedit)
+	}
+	if err := driver.Type("你"); err != nil {
+		t.Fatal(err)
+	}
+	var input strings.Builder
+	for _, e := range session.term.recording.events {
+		if e.direction == terminalRecordingInput {
+			input.Write(e.data)
+		}
+	}
+	if got := input.String(); got != "你" {
+		t.Fatalf("input accepted by the shell = %q, want one committed character", got)
+	}
+}
 
 func localShellOutput(t *testing.T, state *State, session *Session, want string) {
 	t.Helper()
@@ -333,15 +405,17 @@ func TestWindowBarHasALocalTerminalButtonThatOpensAShell(t *testing.T) {
 	})
 }
 
-// Following the system proxy runs the platform's settings tool, so only that
-// mode opens its shell off the window's thread, and a shell that cannot start
-// comes back as no shell at all, not as a nil pointer the caller would close.
-func TestLocalTerminalOpensOffTheWindowOnlyWhenItAsksTheSystem(t *testing.T) {
+// Following the system proxy runs the platform's settings tool, so that mode
+// opens its shell off the window's thread. Startup restores opt in separately;
+// ordinary direct local terminals retain their synchronous path. A shell that
+// cannot start still comes back as no shell at all, not as a nil pointer the
+// caller would close.
+func TestLocalTerminalOpensOffTheWindowWhenNeeded(t *testing.T) {
 	if newLocalConn("", networkProxyDirect).opensShellSlowly() {
-		t.Fatal("a terminal that sets no proxy opens slowly")
+		t.Fatal("a direct terminal opens synchronously")
 	}
 	if !newLocalConn("", networkProxySystem).opensShellSlowly() {
-		t.Fatal("a terminal that follows the system proxy opens on the window's thread")
+		t.Fatal("a terminal that follows the system proxy must open slowly")
 	}
 	missing := newLocalConn(filepath.Join(t.TempDir(), "no-such-shell"), networkProxyDirect)
 	if shell, err := missing.OpenShell(sshconn.ShellConfig{Cols: 80, Rows: 24}); err == nil || shell != nil {
