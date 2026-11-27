@@ -99,6 +99,33 @@ func TestSuggestionRefreshCyclesCardsAndClickOnlyFillsComposer(t *testing.T) {
 	}
 }
 
+func TestSuggestionOverridesAreSeparateForTraditionalChinese(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.setLanguage(i18n.English)
+	english := state.aiSuggestionPool(aiSuggestionConnected)[0]
+	english.Text = "English-only fixture"
+	if err := state.aiSaveSuggestion(english); err != nil {
+		t.Fatal(err)
+	}
+	state.setLanguage(i18n.TraditionalChinese)
+	traditional := state.aiSuggestionPool(aiSuggestionConnected)[0]
+	if traditional.Text != state.messages.AIPanel.Example1 || traditional.Text == english.Text {
+		t.Fatalf("Traditional Chinese received an override in another language: %+v", traditional)
+	}
+	traditional.Text = "繁體中文自訂測試"
+	if err := state.aiSaveSuggestion(traditional); err != nil {
+		t.Fatal(err)
+	}
+	state.reloadAI()
+	if got := state.aiSuggestionPool(aiSuggestionConnected)[0].Text; got != traditional.Text {
+		t.Fatalf("Traditional Chinese override did not reload: %q", got)
+	}
+	state.setLanguage(i18n.Chinese)
+	if got := state.aiSuggestionPool(aiSuggestionConnected)[0].Text; got != state.messages.AIPanel.Example1 {
+		t.Fatalf("Traditional Chinese override leaked into Simplified Chinese: %q", got)
+	}
+}
+
 func TestSuggestionLibraryChangeUnarmsOldCommand(t *testing.T) {
 	state, _ := panelState(t, nil)
 	state.ai.suggestions.armed = &aiArmedSuggestion{entry: aiSuggestion{ID: "connected-1", Text: "old", Command: "echo stale"}}

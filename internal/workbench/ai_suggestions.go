@@ -84,7 +84,7 @@ func (state *State) aiSuggestionLocale() string {
 	if state.language == i18n.Chinese {
 		return "zh"
 	}
-	return "en"
+	return state.language.String()
 }
 
 func (state *State) aiSuggestionDefaults(context aiSuggestionContext) []aiSuggestion {
@@ -141,7 +141,7 @@ func (state *State) aiSaveSuggestion(entry aiSuggestion) error {
 	if entry.Text == "" || utf8.RuneCountInString(entry.Text) > 200 || len(entry.Command) > 4096 ||
 		strings.IndexFunc(entry.Text, unicode.IsControl) >= 0 || strings.IndexFunc(entry.Command, unicode.IsControl) >= 0 ||
 		(entry.Context != aiSuggestionConnected && entry.Context != aiSuggestionIdle) ||
-		(entry.Locale != "zh" && entry.Locale != "en") || entry.ID == "" {
+		(entry.Locale != "zh" && entry.Locale != "zh-TW" && entry.Locale != "en") || entry.ID == "" {
 		return errors.New("invalid suggestion")
 	}
 	if entry.Context == aiSuggestionIdle && entry.Command != "" {
