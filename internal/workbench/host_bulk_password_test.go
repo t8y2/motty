@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/vivaui/viva/gfx"
+	"motty/internal/i18n"
 )
 
 func reviewAndSaveBulkAuth(state *State) {
@@ -696,7 +697,17 @@ func TestBulkAuthenticationPersistsTheForwardWithTheNewLogin(t *testing.T) {
 			state.Click(hitBulkHostPassword)
 			state.Click(hitBulkApplyUser)
 			typeInto(state, hitBulkUserField, test.newUser)
-			reviewAndSaveBulkAuth(state)
+			state.Click(hitBulkPasswordConfirm)
+			_, english := paintedTexts(state)
+			if contains(english, "Port forwards needing manual adjustment: 1") != test.split {
+				t.Fatal("English preview should warn only when the forward loses all matching hosts")
+			}
+			state.setLanguage(i18n.Chinese)
+			_, chinese := paintedTexts(state)
+			if contains(chinese, "需要手动调整的端口转发：1") != test.split {
+				t.Fatal("Chinese preview did not show the matching forward warning")
+			}
+			state.Click(hitBulkPasswordSave)
 			if state.modal != modalNone || len(state.forwards) != 1 || state.forwards[0].HostUser != test.wantForwardUser {
 				t.Fatalf("unexpected live forward after save: %+v, error=%q", state.forwards, state.dialogError)
 			}

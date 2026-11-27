@@ -77,6 +77,13 @@ type bulkAuthPlan struct {
 	impact        []string
 	affected      map[uint32]bool
 	sharedSkipped int
+	forwards      map[uint32]bulkForwardEffect
+	forwardFixes  int
+}
+
+type bulkForwardEffect struct {
+	user      string
+	ambiguous bool
 }
 
 func (batch *bulkHostPassword) editorFor(id gfx.ID) *text.Editor {
@@ -312,6 +319,17 @@ func (state *State) planBulkHostPassword() (*bulkAuthPlan, string) {
 		}
 		return nil, m.BulkAuthNoChanges
 	}
+	if batch.applyUser && len(plan.updated) != 0 {
+		plan.forwards = make(map[uint32]bulkForwardEffect)
+		for _, forward := range state.forwards {
+			if effect, ok := state.bulkForwardEffect(forward, plan.updated); ok {
+				plan.forwards[forward.ID] = effect
+				if effect.ambiguous {
+					plan.forwardFixes++
+				}
+			}
+		}
+	}
 	return plan, ""
 }
 
@@ -357,24 +375,28 @@ func (state *State) bulkAuthDuplicate(updated map[uint32]Host) bool {
 	return false
 }
 
-func (state *State) bulkForwardUser(forward forwardRecord, updated map[uint32]Host) (string, bool) {
-	var user, login string
+func (state *State) bulkForwardEffect(forward forwardRecord, updated map[uint32]Host) (bulkForwardEffect, bool) {
+	var effect bulkForwardEffect
+	var login string
 	matched := false
 	for _, host := range state.hosts {
+		candidate, changed := updated[host.ID]
+		if !changed {
+			candidate = host
+		}
+		if forward.matchesHost(candidate) {
+			return bulkForwardEffect{}, false
+		}
 		if !forward.matchesHost(host) {
 			continue
 		}
-		candidate, changed := updated[host.ID]
-		if !changed || candidate.User == host.User {
-			return "", false
-		}
 		nextLogin := state.login(candidate)
-		if matched && (candidate.User != user || nextLogin != login) {
-			return "", false
+		if matched && (candidate.User != effect.user || nextLogin != login) {
+			effect.ambiguous = true
 		}
-		user, login, matched = candidate.User, nextLogin, true
+		effect.user, login, matched = candidate.User, nextLogin, true
 	}
-	return user, matched
+	return effect, matched
 }
 
 func (state *State) confirmBulkHostPassword() {
@@ -402,8 +424,8 @@ func (state *State) confirmBulkHostPassword() {
 		previousForwards := slices.Clone(state.forwards)
 		for index := range state.forwards {
 			forward := &state.forwards[index]
-			if user, ok := state.bulkForwardUser(*forward, plan.updated); ok {
-				forward.HostUser = user
+			if effect, ok := plan.forwards[forward.ID]; ok && !effect.ambiguous {
+				forward.HostUser = effect.user
 			}
 		}
 		for index, host := range state.hosts {
@@ -502,6 +524,9 @@ func (state *State) declareBulkHostPassword(c ui.C) {
 				ui.Wrap(c, fmt.Sprintf(m.BulkAuthImpactFmt, len(review.affected), len(batch.ids)-len(review.affected))).FillWidth().Weight(gfx.WeightSemibold)
 				if review.sharedSkipped > 0 {
 					ui.Wrap(c, fmt.Sprintf(m.BulkAuthSharedFmt, review.sharedSkipped)).FillWidth().FontSize(metrics.FontSizeS).Color(state.pal.muted)
+				}
+				if review.forwardFixes > 0 {
+					ui.Wrap(c, fmt.Sprintf(m.BulkAuthForwardWarningFmt, review.forwardFixes)).FillWidth().FontSize(metrics.FontSizeS).Color(state.pal.danger)
 				}
 				ui.Wrap(c, m.BulkAuthRecovery).FillWidth().FontSize(metrics.FontSizeS).Color(state.pal.muted)
 				ui.Scroll(c).Grow(1).FillWidth().Gap(6).Children(func() {

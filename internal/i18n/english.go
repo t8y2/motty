@@ -552,6 +552,7 @@ var EnglishMessages = Messages{
 	BulkAuthRemoveFmt:          "%s: remove saved %s",
 	BulkAuthAddFmt:             "%s: save %s",
 	BulkAuthRecovery:           "Save errors trigger rollback. An interruption may leave changes incomplete. There is no undo after a successful save.",
+	BulkAuthForwardWarningFmt:  "Port forwards needing manual adjustment: %d.",
 	BulkAuthForwardEnabled:     "Enable SSH agent forwarding",
 	NewGroup:                   "New Group",
 	EditHost:                   "Edit",

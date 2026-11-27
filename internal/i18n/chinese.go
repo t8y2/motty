@@ -552,6 +552,7 @@ var ChineseMessages = Messages{
 	BulkAuthRemoveFmt:          "%s：移除已保存的%s",
 	BulkAuthAddFmt:             "%s：保存%s",
 	BulkAuthRecovery:           "保存报错时会尝试回滚。进程中断可能留下未完成的改动。保存成功后无法撤销。",
+	BulkAuthForwardWarningFmt:  "需要手动调整的端口转发：%d 条。",
 	BulkAuthForwardEnabled:     "启用 SSH 代理转发",
 	NewGroup:                   "新建分组",
 	EditHost:                   "编辑",

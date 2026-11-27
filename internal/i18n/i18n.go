@@ -527,6 +527,7 @@ type Messages struct {
 	BulkAuthSaveFailedFmt, BulkAuthRollbackFailed, BulkAuthSavedFmt, BulkAuthChanged              string
 	BulkAuthImpactFmt, BulkAuthSharedFmt, BulkAuthOverwriteFmt, BulkAuthRemoveFmt, BulkAuthAddFmt string
 	BulkAuthRecovery, BulkAuthForwardEnabled                                                      string
+	BulkAuthForwardWarningFmt                                                                     string
 	ExportHosts                                                                                   string
 	ImportCatalog                                                                                 string
 	ImportMenu                                                                                    string
