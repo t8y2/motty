@@ -47,6 +47,7 @@ type sftpWindow struct {
 	deferredListings            [2]func()
 	externalConflict            uint32
 	ownsConnection              bool
+	sourceConn, boundConn       Connection
 	initialLocal, initialRemote string
 	browse                      sftpBrowseSync
 	bookmark                    sftpBookmarkEditor
@@ -88,7 +89,7 @@ func (state *State) openSFTPWindow(source *Session) {
 }
 
 func (state *State) newSFTPWindow(source *Session) *sftpWindow {
-	w := &sftpWindow{owner: state, activeLocal: true, phase: source.phase, language: state.language, pal: state.pal}
+	w := &sftpWindow{owner: state, activeLocal: true, phase: source.phase, language: state.language, pal: state.pal, sourceConn: source.conn}
 	w.directoryTree[0].enabled = state.sftpDirectoryTree
 	w.directoryTree[1].enabled = state.sftpDirectoryTree
 	w.view = &sftpView{detached: w, busy: true, operation: sftpclient.OperationList}
@@ -138,6 +139,10 @@ func (w *sftpWindow) startBrowser() {
 	}
 	state := w.owner
 	connection, mode := w.session.conn, w.session.host.Transfer
+	w.boundConn = connection
+	if !w.ownsConnection {
+		w.sourceConn = connection
+	}
 	w.clearDirectoryTreeRequests()
 	w.view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
 	// Wake both windows when a transfer changes. w.invalidate alone only
@@ -181,6 +186,8 @@ func (w *sftpWindow) wake() {
 	if w.ownsConnection {
 		w.owner.pumpSFTPConnections()
 		w.owner.showNextPrompt()
+	} else {
+		w.syncBorrowedConnection()
 	}
 	w.pump()
 	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
@@ -217,6 +224,7 @@ func (w *sftpWindow) pump() {
 			w.view.worker = nil
 			w.view.openFiles = nil
 			w.view.sudo = false
+			w.boundConn = nil
 		}
 		w.browse.enabled, w.browse.pending = false, nil
 		if w.view.dialog == sftpDialogBrowseCreateDirectory {
@@ -253,6 +261,7 @@ func (state *State) syncSFTPWindows() {
 		if w.closed {
 			continue
 		}
+		w.syncBorrowedConnection()
 		phase := w.session.phase
 		if w.session.conn != nil {
 			phase = w.session.conn.Status().Phase
@@ -263,6 +272,135 @@ func (state *State) syncSFTPWindows() {
 			w.invalidate()
 		}
 	}
+}
+
+func (w *sftpWindow) syncBorrowedConnection() {
+	if w == nil || w.closed || w.ownsConnection || w.owner == nil {
+		return
+	}
+	source, ok := w.owner.sessionByIDPointer(w.session.ID)
+	if !ok {
+		return
+	}
+	if source.conn != w.sourceConn {
+		w.sourceConn = source.conn
+		w.session.conn = source.conn
+		w.session.phase = source.phase
+		w.session.endpoint = source.endpoint
+		w.session.sudoCommands, w.session.sudoPassword = false, ""
+		w.phase = source.phase
+		w.invalidate()
+	}
+	if w.connected() && (w.boundConn != w.sourceConn || w.view.worker == nil) {
+		w.reconnectBrowser(source)
+	}
+}
+
+func (w *sftpWindow) reconnectBrowser(source *Session) {
+	if w == nil || w.closed || source == nil || !w.connected() {
+		return
+	}
+	state := w.owner
+	prevAddress := w.view.transferAddress
+	if prevAddress == "" {
+		prevAddress = w.session.Address
+	}
+	endpointChanged := source.Address != "" && prevAddress != "" && source.Address != prevAddress
+
+	if w.view.worker != nil {
+		w.view.worker.Interrupt()
+		w.view.worker.Close()
+		state.refreshSFTPTransfers(w.view)
+		state.archiveTransfers(w.view)
+	}
+	for id := range w.view.remoteCopies {
+		state.releaseRemoteCopySource(w.view, id)
+	}
+	w.view.remoteCopies = nil
+	w.clearDirectoryTreeRequests()
+	w.invalidateDirectoryTree(false)
+	w.view.forgetListings()
+	w.view.remoteSeq++
+	w.view.navigation = sftpNavigation{}
+	w.view.waitingNavigation = sftpNavigation{}
+	w.view.waiting = ""
+	w.view.preparingPath = ""
+	w.view.abandonedPath = ""
+	w.view.pathRequest = ""
+	w.view.errorText = ""
+	w.view.refreshStatus = ""
+	w.view.status = ""
+	w.view.sudo = false
+	w.view.busy = false
+	w.browse.enabled, w.browse.pending = false, nil
+
+	if !w.ownsConnection {
+		w.sourceConn = source.conn
+		w.session.HostID = source.HostID
+		w.session.Title = source.Title
+		w.session.Address = source.Address
+		w.session.host = source.host
+		w.session.conn = source.conn
+		w.session.phase = source.phase
+		w.session.endpoint = source.endpoint
+		w.session.sudoCommands, w.session.sudoPassword = false, ""
+		w.phase = source.phase
+		w.view.transferServer, w.view.transferAddress = source.Title, source.Address
+		w.view.transferHost = transferHostFor(source)
+		if w.window == nil {
+			state.rebuildFileTabOptions()
+		}
+	} else {
+		w.phase = w.session.phase
+	}
+
+	targetDir := w.view.sftpFolder.path
+	if targetDir == "" {
+		if w.view.restorePath != "" {
+			targetDir = w.view.restorePath
+		} else {
+			targetDir = w.initialRemote
+		}
+	}
+	if endpointChanged {
+		targetDir = ""
+		w.initialRemote = ""
+		w.view.sftpFolder.history = sftpHistory{}
+		w.view.sftpFolder.path = ""
+		w.view.sftpFolder.allRows = nil
+		w.view.sftpFolder.rows = nil
+		w.view.sftpFolder.crumbs = nil
+		w.view.restorePath = ""
+		resetDirectoryTree(&w.directoryTree[1])
+	} else {
+		w.view.restorePath = targetDir
+	}
+
+	connection, mode := w.session.conn, w.session.host.Transfer
+	w.boundConn = connection
+	w.view.openFiles = func() (sftpclient.Remote, error) { return openRemoteFiles(connection, mode) }
+	w.view.worker = sftpclient.NewWorker(w.view.openFiles, state.notifyForView(&w.session, w.view))
+	state.configureSFTPWorker(w.view)
+
+	for _, document := range state.fileWindows.documents {
+		if document.view == w.view && !document.local && !document.closed && document.worker != nil {
+			document.worker.Close()
+			document.openRemoteWorker(w.view.openFiles)
+		}
+	}
+	if w.view.lfolder.path == "" {
+		state.listLocal(w.view, w.initialLocal)
+	}
+	state.listSFTP(w.view, targetDir)
+	if w.directoryTree[1].enabled {
+		if w.directoryTree[1].rootPath == "" {
+			w.enableDirectoryTree(1, targetDir)
+		} else {
+			w.loadExpandedDirectoryTree(false)
+		}
+	}
+	w.invalidate()
+	state.options.Invalidate()
 }
 
 // A native transfer window receives its own OnWake callback. A manager hosted
@@ -315,6 +453,7 @@ func (w *sftpWindow) onClosed() {
 		return
 	}
 	w.closed = true
+	w.owner.cancelReconnect(&w.session)
 	w.fileProperties.close()
 	w.view.sftpFolder.stopSizeCalculation()
 	w.view.lfolder.stopSizeCalculation()

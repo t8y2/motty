@@ -994,13 +994,13 @@ func (state *State) Wake() {
 		state.scheduleUpdateCheck(state.update.firstDelay)
 	}
 	state.pumpSFTPConnections()
+	state.syncSFTPWindows()
 	state.wakeEmbeddedSFTPWindows()
 	state.pumpDashboard()
 	state.pumpSessionLogs()
 	state.showNextPrompt()
 	state.drainAI()
 	state.syncNoteWindows()
-	state.syncSFTPWindows()
 	state.aiPumpCLILogin()
 	state.syncRemoteToolsWindows()
 	if len(state.edits.list) > 0 && !state.edits.watching {
@@ -1105,6 +1105,9 @@ func (state *State) apply(session *Session, status sshconn.Status) {
 		// After the connected line: a saved or failed save is what the user needs to read.
 		state.rememberSecret(session)
 		state.ensureSessionContextSFTP(session)
+		if w := state.sftpWindows[session.ID]; w != nil && !w.closed && !w.ownsConnection {
+			w.syncBorrowedConnection()
+		}
 	case sshconn.PhaseClosed:
 		session.closeSSHBrowser()
 		session.stopRemoteLogs()

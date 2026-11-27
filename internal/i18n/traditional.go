@@ -87,7 +87,7 @@ var TraditionalMessages = Messages{
 		CalculateDirectorySize: "計算各子目錄大小",
 		Open:                   "檔案傳輸", Title: "檔案傳輸", Local: "本機", Remote: "伺服器", Path: "目錄路徑", Name: "名稱", Size: "大小", Modified: "修改時間",
 		Upload: "上傳 →", Download: "← 下載", DragHint: "拖曳檔案或資料夾到另一側，即可複製傳輸", DropUpload: "上傳到", DropDownload: "下載到", DragOutFailed: "無法準備拖曳的檔案",
-		CloseTitle: "仍有任務正在進行", CloseDescription: "關閉此視窗會停止尚未完成的傳輸、解壓縮和外部編輯同步。", CloseTabDescription: "關閉此分頁會停止尚未完成的傳輸、解壓縮和外部編輯同步。", CloseTransfers: "停止任務並關閉", Disconnected: "原連線已中斷，請重新連線後重新開啟檔案傳輸視窗。",
+		CloseTitle: "仍有任務正在進行", CloseDescription: "關閉此視窗會停止尚未完成的傳輸、解壓縮和外部編輯同步。", CloseTabDescription: "關閉此分頁會停止尚未完成的傳輸、解壓縮和外部編輯同步。", CloseTransfers: "停止任務並關閉", Disconnected: "連線已中斷，重新連線後將自動恢復。",
 	},
 	FileWindow: FileWindowMessages{
 		Title: "檔案預覽與編輯", Save: "儲存", Reload: "重新載入", Encoding: "編碼", Auto: "自動", Fit: "適應視窗", Actual: "實際大小", ZoomIn: "放大", ZoomOut: "縮小",

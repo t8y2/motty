@@ -32,12 +32,31 @@ func (state *State) openHostSFTPWindow(host Host) {
 }
 
 // Keep connection progress and errors in the transfer window. A retry replaces
-// only its initial handshake; a live browser/document never changes connection.
+// only its initial handshake or reconnects a dropped standalone window.
 func (w *sftpWindow) connect() {
 	if w.closed || w.view.worker != nil {
 		return
 	}
+	w.dialOwned(false)
+}
+
+func (w *sftpWindow) canReconnectOwned() bool {
+	return w.ownsConnection && !w.closed && !w.connected() &&
+		(w.session.phase == sshconn.PhaseClosed || w.session.phase == sshconn.PhaseFailed)
+}
+
+func (w *sftpWindow) connecting() bool {
+	return w.session.phase == sshconn.PhaseConnecting || isPromptPhase(w.session.phase)
+}
+
+func (w *sftpWindow) dialOwned(automatic bool) {
+	if w.closed || !w.ownsConnection {
+		return
+	}
 	state, s := w.owner, &w.session
+	if !automatic {
+		state.cancelReconnect(s)
+	}
 	if s.conn != nil {
 		s.conn.Cancel()
 		s.conn = nil
@@ -105,9 +124,14 @@ func (state *State) pumpSFTPConnections() {
 		if state.modalSession == s.ID && !isPromptPhase(s.phase) {
 			state.closeModal()
 		}
+		state.updateReconnect(s, status)
 		if s.phase == sshconn.PhaseConnected {
 			state.rememberSecret(s)
-			w.startBrowser()
+			if w.view.worker == nil && w.view.lfolder.path == "" {
+				w.startBrowser()
+			} else if w.boundConn != s.conn || w.view.worker == nil {
+				w.reconnectBrowser(s)
+			}
 		}
 		w.view.invalidateDetached()
 	}
