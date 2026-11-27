@@ -206,7 +206,8 @@ func (state *State) formatConnectionInfo(host Host, includeCredentials bool, cre
 func (state *State) resolveHostCredentialForCopy(host Host, includePassphrase bool, retry func()) (resolvedCopyCredential, bool) {
 	if identity, ok := state.hostPrivateKeyForCopy(host); ok {
 		vaultFile := state.secrets.vault
-		if (identity.Stored || includePassphrase) && vaultFile != nil && vaultFile.NeedsConversion() {
+		needsVault := identity.Stored || (includePassphrase && vaultFile != nil && vaultFile.Len() > 0)
+		if needsVault && vaultFile != nil && vaultFile.NeedsConversion() {
 			state.openVaultUnlock(nil, retry)
 			return resolvedCopyCredential{}, false
 		}
