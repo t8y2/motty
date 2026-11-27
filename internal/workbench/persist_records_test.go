@@ -70,6 +70,9 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// computer's own picker layout, like the hidden shells below.
 		"local_shells_expanded": true,
 		"local_shell":           true, "local_start": true, "last_local_directory": true, "ssh_agent": true, "ssh_agent_path": true, "local_proxy_port": true, "terminal_cursor": true,
+		// Whether programs may change the cursor shape goes with the shape it
+		// would change, which is this computer's own look as well.
+		"terminal_cursor_program": true,
 		// The commands a computer's local shells type when they start name its own
 		// shells and set up its own locale, so another device keeps its own.
 		"local_startup_commands": true,

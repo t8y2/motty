@@ -63,6 +63,7 @@ func (state *State) applyTerminalCursorStyle() {
 	for index := range state.sessions {
 		if t := state.sessions[index].term; t != nil {
 			t.screen.SetDefaultCursor(state.terminalCursorStyle.termCursorStyle())
+			t.screen.SetCursorFromProgram(state.terminalCursorProgram)
 		}
 	}
 }

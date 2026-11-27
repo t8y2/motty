@@ -81,6 +81,7 @@ type savedState struct {
 	TerminalFind               terminalFindPreferences `json:"terminal_find,omitzero"`
 	TerminalScrollback         int                     `json:"terminal_scrollback,omitempty"`
 	TerminalCursor             string                  `json:"terminal_cursor,omitempty"`
+	TerminalCursorProgram      bool                    `json:"terminal_cursor_program,omitempty"`
 	ConnectionTimeoutSeconds   int                     `json:"connection_timeout_seconds,omitempty"`
 	ConnectionKeepAliveSeconds int                     `json:"connection_keepalive_seconds,omitempty"`
 	// ConnectionKeepAliveOff records the user's "off" choice. The interval
@@ -606,6 +607,7 @@ func (state *State) snapshot() savedState {
 		TerminalFind:               state.terminalFindPrefs,
 		TerminalScrollback:         state.terminalScrollback,
 		TerminalCursor:             state.terminalCursorStyle.String(),
+		TerminalCursorProgram:      state.terminalCursorProgram,
 		ConnectionTimeoutSeconds:   int(state.connectionTimeout / time.Second),
 		ConnectionKeepAliveSeconds: int(state.connectionKeepAlive / time.Second),
 		ConnectionKeepAliveOff:     state.connectionKeepAlive == 0,
@@ -1095,6 +1097,9 @@ func (state *State) restoreSettings(saved savedState) {
 	state.restoreLocal(saved)
 	state.restoreShared(saved)
 	state.restoreBackground(saved.Background)
+	// The cursor shape and whether a program may change it reach the terminals
+	// this window already has, not only the ones opened later.
+	state.applyTerminalCursorStyle()
 }
 
 // reloadSettings makes this window show the configuration the store now holds,
@@ -1274,6 +1279,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.shortcuts = recorded
 	state.setTerminalScrollback(normalizeTerminalScrollback(saved.TerminalScrollback))
 	state.terminalCursorStyle = terminalCursorStyleFromString(saved.TerminalCursor)
+	state.terminalCursorProgram = saved.TerminalCursorProgram
 	state.connectionTimeout, state.connectionKeepAlive = connectionTimes(saved)
 	state.connectionReconnect = reconnectPolicyFromString(saved.ConnectionReconnect)
 	state.terminalClipboard = terminalClipboardPolicyFromString(saved.TerminalClipboard)

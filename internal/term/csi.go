@@ -516,6 +516,14 @@ func (t *Terminal) softReset() {
 
 func (t *Terminal) setCursorStyle(n int) {
 	t.cursorSteady = n == 2 || n == 4 || n == 6
+	if !t.cursorFromProgram {
+		// The user's shape stands, but a program's steady/blink request still
+		// applies. Leaving cursorStyled false keeps the shape following the
+		// user's own choice.
+		t.cursor = t.defaultCursor
+		t.cursorStyled = false
+		return
+	}
 	t.cursorStyled = true
 	switch n {
 	case 3, 4:

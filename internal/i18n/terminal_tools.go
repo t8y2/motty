@@ -251,6 +251,8 @@ type ToolsMessages struct {
 	CursorShapeBlock           string
 	CursorShapeBar             string
 	CursorShapeUnderline       string
+	CursorProgramRow           string
+	CursorProgramDescription   string
 	ScrollbarLabel             string
 	CopyOnSelectRow            string
 	CopyOnSelectDescription    string

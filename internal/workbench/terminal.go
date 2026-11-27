@@ -516,6 +516,7 @@ func (state *State) configureTerminal(session *Session) {
 	}
 	session.term.screen.SetPromptToken(session.term.folderToken)
 	session.term.screen.SetDefaultCursor(state.terminalCursorStyle.termCursorStyle())
+	session.term.screen.SetCursorFromProgram(state.terminalCursorProgram)
 	session.term.openLink = state.openTerminalLink
 	session.term.clock = state.now
 	session.term.adoptIdleClock()
