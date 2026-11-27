@@ -381,13 +381,13 @@ publish_viva_feed() {
 		return 1
 	fi
 	echo "Viva update feed: feed built after ${SECONDS}s"
-	upload viva/latest.json "$viva_dir/latest.json" application/json 'public, max-age=300'
-	upload viva/latest.json.sig "$viva_dir/latest.json.sig" 'text/plain; charset=utf-8' 'public, max-age=300'
 	for patch in "$dir"/motty-*.patch; do
 		[ -f "$patch" ] || continue
 		name=$(basename "$patch")
 		upload "releases/$tag/$name" "$patch" 'application/octet-stream' 'public, max-age=31536000, immutable'
 	done
+	upload viva/latest.json "$viva_dir/latest.json" application/json 'public, max-age=300'
+	upload viva/latest.json.sig "$viva_dir/latest.json.sig" 'text/plain; charset=utf-8' 'public, max-age=300'
 }
 
 if [ "$mode" != copy ]; then
@@ -429,9 +429,9 @@ if [ "$mode" != copy ]; then
 		printf '\n  ]\n}\n'
 	} >"$dir/latest.json"
 
-	upload latest.json "$dir/latest.json" "application/json" 'public, max-age=300'
-
 	publish_viva_feed || exit 1
+
+	upload latest.json "$dir/latest.json" "application/json" 'public, max-age=300'
 
 	echo "Done: $mirror/latest.json"
 fi
