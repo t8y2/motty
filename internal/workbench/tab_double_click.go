@@ -10,6 +10,7 @@ type tabDoubleClickAction string
 const (
 	tabDoubleClickDuplicate tabDoubleClickAction = "duplicate"
 	tabDoubleClickRename    tabDoubleClickAction = "rename"
+	tabDoubleClickClose     tabDoubleClickAction = "close"
 	tabDoubleClickNone      tabDoubleClickAction = "none"
 )
 
@@ -19,7 +20,7 @@ func (action tabDoubleClickAction) String() string { return string(action) }
 // state file that predates the setting, is the default.
 func tabDoubleClickFromString(value string) tabDoubleClickAction {
 	switch action := tabDoubleClickAction(value); action {
-	case tabDoubleClickDuplicate, tabDoubleClickNone:
+	case tabDoubleClickDuplicate, tabDoubleClickClose, tabDoubleClickNone:
 		return action
 	}
 	return tabDoubleClickRename

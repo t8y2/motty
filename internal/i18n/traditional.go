@@ -320,7 +320,7 @@ var TraditionalMessages = Messages{
 	SettingsTabOrientation:                 "分頁方向",
 	SettingsTabOrientationDescription:      "將工作階段分頁顯示在頂部，或垂直排列在左側邊欄。",
 	SettingsTabDoubleClick:                 "雙擊分頁",
-	SettingsTabDoubleClickDescription:      "雙擊工作階段分頁時的動作；右鍵選單始終提供這兩個動作。",
+	SettingsTabDoubleClickDescription:      "雙擊工作階段分頁時的動作。",
 	SettingsTabDoubleClickNone:             "不做任何動作",
 	SettingsTabsHorizontal:                 "水平",
 	SettingsTabsVertical:                   "垂直",

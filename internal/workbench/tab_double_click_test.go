@@ -107,6 +107,41 @@ func TestDoubleClickCanDoNothing(t *testing.T) {
 	}
 }
 
+func TestDoubleClickCanCloseTheTab(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	state.tabDoubleClick = tabDoubleClickClose
+	connect(t, state, world)
+	source := state.deck.ActiveWorkspace()
+	openEmptyTab(state)
+	closing := state.deck.ActiveWorkspace()
+
+	result := doubleClickTab(state, closing)
+	if !result.Handled || !result.Repaint {
+		t.Fatalf("double click = %+v", result)
+	}
+	if tabs := state.deck.Workspaces(nil); len(tabs) != 1 || tabs[0].ID != source {
+		t.Fatalf("tabs = %+v, want only the source", tabs)
+	}
+}
+
+func TestDoubleClickCloseAsksBeforeClosingARunningSession(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.tabDoubleClick = tabDoubleClickClose
+	workspace := state.deck.ActiveWorkspace()
+
+	if result := doubleClickTab(state, workspace); !result.Handled {
+		t.Fatal("the double click was left to the tab underneath")
+	}
+	if state.modal != modalCloseTabs {
+		t.Fatal("closing a live session from a double click did not ask first")
+	}
+	state.Click(hitTabsCloseCancel)
+	if _, ok := state.workspaceTab(workspace); !ok {
+		t.Fatal("cancel closed the tab")
+	}
+}
+
 func TestTabDoubleClickSettingIsSavedOnThisDevice(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	if state.tabDoubleClick != tabDoubleClickRename {
@@ -116,15 +151,21 @@ func TestTabDoubleClickSettingIsSavedOnThisDevice(t *testing.T) {
 	if !contains(paintedAt(state, 1400, 4000), state.messages.SettingsTabDoubleClick) {
 		t.Fatal("the double-click row is missing from settings")
 	}
-	clickSettingsChoiceInRow(t, state, state.messages.SettingsTabDoubleClick, state.messages.MenuDuplicateTab)
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.SettingsTabDoubleClick)
+	clickPageLabel(t, state, gfx.RoleOption, state.messages.MenuDuplicateTab)
 	if state.tabDoubleClick != tabDoubleClickDuplicate {
 		t.Fatalf("chosen double click = %q, want duplicate", state.tabDoubleClick)
+	}
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.SettingsTabDoubleClick)
+	clickPageLabel(t, state, gfx.RoleOption, state.messages.LabelCloseTab)
+	if state.tabDoubleClick != tabDoubleClickClose {
+		t.Fatalf("chosen double click = %q, want close", state.tabDoubleClick)
 	}
 	state.save()
 
 	restored := newTestState(t, state.options)
-	if restored.tabDoubleClick != tabDoubleClickDuplicate {
-		t.Fatalf("restored double click = %q, want duplicate", restored.tabDoubleClick)
+	if restored.tabDoubleClick != tabDoubleClickClose {
+		t.Fatalf("restored double click = %q, want close", restored.tabDoubleClick)
 	}
 	for _, test := range []struct {
 		saved string
@@ -133,6 +174,7 @@ func TestTabDoubleClickSettingIsSavedOnThisDevice(t *testing.T) {
 		{"", tabDoubleClickRename},
 		{"duplicate", tabDoubleClickDuplicate},
 		{"rename", tabDoubleClickRename},
+		{"close", tabDoubleClickClose},
 		{"none", tabDoubleClickNone},
 		{"nonsense", tabDoubleClickRename},
 	} {

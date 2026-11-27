@@ -348,8 +348,8 @@ func (state *State) paintGeneralSettings(page *settingsPage) {
 						state.save()
 					}
 				})
-			settingsChoiceRow(page, messages.SettingsTabDoubleClick, messages.SettingsTabDoubleClickDescription, &state.tabDoubleClick, settingsTabDoubleClickChoices[:], state.settingsTabDoubleClickLabel,
-				func() { state.save() }, nil)
+			settingsSelectRow(page, messages.SettingsTabDoubleClick, messages.SettingsTabDoubleClickDescription, &state.tabDoubleClick, settingsTabDoubleClickChoices[:], state.settingsTabDoubleClickLabel, nil,
+				func() { state.save() })
 			page.toggleRow(messages.SettingsTabNumbers, messages.SettingsTabNumbersDescription, state.tabNumbers, hitSettingsTabNumbers)
 			numberKey := state.tabNumberChoice()
 			settingsChoiceRow(page, messages.SettingsTabNumberKeys, messages.SettingsTabNumberKeysDescription, &numberKey, tabNumberChoices[:], state.tabNumberChoiceLabel,

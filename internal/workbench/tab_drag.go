@@ -143,6 +143,11 @@ func (state *State) tabDragPointer(event gfx.PointerEvent) (gfx.EventResult, boo
 						return gfx.EventResult{Handled: true, Repaint: true, Focus: hitTabInline}, true
 					}
 					return gfx.EventResult{Repaint: true}, true
+				case tabDoubleClickClose:
+					// Closing takes the close button's path, so a locked tab and
+					// a session still running are asked about the same way.
+					state.closeWorkspace(id)
+					return gfx.EventResult{Handled: true, Repaint: true}, true
 				case tabDoubleClickNone:
 					return gfx.EventResult{Handled: true}, true
 				default:

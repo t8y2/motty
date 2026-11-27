@@ -320,7 +320,7 @@ var ChineseMessages = Messages{
 	SettingsTabOrientation:                 "标签方向",
 	SettingsTabOrientationDescription:      "将会话标签显示在顶部，或垂直排列在左侧栏。",
 	SettingsTabDoubleClick:                 "双击标签页",
-	SettingsTabDoubleClickDescription:      "双击会话标签页时的操作；右键菜单始终提供这两个动作。",
+	SettingsTabDoubleClickDescription:      "双击会话标签页时的操作。",
 	SettingsTabDoubleClickNone:             "不做任何操作",
 	SettingsTabsHorizontal:                 "水平",
 	SettingsTabsVertical:                   "垂直",

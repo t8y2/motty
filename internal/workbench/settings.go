@@ -710,7 +710,7 @@ var (
 	settingsCornerChoices          = [...]cornerStyle{cornersRounded, cornersSquare}
 	settingsToolbarPositionChoices = [...]terminalToolbarPosition{terminalToolbarLeft, terminalToolbarRight}
 	settingsTabOrientationChoices  = [...]tabOrientation{tabsHorizontal, tabsVertical}
-	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickNone}
+	settingsTabDoubleClickChoices  = [...]tabDoubleClickAction{tabDoubleClickRename, tabDoubleClickDuplicate, tabDoubleClickClose, tabDoubleClickNone}
 	settingsCloseChoices           = [...]closeAction{closeToTray, closeQuits}
 	settingsKeepWindowsChoices     = [...]keepWindowsPolicy{keepWindowsAlways, keepWindowsNever, keepWindowsAsk}
 	settingsRelaunchChoices        = [...]relaunchAction{relaunchRaise, relaunchNewWindow}
@@ -770,6 +770,8 @@ func (state *State) settingsTabDoubleClickLabel(action tabDoubleClickAction) str
 	switch action {
 	case tabDoubleClickRename:
 		return state.messages.MenuRenameTab
+	case tabDoubleClickClose:
+		return state.messages.LabelCloseTab
 	case tabDoubleClickNone:
 		return state.messages.SettingsTabDoubleClickNone
 	}

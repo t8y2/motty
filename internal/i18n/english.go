@@ -320,7 +320,7 @@ var EnglishMessages = Messages{
 	SettingsTabOrientation:                 "Tab orientation",
 	SettingsTabOrientationDescription:      "Show session tabs across the top or in the left sidebar.",
 	SettingsTabDoubleClick:                 "Double-click a tab",
-	SettingsTabDoubleClickDescription:      "What a double-click on a session tab does; the tab menu always offers both actions.",
+	SettingsTabDoubleClickDescription:      "What a double-click on a session tab does.",
 	SettingsTabDoubleClickNone:             "Do nothing",
 	SettingsTabsHorizontal:                 "Horizontal",
 	SettingsTabsVertical:                   "Vertical",
