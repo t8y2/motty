@@ -134,6 +134,7 @@ func TestLoginInteractivePromptReadyRequiresKnownPrompt(t *testing.T) {
 	}{
 		{name: "SSH password prompt", prompt: "root@example.com's password:", want: true},
 		{name: "GateShell bracketed SSH password prompt", prompt: "[root@10.169.156.26:22] Password:", want: true},
+		{name: "GateShell pipe-prefixed SSH password prompt", prompt: "| [root@10.169.156.26:22] Password:", want: true},
 		{name: "sudo password prompt", prompt: "[sudo] password for root:", want: true},
 		{name: "passphrase prompt", prompt: "Enter passphrase for key '/home/user/.ssh/id_ed25519':", want: true},
 		{name: "Chinese password prompt", prompt: "请输入密码：", want: true},
@@ -641,7 +642,7 @@ func TestMultilineLoginCommandAbortsOnTimeoutAndDisconnectButContinuesAtPrompt(t
 
 		shell.say("\x1b]133;C;motty=" + token + "\x07\x1b]133;A;motty=" + token + "\x07$ \x1b]133;B;motty=" + token + "\x07")
 		state.Wake()
-		shell.say("\x1b]133;A;motty=" + token + "\x07\r\n[root@10.169.156.26:22] Password:")
+		shell.say("\x1b]133;A;motty=" + token + "\x07\r\n| [root@10.169.156.26:22] Password:")
 		state.Wake()
 		*now += loginCommandGrace
 		state.Wake()
