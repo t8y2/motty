@@ -12,6 +12,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
 	"motty/internal/sftpclient"
+	"motty/internal/sshconn"
 )
 
 // The file panel is a column a few hundred pixels wide (a side panel or a
@@ -229,6 +230,13 @@ func (state *State) declareSFTPPanel(c ui.C) {
 		s.header.Children(func() {
 			ui.Text(c, title).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(pal.text).Ellipsis().Grow(1).Height(20).LineHeight(20).MarginSides(0, 8, 0, 0)
 			ui.Row(c).Gap(4).Shrink(0).Children(func() {
+				// The panel shows one side at a time; the manager shows both. A
+				// local panel has no server to browse, so it keeps the title row
+				// as it was, and a reconnecting session shows the control the
+				// way the terminal toolbar does: there, but waiting.
+				if session.hasServer() {
+					headerIcon(hitSFTPDetachPanel, iconSFTPTransfer, messages.SFTPWindow.Open, session.phase != sshconn.PhaseConnected || !state.sftpManagersAvailable(), iconButtonQuiet)
+				}
 				headerIcon(hitSFTPPanelSide, moveIcon, moveHint, false, iconButtonQuiet)
 				headerIcon(hitSFTPClose, iconClose, messages.TipSFTPClose, false, iconButtonQuiet)
 			})

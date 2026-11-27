@@ -56,6 +56,43 @@ func populateTransferPreview(state *State) {
 	state.describeTransferSummary()
 }
 
+func TestCompactTransferRowsIncludeEveryTaskRegardlessOfSavedFilters(t *testing.T) {
+	state := transferPreviewState(t)
+	state.transfers.filter = transferFilterFailed
+	state.transfers.direction = transferUpload
+	state.transfers.query = "not-present"
+	state.describeTransferSummary()
+
+	want := []int{4, 3, 2, 1} // running, waiting, failed, completed
+	if len(state.transfers.compactRows) != len(want) {
+		t.Fatalf("compact rows = %d, want %d", len(state.transfers.compactRows), len(want))
+	}
+	for index, id := range want {
+		entry := &state.transfers.entries[state.transfers.compactRows[index]]
+		if entry.id != id {
+			t.Fatalf("compact row %d = task %d, want %d", index, entry.id, id)
+		}
+	}
+
+	state.transfers.entries[1].removed = true
+	state.describeTransferSummary()
+	if len(state.transfers.compactRows) != 3 {
+		t.Fatalf("removed task remains in compact rows: %v", state.transfers.compactRows)
+	}
+}
+
+func TestCompactTransferHeightCapsAtThreeRows(t *testing.T) {
+	state := transferPreviewState(t)
+	if got, want := state.transfers.compactPreferredHeight(), float32(86+3*compactTransferRowHeight); got != want {
+		t.Fatalf("four-task height = %v, want %v", got, want)
+	}
+	state.transfers.entries = state.transfers.entries[:2]
+	state.describeTransferSummary()
+	if got, want := state.transfers.compactPreferredHeight(), float32(86+2*compactTransferRowHeight); got != want {
+		t.Fatalf("two-task height = %v, want %v", got, want)
+	}
+}
+
 func TestTransferCenterUsesReadableUnitsAndKeepsOtherConnections(t *testing.T) {
 	state := transferPreviewState(t)
 	entry := state.transfers.entries[3]

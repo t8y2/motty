@@ -7,6 +7,13 @@ import (
 
 var hitSFTPPanelSide = tree.ID(sftpHits, "panel-side")
 
+// hitSFTPDetachPanel opens the full file manager from the docked panel's title
+// row. The rail's hitSFTPDetach runs the same action, but one identity names one
+// painted control, so the panel has its own: the rail's placement is checked
+// against the panel's rectangle, and a shared name would read as a misplaced
+// rail.
+var hitSFTPDetachPanel = tree.ID(sftpHits, "detach-panel")
+
 func sftpPanelSideString(side layoutcore.ContextSide) string {
 	if side == layoutcore.ContextRight {
 		return "right"
