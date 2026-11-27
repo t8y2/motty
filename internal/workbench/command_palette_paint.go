@@ -301,7 +301,6 @@ func (state *State) declareCommandPaletteRow(c ui.C, entry commandPaletteEntry, 
 	// the pointer and the arrows are the one way the selection moves, so Tab
 	// keeps its normal traversal.
 	row.HitOutset(2, 0, 2, 0).HitWith(id, entry.label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Hint: entry.recencyHint, Selected: entry.checked}).Children(func() {
-		state.declareSnippetPickerHandle(c, entry, visible)
 		if entry.checkable {
 			// The tick keeps its place when unticked, so the names line up.
 			tick := ui.Stack(c).Size(14, 14).Shrink(0)
@@ -407,7 +406,7 @@ func (state *State) declareFoldRow(c ui.C, entry commandPaletteEntry, visible in
 	if entry.expanded {
 		glyph = iconChevronDown
 	}
-	row.HitOutset(2, 0, 2, 0).HitWith(hitCommandPaletteItems.At(visible), entry.label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Expanded: entry.expanded}).Children(func() {
+	row.HitOutset(2, 0, 2, 0).HitWith(hitCommandPaletteItems.At(visible), entry.label, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, Expanded: entry.expanded, Hint: state.messages.Tools.SnippetPickerReorder}).Children(func() {
 		ui.Icon(c, lucideIcons[glyph]).Size(14, 14).Color(color).Shrink(0)
 		ui.Text(c, entry.label).FontSize(metrics.FontSizeM).Weight(gfx.WeightSemibold).Color(color).Ellipsis().Grow(1)
 		if entry.detail != "" {

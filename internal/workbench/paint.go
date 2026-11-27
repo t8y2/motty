@@ -576,6 +576,11 @@ func (state *State) WindowConfig(base app.Config) app.Config {
 			}
 			return gfx.EventResult{Handled: !pointInRect(event.X, event.Y, buttons)}
 		}
+		if state.modal == modalCommandPalette {
+			if result := state.snippetPickerDragPointer(event); result.Handled {
+				return result
+			}
+		}
 		return pointer(event)
 	}
 	config.TextInput = func(context app.TextInputContext) *app.TextInput {

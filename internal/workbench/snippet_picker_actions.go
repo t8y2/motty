@@ -7,8 +7,6 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-var hitSnippetPickerHandle = tree.Sub(commandPaletteHits, tree.Name("snippet-drag"))
-
 func (state *State) openSnippetPickerMenuOn(canvas *gfx.Canvas, id gfx.ID, entry commandPaletteEntry) {
 	if !state.commandPalette.snippets || state.snippetSend.target == sendChosen {
 		return
@@ -37,17 +35,6 @@ func (state *State) openSnippetPickerMenuOn(canvas *gfx.Canvas, id gfx.ID, entry
 	state.snippetMenu = snippetMenu{open: true, fromPicker: true, index: index,
 		name: state.snippets.list[index].Name, at: gfx.Point{X: event.X, Y: event.Y}}
 	canvas.Consume()
-}
-
-func (state *State) declareSnippetPickerHandle(c ui.C, entry commandPaletteEntry, visible int) {
-	if _, ok := entry.target.In(hitSnippetSendList); !ok || !state.commandPalette.snippets {
-		return
-	}
-	ui.Stack(c).Size(18, 24).Shrink(0).HitWith(hitSnippetPickerHandle.At(visible),
-		state.messages.Tools.SnippetPickerReorder, gfx.HitOptions{Role: gfx.RoleButton, SkipTab: true, SkipFocus: true,
-			Hint: state.messages.Tools.SnippetPickerReorder}).Children(func() {
-		ui.Text(c, "⠿").FontSize(metrics.FontSizeM).Color(state.pal.muted)
-	})
 }
 
 func (state *State) paintSnippetPickerDrop(d *ui.DrawContext) {

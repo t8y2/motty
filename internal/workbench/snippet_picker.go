@@ -22,6 +22,10 @@ func (state *State) openSnippetPicker() {
 	palette.filtered = false
 	palette.expandedGroups = palette.expandedGroups[:0]
 	state.snippetSend.input = text.Editor{}
+	// 重新打开时显示命令列表，避免沿用上次的会话选择界面。
+	if state.snippetSend.target == sendChosen {
+		state.snippetSend.target = sendCurrent
+	}
 	state.rebuildCommandPalette()
 }
 
@@ -108,7 +112,7 @@ func (state *State) rebuildSnippetPicker() {
 		// With groups, the unfiltered list is a collapsible tree in pre-order,
 		// the ungrouped last; a search drops the headings and still matches
 		// every snippet and its full group path.
-		for _, group := range form.groups {
+		for _, group := range state.snippetPickerGroups() {
 			key := strings.ToLower(group)
 			depth := snippetGroupDepth(group)
 			if palette.groupAncestorsExpanded(group) {

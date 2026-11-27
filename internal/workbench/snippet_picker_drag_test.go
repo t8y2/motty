@@ -18,10 +18,10 @@ func TestSnippetPickerDragPersistsManualOrderWithoutSending(t *testing.T) {
 	state.refreshSnippets()
 	state.openSnippetPicker()
 	view := openPickerView(t, state, 1)
-	handle := dualHit(t, view, hitSnippetPickerHandle.At(2))
+	source := dualHit(t, view, hitCommandPaletteItems.At(2))
 	first := dualHit(t, view, hitCommandPaletteItems.At(0))
-	x := handle.X + handle.Width/2
-	if err := view.Press(x, handle.Y+handle.Height/2); err != nil {
+	x := source.X + source.Width*0.75
+	if err := view.Press(x, source.Y+source.Height/2); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Move(x, first.Y+2); err != nil {
@@ -54,10 +54,10 @@ func TestSnippetPickerDragWithinGroupAndSearch(t *testing.T) {
 	state.commandPalette.search.Insert("git")
 	state.refreshCommandPalette()
 	view := openPickerView(t, state, 1)
-	handle := dualHit(t, view, hitSnippetPickerHandle.At(1))
+	source := dualHit(t, view, hitCommandPaletteItems.At(1))
 	first := dualHit(t, view, hitCommandPaletteItems.At(0))
-	x := handle.X + handle.Width/2
-	if err := view.Press(x, handle.Y+handle.Height/2); err != nil {
+	x := source.X + source.Width*0.75
+	if err := view.Press(x, source.Y+source.Height/2); err != nil {
 		t.Fatal(err)
 	}
 	if err := view.Move(x, first.Y+2); err != nil {

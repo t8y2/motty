@@ -238,6 +238,11 @@ func (state *State) renameSnippetGroup(from, to string) bool {
 	remapCommandGroupMap(state.commands.hiddenGroups, from, to)
 	remapCommandGroupMap(state.commands.collapsedGroups, from, to)
 	remapCommandGroupMap(state.snippets.treeCollapsedGroups, from, to)
+	for index, key := range state.snippets.pickerGroupOrder {
+		if snippetGroupWithin(key, from) {
+			state.snippets.pickerGroupOrder[index] = remapSnippetGroupPath(key, from, to)
+		}
+	}
 	for index, key := range state.commandPalette.expandedGroups {
 		if snippetGroupWithin(key, from) {
 			state.commandPalette.expandedGroups[index] = strings.ToLower(remapSnippetGroupPath(key, from, to))
@@ -292,6 +297,9 @@ func (state *State) deleteSnippetGroup(group string) {
 	deleteCommandGroupMap(state.commands.hiddenGroups, group)
 	deleteCommandGroupMap(state.commands.collapsedGroups, group)
 	deleteCommandGroupMap(state.snippets.treeCollapsedGroups, group)
+	state.snippets.pickerGroupOrder = slices.DeleteFunc(state.snippets.pickerGroupOrder, func(key string) bool {
+		return snippetGroupWithin(key, group)
+	})
 	state.commandPalette.expandedGroups = slices.DeleteFunc(state.commandPalette.expandedGroups, func(key string) bool {
 		return snippetGroupWithin(key, group)
 	})
