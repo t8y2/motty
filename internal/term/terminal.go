@@ -18,17 +18,32 @@ const (
 const DefaultScrollback = 5000
 
 // A scrollback line costs the same whatever its age: its cells, its combining
-// marks and its hyperlink slots. The byte budget keeps a wide terminal from
-// turning the line limit into tens of megabytes; short lines still keep the
-// full line count.
+// marks and its hyperlink slots. The byte budget keeps a hostile or
+// pathologically wide stream from turning the line limit into unbounded memory,
+// while scaling with the configured scrollback limit so wide desktop terminals
+// still retain the full line count the user asked for.
 const (
-	defaultHistoryBytes = 16 << 20
-	historyLineOverhead = 112 // the line struct, its slice headers and allocator slack
-	historyCellBytes    = 16  // Cell
-	historyMarkBytes    = 8   // Mark
-	historyLinkBytes    = 4   // one uint32 element of a line's hyperlink slice
-	historyLinkOverhead = 24  // that slice's header and allocation
+	minHistoryBytes        = 16 << 20
+	historyBytesPerLine    = 10 << 10 // ~600 columns of cells + overhead (or ~500 with links)
+	maxDefaultHistoryBytes = 128 << 20
+	historyLineOverhead    = 112 // the line struct, its slice headers and allocator slack
+	historyCellBytes       = 16  // Cell
+	historyMarkBytes       = 8   // Mark
+	historyLinkBytes       = 4   // one uint32 element of a line's hyperlink slice
+	historyLinkOverhead    = 24  // that slice's header and allocation
 )
+
+// defaultHistoryBytesFor returns the default memory budget for a terminal
+// configured to retain up to limit scrollback lines.
+func defaultHistoryBytesFor(limit int) int {
+	if limit <= 0 {
+		return minHistoryBytes
+	}
+	if limit >= maxDefaultHistoryBytes/historyBytesPerLine {
+		return maxDefaultHistoryBytes
+	}
+	return max(minHistoryBytes, limit*historyBytesPerLine)
+}
 
 // CursorStyle is the cursor shape an application asked for with DECSCUSR.
 type CursorStyle uint8
@@ -248,7 +263,8 @@ type Terminal struct {
 // New returns a terminal of the given size keeping at most scrollback lines of
 // history. A scrollback of 0 keeps none.
 func New(cols, rows, scrollback int) *Terminal {
-	t := &Terminal{histMax: max(scrollback, 0), histBudget: defaultHistoryBytes}
+	limit := max(scrollback, 0)
+	t := &Terminal{histMax: limit, histBudget: defaultHistoryBytesFor(limit)}
 	t.cols = clampInt(cols, 1, maxCols)
 	t.rows = clampInt(rows, 1, maxRows)
 	t.main.lines = t.blankLines(t.rows)
@@ -397,6 +413,9 @@ func (t *Terminal) SetScrollbackLimit(limit int) {
 	limit = max(limit, 0)
 	if limit == t.histMax {
 		return
+	}
+	if t.histBudget == defaultHistoryBytesFor(t.histMax) {
+		t.histBudget = defaultHistoryBytesFor(limit)
 	}
 	t.histMax = limit
 	if limit == 0 {
@@ -736,6 +755,47 @@ func (t *Terminal) lineHasContent(l *line) bool {
 	return t.images != nil && t.images.hasLine(l.id)
 }
 
+// historyUsed returns how many leading cells of l carry content worth storing
+// in history, starting from limit. Trailing unwritten cells are always dropped.
+// On a hard-ended line (!l.wrapped), trailing plain spaces with default
+// background, no attributes, no hyperlink and no combining mark render and copy
+// identically to unwritten cells, so dropping them stops space-padded output
+// from spending the history budget on blanks.
+func (l *line) historyUsed(limit int) int {
+	used := min(limit, len(l.cells))
+	minUsed := 0
+	if len(l.marks) > 0 {
+		minUsed = int(l.marks[len(l.marks)-1].Col) + 1
+	}
+	for used > minUsed {
+		c := l.cells[used-1]
+		if l.hyperlinkAt(used-1) != 0 {
+			break
+		}
+		if c == (Cell{}) {
+			used--
+			continue
+		}
+		if !l.wrapped && c.R == ' ' && c.BG == 0 && c.Attr == 0 {
+			used--
+			continue
+		}
+		break
+	}
+	return used
+}
+
+// historyCellCapExcess reports whether a slice of capacity have is too
+// oversized for need cells to be kept in history without inflating the byte
+// budget. The slack accommodates Go's allocator size-class rounding and minor
+// line-length jitter so steady-width recycling still allocates nothing.
+func historyCellCapExcess(have, need int) bool {
+	if need == 0 {
+		return have > 32
+	}
+	return have > need+need/2+32
+}
+
 // pushHistory appends a copy of l, without its trailing blanks, to the
 // history. When the ring is full the oldest line's storage is reused; when the
 // byte budget is reached the oldest lines are dropped.
@@ -744,10 +804,7 @@ func (t *Terminal) pushHistory(l *line) {
 	if t.histMax == 0 {
 		return
 	}
-	used := l.used
-	for used > 0 && l.cells[used-1] == (Cell{}) && l.hyperlinkAt(used-1) == 0 {
-		used--
-	}
+	used := l.historyUsed(l.used)
 	if t.hist == nil {
 		t.hist = make([]*line, t.histMax)
 	}
@@ -760,13 +817,25 @@ func (t *Terminal) pushHistory(l *line) {
 	} else {
 		dst = &line{}
 	}
-	if cap(dst.cells) < used || cap(dst.cells) > 4*used+64 {
-		dst.cells = make([]Cell, used)
+	if used == 0 {
+		if historyCellCapExcess(cap(dst.cells), 0) {
+			dst.cells = nil
+		} else {
+			dst.cells = dst.cells[:0]
+		}
+	} else {
+		if cap(dst.cells) < used || historyCellCapExcess(cap(dst.cells), used) {
+			dst.cells = make([]Cell, used)
+		}
+		dst.cells = dst.cells[:used]
+		copy(dst.cells, l.cells[:used])
 	}
-	dst.cells = dst.cells[:used]
 	dst.used = used
-	copy(dst.cells, l.cells[:used])
-	dst.marks = append(dst.marks[:0], l.marks...)
+	if len(l.marks) == 0 {
+		dst.marks = nil
+	} else {
+		dst.marks = append(dst.marks[:0], l.marks...)
+	}
 	if used > 0 && l.hyperlinks != nil {
 		links := append([]uint32(nil), (*l.hyperlinks)[:used]...)
 		dst.hyperlinks = &links

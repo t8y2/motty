@@ -61,3 +61,153 @@ func TestWideHistoryStaysWithinItsByteBudget(t *testing.T) {
 		t.Fatalf("after raising the limit: %d lines, %d bytes (budget %d)", term.Scrollback(), term.histBytes, term.histBudget)
 	}
 }
+
+// Wide desktop terminals (such as 1080p/2K/4K maximized windows) must still
+// retain the full configured scrollback count instead of silently dropping
+// thousands of lines to a fixed 16 MiB cap.
+func TestWideDesktopTerminalsKeepFullConfiguredScrollback(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cols  int
+		limit int
+	}{
+		{"5000_at_240", 240, DefaultScrollback},
+		{"5000_at_384", 384, DefaultScrollback},
+		{"5000_at_500", 500, DefaultScrollback},
+		{"10000_at_240", 240, 10000},
+		{"10000_at_384", 384, 10000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			terminal := New(tc.cols, 24, tc.limit)
+			line := []byte(strings.Repeat("x", tc.cols) + "\r\n")
+			for range tc.limit + 40 {
+				terminal.Write(line)
+			}
+			checkInvariants(t, terminal)
+			if got := terminal.Scrollback(); got != tc.limit {
+				t.Fatalf("scrollback = %d, want %d (bytes=%d budget=%d)", got, tc.limit, terminal.histBytes, terminal.histBudget)
+			}
+			if !terminal.Scroll(tc.limit) || terminal.ViewOffset() != tc.limit {
+				t.Fatalf("view offset = %d, want %d", terminal.ViewOffset(), tc.limit)
+			}
+		})
+	}
+}
+
+// Raising the scrollback limit on an existing terminal with the default budget
+// scales its default byte budget too, so changing Settings from 5000 to 10000
+// actually lets open wide terminals retain 10000 lines.
+func TestSetScrollbackLimitScalesDefaultByteBudget(t *testing.T) {
+	terminal := New(240, 24, DefaultScrollback)
+	terminal.SetScrollbackLimit(10000)
+	line := []byte(strings.Repeat("x", 240) + "\r\n")
+	for range 10040 {
+		terminal.Write(line)
+	}
+	checkInvariants(t, terminal)
+	if got := terminal.Scrollback(); got != 10000 {
+		t.Fatalf("scrollback = %d, want 10000 (bytes=%d budget=%d)", got, terminal.histBytes, terminal.histBudget)
+	}
+}
+
+// Widening a terminal reflows wrapped history lines into fewer, wider rows.
+// Rewrap must allocate exact capacity rather than doubling via append, so a
+// resize does not inflate histBytes and evict lines that fit within the budget.
+func TestReflowWideningDoesNotInflateHistoryCapacityOrEvictLines(t *testing.T) {
+	terminal := New(120, 40, DefaultScrollback)
+	// Give the terminal a tight budget that fits 2500 exact 200-cell lines
+	// (~8.3 MiB) but would evict lines if rewrap doubled slice capacities.
+	terminal.histBudget = 10 << 20
+	line := []byte(strings.Repeat("x", 200) + "\r\n")
+	for range 3000 {
+		terminal.Write(line)
+	}
+	if before := terminal.Scrollback(); before != DefaultScrollback {
+		t.Fatalf("before resize scrollback = %d, want %d", before, DefaultScrollback)
+	}
+	terminal.Resize(240, 40)
+	checkInvariants(t, terminal)
+	// 5000 wrapped rows at 120 cols rejoin into 2500 logical rows; keeping the
+	// cursor on the bottom row of the 40-row screen pulls 19 of them onto screen.
+	if got := terminal.Scrollback(); got != 2481 {
+		t.Fatalf("after widening scrollback = %d, want 2481 (bytes=%d budget=%d)", got, terminal.histBytes, terminal.histBudget)
+	}
+	if terminal.histBytes != terminal.historyBytes() {
+		t.Fatalf("histBytes = %d, counted %d", terminal.histBytes, terminal.historyBytes())
+	}
+	for i := 0; i < terminal.histCount; i++ {
+		l := terminal.histAt(i)
+		if cap(l.cells) > 256 {
+			t.Fatalf("history line %d has bloated cap %d for len %d", i, cap(l.cells), len(l.cells))
+		}
+	}
+}
+
+// Hard-ended lines padded with plain spaces must not bill the full terminal
+// width to the history budget, while styled spaces, marked spaces, linked
+// spaces and trailing spaces on soft-wrapped lines are preserved.
+func TestHistoryTrimsPlainTrailingSpacesOnlyWhenSafe(t *testing.T) {
+	terminal := New(40, 2, 100)
+	// 1. Plain space-padded line -> trimmed to "hello" (5 cells).
+	terminal.Write([]byte("hello" + strings.Repeat(" ", 30) + "\r\n"))
+	// 2. Background-colored trailing spaces -> preserved.
+	terminal.Write([]byte("bg\x1b[44m   \x1b[0m\r\n"))
+	// 3. Underlined trailing spaces -> preserved.
+	terminal.Write([]byte("ul\x1b[4m   \x1b[0m\r\n"))
+	// 4. Combining mark on trailing space -> preserved.
+	terminal.Write([]byte("mk \u0301\r\n"))
+	// 5. OSC 8 hyperlink on trailing spaces -> preserved.
+	terminal.Write([]byte("\x1b]8;;https://example.test\x07lk  \x1b]8;;\x07\r\n"))
+	// 6. Soft-wrapped line ending in spaces -> preserved across reflow.
+	terminal.Write([]byte(strings.Repeat("a", 38) + "  " + "bb\r\n"))
+	// Push all of the above into scrollback.
+	terminal.Write([]byte("\r\n\r\n"))
+	checkInvariants(t, terminal)
+
+	if got := len(terminal.histAt(0).cells); got != 5 {
+		t.Fatalf("plain space-padded line kept %d cells, want 5", got)
+	}
+	if got := len(terminal.histAt(1).cells); got != 5 {
+		t.Fatalf("background-colored trailing spaces kept %d cells, want 5", got)
+	}
+	if got := len(terminal.histAt(2).cells); got != 5 {
+		t.Fatalf("underlined trailing spaces kept %d cells, want 5", got)
+	}
+	if got := len(terminal.histAt(3).cells); got != 3 || len(terminal.histAt(3).marks) != 1 {
+		t.Fatalf("marked trailing space kept %d cells and %d marks, want 3 and 1", len(terminal.histAt(3).cells), len(terminal.histAt(3).marks))
+	}
+	if got := len(terminal.histAt(4).cells); got != 4 {
+		t.Fatalf("linked trailing spaces kept %d cells, want 4", got)
+	}
+	if got := len(terminal.histAt(5).cells); got != 40 || !terminal.histAt(5).wrapped {
+		t.Fatalf("soft-wrapped line kept %d cells (wrapped=%v), want 40 wrapped", got, terminal.histAt(5).wrapped)
+	}
+	terminal.Resize(80, 2)
+	checkInvariants(t, terminal)
+	wantJoined := strings.Repeat("a", 38) + "  bb"
+	if got := terminal.histAt(5).text(80); got != wantJoined {
+		t.Fatalf("reflowed wrapped line = %q, want %q", got, wantJoined)
+	}
+}
+
+// Reusing a wide history line for shorter output must shed its oversized cell
+// and mark backing arrays instead of billing old peak width forever.
+func TestHistoryRecyclingReleasesOversizedCapacity(t *testing.T) {
+	terminal := New(400, 4, 20)
+	wide := []byte("a\u0301" + strings.Repeat("w", 398) + "\r\n")
+	for range 30 {
+		terminal.Write(wide)
+	}
+	wideBytes := terminal.histBytes
+	short := []byte("short\r\n")
+	for range 30 {
+		terminal.Write(short)
+	}
+	checkInvariants(t, terminal)
+	if terminal.histBytes >= wideBytes/4 {
+		t.Fatalf("histBytes after short lines = %d, still close to wide %d", terminal.histBytes, wideBytes)
+	}
+	if terminal.histBytes != terminal.historyBytes() {
+		t.Fatalf("histBytes = %d, counted %d", terminal.histBytes, terminal.historyBytes())
+	}
+}

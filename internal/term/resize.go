@@ -374,7 +374,13 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 			t.nextID++
 			l = &line{id: t.nextID, at: r.run[0].at}
 		}
-		l.cells = append(l.cells[:0], r.cells[from:to]...)
+		need := to - from
+		if cap(l.cells) < need {
+			l.cells = make([]Cell, need)
+		} else {
+			l.cells = l.cells[:need]
+		}
+		copy(l.cells, r.cells[from:to])
 		for x := range l.cells {
 			// A wide character in a one-column terminal, or half of one, cannot
 			// be shown; its cell is left blank.
@@ -443,15 +449,19 @@ func (t *Terminal) refillHistory(lines []*line) {
 
 // trimForHistory drops l's trailing empty cells, as history stores them.
 func (l *line) trimForHistory() {
-	used := len(l.cells)
-	for used > 0 && l.cells[used-1] == (Cell{}) && l.hyperlinkAt(used-1) == 0 {
-		used--
-	}
+	used := l.historyUsed(len(l.cells))
 	l.used = used
-	if cap(l.cells) > 4*used+64 {
-		l.cells = append([]Cell(nil), l.cells[:used]...)
+	if used == 0 {
+		l.cells = nil
+	} else if cap(l.cells) > used+used/4+16 {
+		cells := make([]Cell, used)
+		copy(cells, l.cells[:used])
+		l.cells = cells
 	} else {
 		l.cells = l.cells[:used]
+	}
+	if len(l.marks) == 0 {
+		l.marks = nil
 	}
 	if l.hyperlinks != nil {
 		if used == 0 {
