@@ -54,7 +54,7 @@ func (state *State) paintBlockRow(canvas *gfx.Canvas, session *Session, geometry
 		// the whole block, while the input itself gets a bar rather than a fill.
 		canvas.Fill(gfx.Rect{X: left, Y: y, Width: right - left, Height: cellHeight}, withAlpha(pal.accent, 0.055))
 	}
-	commandStart, commandLast := terminal.blockCommandBounds(block)
+	commandStart, commandLast := terminal.blockCommandBounds(index, block)
 	if line >= commandStart && line <= commandLast {
 		canvas.Fill(gfx.Rect{
 			X: geometry.area.X + 4, Y: y, Width: blockStatusWidth, Height: cellHeight,
