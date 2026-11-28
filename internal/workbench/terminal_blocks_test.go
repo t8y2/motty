@@ -2330,6 +2330,43 @@ func TestScrollingToTheTopWithWrappedFoldedRows(t *testing.T) {
 	}
 }
 
+func TestAFoldedOutputLineThatRewrapsStaysHidden(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	terminal := session.term
+	startBlockPrompt(state, shell, session)
+	shell.say("docker ps\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "C"))
+	shell.say(strings.Repeat("x", 260) + "\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
+
+	block := &terminal.blocks[0]
+	if !state.toggleBlock(session, block) {
+		t.Fatal("the initial fold failed")
+	}
+	state.Resize(gfx.Size{Width: 500, Height: 600})
+	state.Wake()
+
+	_, rows := terminal.screen.Size()
+	terminal.buildDisplayMap(rows)
+	summary := terminal.blockFoldSummaryLine(block, mustBase(t, terminal))
+	end := terminal.blockFoldEnd(0)
+	if end <= summary {
+		t.Fatalf("fold range is empty: summary=%d end=%d lines=%d", summary, end, blockFoldLines(block))
+	}
+	for _, entry := range terminal.display {
+		if entry.index >= 0 && entry.line > summary && entry.line < end {
+			t.Fatalf("rewrapped output line %d leaked from the fold", entry.line)
+		}
+	}
+	_, texts := paintedTexts(state)
+	if contains(texts, strings.Repeat("x", 20)) {
+		t.Fatalf("folded output is still painted:\n%v", texts)
+	}
+}
+
 func TestRepeatedHorizontalResizesThenANewCommandDoNotLeakTheFold(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	session := &state.sessions[0]
