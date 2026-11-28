@@ -234,21 +234,34 @@ func (state *State) rebuildSnippetTreeRows() {
 	walk("", 0)
 
 	// Keep form.visible and countText synchronized with the active search/filter.
-	if query != "" {
-		form.visible = form.visible[:0]
-		for i := range form.list {
-			if matches[i] {
-				form.visible = append(form.visible, i)
-			}
-		}
-		if len(form.visible) > 0 && !slices.Contains(form.visible, form.selected) {
-			form.selected = form.visible[0]
+	// Selection stays put here so creating or editing a snippet in the inline
+	// editor never snaps away to another search match mid-keystroke.
+	form.visible = form.visible[:0]
+	for i := range form.list {
+		if matches[i] {
+			form.visible = append(form.visible, i)
 		}
 	}
 	form.countText = fmt.Sprintf(state.messages.Tools.SnippetCountFmt, len(form.list))
 	if len(form.visible) != len(form.list) {
 		form.countText = fmt.Sprintf(state.messages.Tools.SnippetCountFilteredFmt, len(form.visible), len(form.list))
 	}
+}
+
+// selectFirstVisibleSnippet moves selection to the first visible search match
+// when an active tree search hides the current selection (such as when the
+// search query changes or the selected snippet is deleted).
+func (state *State) selectFirstVisibleSnippet() {
+	form := &state.snippets
+	if form.inline.draft || !form.treeSearching || len(form.visible) == 0 || slices.Contains(form.visible, form.selected) {
+		return
+	}
+	if form.inline.dirty {
+		state.flushInlineSnippetSave()
+	}
+	form.selected = form.visible[0]
+	form.syncRowSelection()
+	state.syncInlineSnippet(false)
 }
 
 func (state *State) snippetTreeCanExpandAll() bool {
@@ -656,6 +669,7 @@ func (state *State) declareSnippetsTree(c ui.C, width float32) {
 		}
 		if field.Changed() {
 			state.rebuildSnippetTreeRows()
+			state.selectFirstVisibleSnippet()
 			form.tree.ScrollTo(0, ui.ListStart)
 			form.syncRowSelection()
 		}

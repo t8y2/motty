@@ -3,10 +3,13 @@
 package workbench
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/keymap"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
@@ -533,5 +536,145 @@ func TestSnippetsInlineEditorPreservesInvalidDraftAcrossSwitchAndLeave(t *testin
 	state.Click(hitSnippetRemove)
 	if state.snippets.inline.draft || state.snippets.inline.savedDraft != nil {
 		t.Fatalf("cancelling new draft left draft=%v savedDraft=%v", state.snippets.inline.draft, state.snippets.inline.savedDraft)
+	}
+}
+
+func TestSnippetsTreeSearchDoesNotHijackNewOrEditedInlineSnippet(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.snippets.list = []snippet{
+		{Name: "Nginx reload", Command: "nginx -s reload"},
+		{Name: "Nginx status", Command: "systemctl status web"},
+	}
+	state.refreshSnippets()
+	state.activeSection = sectionSnippets
+
+	view, err := headless.Open(state.WindowConfig(app.Config{
+		Width: 1200, Height: 800, Tree: Tree(), Paint: state.Paint,
+		OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll,
+	}), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	click := func(id gfx.ID) {
+		t.Helper()
+		for _, hit := range view.Snapshot().Hits {
+			if hit.ID == id {
+				if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		t.Fatalf("missing hit %s; frame has %v", tree.Text(id), view.Texts())
+	}
+
+	// Open tree search and type "nginx".
+	click(hitSnippetTreeSearchToggle)
+	if err := view.Type("nginx"); err != nil {
+		t.Fatal(err)
+	}
+	if !state.snippets.treeSearching || len(state.snippets.visible) != 2 {
+		t.Fatalf("search state: searching=%v visible=%v", state.snippets.treeSearching, state.snippets.visible)
+	}
+
+	// Case 1: Creating a non-matching snippet while search is active must keep
+	// focus and selection on the new snippet without overwriting Nginx reload.
+	click(hitSnippetAdd)
+	click(hitSnippetInlineName)
+	if err := view.Type("Apache"); err != nil {
+		t.Fatal(err)
+	}
+	click(hitSnippetInlineCommand)
+	if err := view.Type("s"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("ystemctl restart apache2"); err != nil {
+		t.Fatal(err)
+	}
+	state.flushInlineSnippetSave()
+
+	if len(state.snippets.list) != 3 {
+		t.Fatalf("snippet count = %d, want 3", len(state.snippets.list))
+	}
+	if got := state.snippets.list[0]; got.Name != "Nginx reload" || got.Command != "nginx -s reload" {
+		t.Fatalf("existing snippet was hijacked/corrupted: %+v", got)
+	}
+	if got := state.snippets.list[2]; got.Name != "Apache" || got.Command != "systemctl restart apache2" {
+		t.Fatalf("new snippet = %+v, want Apache / systemctl restart apache2", got)
+	}
+	if state.snippets.selected != 2 || state.snippets.inline.name.String() != "Apache" || state.snippets.inline.command.String() != "systemctl restart apache2" {
+		t.Fatalf("selection/editor drifted: selected=%d name=%q cmd=%q",
+			state.snippets.selected, state.snippets.inline.name.String(), state.snippets.inline.command.String())
+	}
+
+	// Case 2: Selecting a matching snippet and renaming it out of the search
+	// filter must keep editing that snippet without snapping to Nginx reload.
+	click(state.snippets.tree.RowID(1)) // Nginx status (index 1)
+	if state.snippets.selected != 1 || state.snippets.inline.name.String() != "Nginx status" {
+		t.Fatalf("selecting Nginx status gave selected=%d name=%q", state.snippets.selected, state.snippets.inline.name.String())
+	}
+	click(hitSnippetInlineName)
+	state.snippets.inline.name.SetSelection(text.Range{Start: 0, End: state.snippets.inline.name.RuneCount()})
+	if err := view.Type("C"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Type("addy status"); err != nil {
+		t.Fatal(err)
+	}
+	state.flushInlineSnippetSave()
+
+	if got := state.snippets.list[0]; got.Name != "Nginx reload" || got.Command != "nginx -s reload" {
+		t.Fatalf("Nginx reload was corrupted during rename: %+v", got)
+	}
+	if got := state.snippets.list[1]; got.Name != "Caddy status" || got.Command != "systemctl status web" {
+		t.Fatalf("edited snippet = %+v, want Caddy status", got)
+	}
+	if state.snippets.selected != 1 || state.snippets.inline.name.String() != "Caddy status" {
+		t.Fatalf("rename selection drifted: selected=%d name=%q", state.snippets.selected, state.snippets.inline.name.String())
+	}
+
+	// Clearing the search text via the field restores all snippets and count.
+	click(hitSnippetTreeSearch)
+	for range len("nginx") {
+		if err := view.Keys("Backspace"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantCount := fmt.Sprintf(state.messages.Tools.SnippetCountFmt, 3)
+	if state.snippets.treeSearching || len(state.snippets.visible) != 3 || state.snippets.countText != wantCount {
+		t.Fatalf("after clearing search: searching=%v visible=%v count=%q want=%q",
+			state.snippets.treeSearching, state.snippets.visible, state.snippets.countText, wantCount)
+	}
+}
+
+func TestSnippetsTreeSearchSelectionFollowsQueryAndDelete(t *testing.T) {
+	state := snippetTestState(t,
+		snippet{Name: "Apache", Command: "httpd"},
+		snippet{Name: "Nginx reload", Command: "nginx -s reload"},
+		snippet{Name: "Nginx test", Command: "nginx -t"},
+	)
+	var canvas gfx.Canvas
+	paintSnippetsPage(state, &canvas)
+
+	// Deleting a matching snippet while searching moves selection to the next match.
+	state.Click(hitSnippetTreeSearchToggle)
+	state.snippets.treeSearch.Insert("nginx")
+	state.rebuildSnippetTreeRows()
+	state.selectFirstVisibleSnippet()
+	if state.snippets.selected != 1 {
+		t.Fatalf("searching nginx selected %d, want 1 (Nginx reload)", state.snippets.selected)
+	}
+
+	// Delete Nginx test (index 2) while selected; selection must stay on a match.
+	state.snippets.selected = 2
+	state.syncInlineSnippet(true)
+	state.deleteSnippet(2)
+	if state.snippets.selected != 1 || state.snippets.list[state.snippets.selected].Name != "Nginx reload" {
+		t.Fatalf("after delete under search: selected=%d list=%+v", state.snippets.selected, state.snippets.list)
 	}
 }

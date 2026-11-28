@@ -358,6 +358,7 @@ func (state *State) deleteSnippet(index int) {
 	state.snippets.list = append(list[:index:index], list[index+1:]...)
 	state.snippets.resetSnippetPreview()
 	state.refreshSnippets()
+	state.selectFirstVisibleSnippet()
 	state.status = fmt.Sprintf(state.messages.Tools.StatusSnippetRemovedFmt, list[index].Name)
 	state.save()
 }
