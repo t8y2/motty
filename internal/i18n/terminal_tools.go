@@ -93,6 +93,9 @@ type ToolsMessages struct {
 	SnippetGroupRename        string
 	SnippetGroupRenameTitle   string
 	SnippetGroupRenameField   string
+	SnippetGroupParentField   string
+	SnippetGroupParentRoot    string
+	SnippetGroupNameHint      string
 	SnippetGroupRenameSave    string
 	SnippetGroupRenameInvalid string
 	SnippetGroupConflict      string

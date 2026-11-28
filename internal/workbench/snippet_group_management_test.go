@@ -335,3 +335,40 @@ func TestDeletingANestedSnippetGroupUngroupsItsSubtree(t *testing.T) {
 		t.Fatalf("filter = %+v, want reset to all", state.snippets.filter)
 	}
 }
+
+// Creating a subgroup keeps the parent path in the Parent selector rather than
+// prefilling slashes in the Group name field, and renaming a nested group edits
+// only its leaf name while preserving its parent path.
+func TestSnippetGroupDialogSeparatesParentFromLeafName(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.activeSection = sectionSnippets
+	addTestSnippets(state, snippet{Name: "cmd", Command: "echo hi", Group: "Ops/Prod/API"})
+
+	// Creating a child under Ops/Prod/API prefills parent, leaves name empty.
+	state.openSnippetGroupCreate("Ops/Prod/API")
+	if state.snippetGroups.parent != "Ops/Prod/API" || state.snippetGroups.editor.String() != "" {
+		t.Fatalf("create child state: parent=%q editor=%q", state.snippetGroups.parent, state.snippetGroups.editor.String())
+	}
+	// Slashes inside the leaf field are rejected while a parent is selected.
+	state.snippetGroups.editor.Insert("bad/leaf")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalSnippetGroupRename || state.snippetGroups.error == "" {
+		t.Fatalf("slash in child leaf was accepted: modal=%d err=%q", state.modal, state.snippetGroups.error)
+	}
+	state.snippetGroups.editor.ReplaceRange(text.Range{Start: 0, End: state.snippetGroups.editor.RuneCount()}, "logs")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalNone || !slices.Contains(state.snippets.groups, "Ops/Prod/API/logs") {
+		t.Fatalf("creating child failed: modal=%d err=%q groups=%v", state.modal, state.snippetGroups.error, state.snippets.groups)
+	}
+
+	// Renaming a nested group prefills only the leaf name and keeps its parent.
+	state.openSnippetGroupRenameDirect("Ops/Prod/API")
+	if state.snippetGroups.parent != "Ops/Prod" || state.snippetGroups.editor.String() != "API" {
+		t.Fatalf("rename nested state: parent=%q editor=%q", state.snippetGroups.parent, state.snippetGroups.editor.String())
+	}
+	state.snippetGroups.editor.ReplaceRange(text.Range{Start: 0, End: state.snippetGroups.editor.RuneCount()}, "Edge")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalNone || state.snippets.list[0].Group != "Ops/Prod/Edge" {
+		t.Fatalf("rename nested failed: modal=%d err=%q group=%q", state.modal, state.snippetGroups.error, state.snippets.list[0].Group)
+	}
+}
