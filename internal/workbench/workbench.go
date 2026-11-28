@@ -1003,6 +1003,7 @@ type State struct {
 	uiPal                    palette
 	theme                    gfx.Theme
 	appearanceFollowTerminal bool
+	terminalScrollbarSize    scrollbarSize
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
@@ -2201,14 +2202,14 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.clickConnection(id)
 	case id == hitHosts || id == hitHome:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.releaseIdleSFTP(session)
+			state.suspendIdleSFTP(session)
 		}
 		state.clearBroadcast()
 		state.setActiveSection(sectionHosts)
 		state.save()
 	case id == hitWorkspaces:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.releaseIdleSFTP(session)
+			state.suspendIdleSFTP(session)
 		}
 		state.clearBroadcast()
 		state.setActiveSection(sectionWorkspaces)

@@ -89,7 +89,7 @@ func TestContainerDetailsLoadsSelectableEnvironment(t *testing.T) {
 
 	clickRemoteToolsDetailTab(t, state, hitRemoteContainerDetailsEnvironment)
 	waitFor(t, state, func() bool { return !state.remote.containerDetails.loading })
-	if server.ran("docker inspect --format '{{json .Config.Env}}'") != 1 ||
+	if server.ranPart("docker inspect --format '{{json .Config.Env}}'") != 1 ||
 		state.remote.containerDetails.failed || len(state.remote.containerDetails.environment) != 3 {
 		t.Fatalf("environment=%+v status=%q commands=%q",
 			state.remote.containerDetails.environment, state.remote.containerDetails.status, server.commands)

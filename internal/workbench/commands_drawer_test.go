@@ -414,6 +414,90 @@ func TestCommandSidebarResizeDragsAndPersists(t *testing.T) {
 	}
 }
 
+// Dragging the bottom bar's top edge adds whole chip rows, the terminals give
+// up exactly that room, the chips wrap into the new rows, a double-click returns
+// to one row, and the choice survives a restart.
+func TestCommandBottomBarResizesByRowsAndPersists(t *testing.T) {
+	options := testOptions(t)
+	state := newTestState(t, options)
+	state.deck = layoutcore.Deck{}
+	if _, _, err := state.deck.Create("test"); err != nil {
+		t.Fatal(err)
+	}
+	state.activeSection = sectionTerminal
+	for i := 0; i < 60; i++ {
+		state.snippets.list = append(state.snippets.list, snippet{Name: "command " + strings.Repeat("x", i%7), Command: "true"})
+	}
+	state.commands.shown = true
+	size := gfx.Size{Width: 900, Height: 900}
+	paintAt(state, size)
+	if got := state.commands.bar.Height; got != commandsBarHeight || state.commands.wrapped {
+		t.Fatalf("default bar = %v wrapped=%v, want one row of %v", got, state.commands.wrapped, commandsBarHeight)
+	}
+	terminals := state.baseWorkspacePixelBounds(size).Height
+	bar := state.commands.bar
+	startY := bar.Y + 2
+	down := gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X + 200, Y: startY, Viewport: size}
+	if !state.Pointer(down).Handled {
+		t.Fatal("pressing the bar's top edge was not taken by the resize")
+	}
+	moveY := startY - commandsRowPitch*2 - 3
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerMove, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X + 200, Y: moveY, Viewport: size, Captured: true})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Target: hitCommandsResize, X: bar.X + 200, Y: moveY, Viewport: size})
+	paintAt(state, size)
+	if state.commands.rows != 3 || state.commands.bar.Height != commandsBottomHeight(3) {
+		t.Fatalf("rows = %d, height = %v after dragging up two rows", state.commands.rows, state.commands.bar.Height)
+	}
+	if got := state.baseWorkspacePixelBounds(size).Height; got != terminals-2*commandsRowPitch {
+		t.Fatalf("terminals kept %v, want %v", got, terminals-2*commandsRowPitch)
+	}
+	if !state.commands.wrapped || state.commands.maxOffset <= 0 {
+		t.Fatalf("60 chips did not wrap into rows that scroll: wrapped=%v max=%v", state.commands.wrapped, state.commands.maxOffset)
+	}
+	again := newTestState(t, options)
+	if again.commands.rows != 3 {
+		t.Fatalf("a restart restored %d rows, want 3", again.commands.rows)
+	}
+	double := down
+	double.ClickCount = 2
+	if !state.Pointer(double).Handled {
+		t.Fatal("double-clicking the edge was not taken")
+	}
+	paintAt(state, size)
+	if state.commands.rows > 1 || state.commands.bar.Height != commandsBarHeight {
+		t.Fatalf("double-click left %d rows, height %v", state.commands.rows, state.commands.bar.Height)
+	}
+}
+
+// A bar dragged taller than its chips need shows only the rows they fill, and
+// grows again when more chips arrive, so it never leaves blank rows.
+func TestCommandBottomBarShowsNoBlankRows(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.deck = layoutcore.Deck{}
+	if _, _, err := state.deck.Create("test"); err != nil {
+		t.Fatal(err)
+	}
+	state.activeSection = sectionTerminal
+	state.snippets.list = []snippet{{Name: "pwd", Command: "pwd"}, {Name: "ls", Command: "ls"}}
+	state.commands.shown = true
+	state.commands.rows = 4
+	size := gfx.Size{Width: 900, Height: 900}
+	paintAt(state, size)
+	if got := state.commands.bar.Height; got != commandsBarHeight {
+		t.Fatalf("two chips under a 4-row setting made a %v bar, want one row of %v", got, commandsBarHeight)
+	}
+	for i := 0; i < 40; i++ {
+		state.snippets.list = append(state.snippets.list, snippet{Name: "command " + strings.Repeat("x", i%7), Command: "true"})
+	}
+	paintAt(state, size)
+	if rows := int((state.commands.bar.Height-commandsBarHeight)/commandsRowPitch) + 1; rows < 2 || rows > 4 {
+		t.Fatalf("40 more chips gave %d rows, want 2 to 4", rows)
+	}
+	if want := state.baseWorkspacePixelBounds(size).Height + state.commands.bar.Height + windowBarHeight; want != size.Height {
+		t.Fatalf("terminals and bar leave %v of a %v window", want, size.Height)
+	}
+}
+
 func TestCommandSidebarMovesBesideHostsAndRemembersItsSide(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	state.hostsPanel.open = true

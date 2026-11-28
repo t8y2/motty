@@ -48,7 +48,7 @@ func TestRemoteContainersRetryWithSudoOnlyAfterUserConfirmation(t *testing.T) {
 	session, _ := state.sessionByIDPointer(state.activeSessionID)
 	connection := &sudoRunnerTestConn{fakeConn: session.conn.(*fakeConn)}
 	connection.run = func(ctx context.Context, command string, limit int) ([]byte, error) {
-		if strings.HasPrefix(command, "docker ps") {
+		if strings.Contains(command, "docker ps") {
 			return []byte(containerFixture), nil
 		}
 		return server.run(ctx, command, limit)

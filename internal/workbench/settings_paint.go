@@ -474,6 +474,8 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			settingsChoiceRow(page, state.messages.Tools.IntenseRow, state.messages.Tools.IntenseDescription, &state.terminalIntense, settingsIntenseChoices[:], state.settingsIntenseLabel,
 				func() { state.rebuildTerminalLook(); state.save() }, nil)
 			state.paintScrollbackSetting(page)
+			settingsChoiceRow(page, messages.SettingsTerminalScrollbarSize, "", &state.terminalScrollbarSize, settingsScrollbarSizeChoices[:], state.settingsScrollbarSizeLabel,
+				func() { state.save() }, nil)
 			settingsChoiceRow(page, messages.SettingsTerminalClipboard, messages.SettingsTerminalClipboardDescription, &state.terminalClipboard, settingsClipboardChoices[:], state.settingsClipboardLabel,
 				func() { state.save() }, nil)
 			page.toggleRow(state.messages.Tools.CopyOnSelectRow, state.messages.Tools.CopyOnSelectDescription, state.terminalCopyOnSelect, hitSettingsCopyOnSelect)

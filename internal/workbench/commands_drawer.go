@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/vivaui/viva/components"
@@ -64,33 +65,41 @@ const (
 var commandsPlacementChoices = [...]commandsPlacement{commandsPlacementBottom, commandsPlacementSide}
 
 const (
-	commandsBarHeight     float32 = 34 // the bottom bar's own height
-	commandsChipInset     float32 = 5  // vertical inset of chips inside the bar
-	commandsSidebarWidth  float32 = 224
-	commandsSidebarMin    float32 = 160 // the narrowest the bar may be dragged
-	commandsMinContent    float32 = 320 // the terminals keep at least this much beside it
-	commandsHeaderHeight  float32 = 34
-	commandsChipHeight    float32 = 26
-	commandsDrawerPadding float32 = 8
-	commandsTagGap        float32 = 6
-	commandsTagPaddingX   float32 = 12
-	commandsChipRadius    float32 = 8
-	commandsMinTagWidth   float32 = 44
-	commandsMaxTagWidth   float32 = 200
-	commandsIconSize      float32 = 16
-	commandsButtonGap     float32 = 4  // between the + and × buttons
-	commandsLeadGap       float32 = 10 // between the filter and order buttons
-	commandsFilterGap     float32 = 8  // between the leading buttons and the chips
-	commandsButtonInset   float32 = 4  // hover padding around an icon button
-	commandsScrollStep    float32 = 60 // pixels a wheel notch moves the chips
+	commandsBarHeight float32 = 34 // the bottom bar's own height
+	commandsChipInset float32 = 5  // vertical inset of chips inside the bar
+	// The bottom bar grows a row at a time: a chip row is one chip tall plus the
+	// gap to the next, and the bar never takes more than this share of the
+	// content height from the terminals.
+	commandsStripChipHeight         = commandsBarHeight - commandsChipInset*2
+	commandsRowPitch                = commandsStripChipHeight + commandsTagGap
+	commandsMaxBarShare             = 0.4
+	commandsGripHeight              = 5 // the draggable strip along the bottom bar's top edge
+	commandsSidebarWidth    float32 = 224
+	commandsSidebarMin      float32 = 160 // the narrowest the bar may be dragged
+	commandsMinContent      float32 = 320 // the terminals keep at least this much beside it
+	commandsHeaderHeight    float32 = 34
+	commandsChipHeight      float32 = 26
+	commandsDrawerPadding   float32 = 8
+	commandsTagGap          float32 = 6
+	commandsTagPaddingX     float32 = 12
+	commandsChipRadius      float32 = 8
+	commandsMinTagWidth     float32 = 44
+	commandsMaxTagWidth     float32 = 200
+	commandsIconSize        float32 = 16
+	commandsButtonGap       float32 = 4  // between the + and × buttons
+	commandsLeadGap         float32 = 10 // between the filter and order buttons
+	commandsFilterGap       float32 = 8  // between the leading buttons and the chips
+	commandsButtonInset     float32 = 4  // hover padding around an icon button
+	commandsScrollStep      float32 = 60 // pixels a wheel notch moves the chips
 	// A group's heading: its row in the sidebar, the chevron that shows whether
 	// it is open, and the gaps that set one group apart from the next.
-	commandsHeadingHeight float32 = 22
-	commandsChevronSize   float32 = 12
-	commandsHeadingGap    float32 = 4  // between the chevron and the group's name
-	commandsSectionGap    float32 = 6  // extra space above a group in the sidebar
-	commandsSectionGapX   float32 = 14 // between one group and the next in the strip
-	commandsMaxLabelWidth float32 = 160
+	commandsHeadingHeight   float32 = 22
+	commandsChevronSize     float32 = 12
+	commandsHeadingGap      float32 = 4  // between the chevron and the group's name
+	commandsSectionGap      float32 = 6  // extra space above a group in the sidebar
+	commandsSectionGapX     float32 = 14 // between one group and the next in the strip
+	commandsMaxLabelWidth   float32 = 160
+	commandsHeadingCountGap float32 = 6 // between a folded group's name and its count
 )
 
 // commandsUI is the command bar's state. The bar stays hidden until shown opts
@@ -133,6 +142,16 @@ type commandsUI struct {
 	maxOffset float32
 	// width is the width the user dragged the sidebar to; zero means the default.
 	width float32
+	// rows is how many chip rows the bottom bar shows; below two it is the
+	// single scrolling strip. wrapped records whether the last paint laid the
+	// chips out in rows, so the wheel knows which way it scrolls.
+	rows    int
+	wrapped bool
+	// needRows is how many rows the chips fill at the bar's current width, measured
+	// on the canvas before each paint while the bar is taller than one row. The
+	// bar never shows more rows than that, so a tall bar does not leave blank
+	// rows behind. Zero means unmeasured.
+	needRows int
 	// resizing is set while the inner edge is dragged, with dragFrom and
 	// dragStart recording where the gesture began so motion lands exactly.
 	resizing  bool
@@ -161,7 +180,59 @@ func (state *State) commandsDrawerHeight() float32 {
 	if !state.commandsBarAvailable() || !state.commands.shown || state.commands.placement != commandsPlacementBottom {
 		return 0
 	}
-	return commandsBarHeight
+	return commandsBottomHeight(state.commandsBottomRows())
+}
+
+// commandsBottomHeight is the bottom bar's height for a number of chip rows.
+func commandsBottomHeight(rows int) float32 {
+	return commandsBarHeight + float32(max(rows, 1)-1)*commandsRowPitch
+}
+
+// commandsBottomMaxRows is how many rows the bottom bar may take before it
+// crowds the terminals out.
+func (state *State) commandsBottomMaxRows() int {
+	available := max(state.viewport.Height-windowBarHeight, 0)
+	most := max(int((available*commandsMaxBarShare-commandsBarHeight)/commandsRowPitch)+1, 1)
+	if state.commands.needRows > 0 {
+		most = min(most, state.commands.needRows)
+	}
+	return most
+}
+
+// commandsStripContent is the part of the bottom bar the chips use: between the
+// filter and order buttons on the left and the add and close buttons on the
+// right.
+func commandsStripContent(bar gfx.Rect) (x, width float32) {
+	x = bar.X + commandsDrawerPadding + commandsIconSize + commandsLeadGap + commandsIconSize + commandsButtonInset + commandsFilterGap
+	closeX := bar.X + bar.Width - commandsDrawerPadding - commandsIconSize
+	addX := closeX - commandsButtonGap - commandsIconSize
+	return x, addX - commandsFilterGap - x
+}
+
+// measureCommandRows learns how many rows the chips fill, on the window's own
+// canvas, the way measureTerminalCell learns the terminal's cell. It runs before
+// the frame's layout, so a change in the chips, their groups or the window
+// refits the terminals in the same frame the bar is painted in.
+func (state *State) measureCommandRows(canvas *gfx.Canvas) {
+	need := 0
+	if state.commandsBarAvailable() && state.commands.shown && state.commands.placement == commandsPlacementBottom && state.commands.rows > 1 {
+		bar := state.commandsBarRect()
+		if _, width := commandsStripContent(bar); width > 0 {
+			sections := state.commandSections()
+			_, need = state.layoutCommandFlow(canvas, sections, commandSectionsGrouped(sections), width, nil)
+		}
+	}
+	if need == state.commands.needRows {
+		return
+	}
+	state.commands.needRows = need
+	state.fitTerminals()
+}
+
+// commandsBottomRows is the rows the bottom bar shows: what the user dragged it
+// to, held inside the room the window has.
+func (state *State) commandsBottomRows() int {
+	return min(max(state.commands.rows, 1), state.commandsBottomMaxRows())
 }
 
 // commandsBarRect is where the bottom bar sits: the lowest strip of the active
@@ -178,7 +249,7 @@ func (state *State) commandsBarRect() gfx.Rect {
 	// the bar (#981).
 	full := state.fullWorkspacePixelBounds(state.viewport)
 	frame := state.toolbarDockFrame(state.viewport, true)
-	return gfx.Rect{X: full.X, Y: frame.Y + frame.Height, Width: full.Width, Height: commandsBarHeight}
+	return gfx.Rect{X: full.X, Y: frame.Y + frame.Height, Width: full.Width, Height: state.commandsDrawerHeight()}
 }
 
 // commandsPlacementLabel is the name of one dock in the picker's placement
@@ -512,7 +583,13 @@ func (state *State) paintCommandsBar(canvas *gfx.Canvas) {
 	}
 	// A faint fill and a top hairline set the strip apart from the terminal.
 	canvas.Fill(bar, withAlpha(state.pal.shell, 0.6))
-	canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: bar.Width, Height: 1}, state.pal.line)
+	line := state.pal.line
+	if state.commands.resizing || canvas.Hovered() == hitCommandsResize {
+		line = state.pal.accent
+	}
+	canvas.Fill(gfx.Rect{X: bar.X, Y: bar.Y, Width: bar.Width, Height: 1}, line)
+	canvas.HitWithOptions(hitCommandsResize, gfx.Rect{X: bar.X, Y: bar.Y, Width: bar.Width, Height: commandsGripHeight},
+		state.messages.Tools.CommandsResize, gfx.HitOptions{Cursor: gfx.PointerCursorResizeVertical})
 
 	m := state.messages.Tools
 	iconColor := state.pal.muted
@@ -551,8 +628,7 @@ func (state *State) paintCommandsBar(canvas *gfx.Canvas) {
 	canvas.HitWithOptions(hitCommandsClose, closeBtn, m.CommandsClose, gfx.HitOptions{Role: gfx.RoleButton})
 
 	// Command chips occupy the middle, between the leading buttons and add/close.
-	contentX := sortBtn.X + sortBtn.Width + commandsButtonInset + commandsFilterGap
-	contentW := addX - commandsFilterGap - contentX
+	contentX, contentW := commandsStripContent(bar)
 	if contentW > 0 {
 		state.paintCommandChipsBar(canvas, bar, contentX, contentW)
 	}
@@ -750,39 +826,90 @@ func (state *State) paintCommandHeading(canvas *gfx.Canvas, rect gfx.Rect, secti
 	canvas.DrawIcon(lucideIcons[icon], chevron, color)
 	textX := chevron.X + commandsChevronSize + commandsHeadingGap
 	label := gfx.Rect{X: textX, Y: rect.Y, Width: max(rect.X+rect.Width-textX, 0), Height: rect.Height}
-	canvas.Label(section.label, label, gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
+	style := gfx.TextStyle{Size: theme.Metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color}
+	// A folded group says how many commands it hides.
+	if count := commandHeadingCount(section); count != "" {
+		textW := canvas.TextWidthWeight(section.label, style.Size, gfx.WeightMedium)
+		label.Width = min(label.Width, textW+2)
+		countRect := gfx.Rect{X: textX + textW + commandsHeadingCountGap, Y: rect.Y, Width: max(rect.X+rect.Width-textX-textW-commandsHeadingCountGap, 0), Height: rect.Height}
+		style.Color = withAlpha(color, 0.6)
+		canvas.Label(count, countRect, style)
+		style.Color = color
+	}
+	canvas.Label(section.label, label, style)
 	canvas.HitWithOptions(id, rect, section.label, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint})
 }
 
 // commandHeadingWidth is the strip heading's width: chevron, gap and name.
-func (state *State) commandHeadingWidth(canvas *gfx.Canvas, label string) float32 {
-	text := canvas.TextWidthWeight(label, state.Theme().Metrics.FontSizeS, gfx.WeightMedium)
+func (state *State) commandHeadingWidth(canvas *gfx.Canvas, section commandSection) float32 {
+	size := state.Theme().Metrics.FontSizeS
+	text := canvas.TextWidthWeight(section.label, size, gfx.WeightMedium)
+	if count := commandHeadingCount(section); count != "" {
+		text += commandsHeadingCountGap + canvas.TextWidthWeight(count, size, gfx.WeightMedium)
+	}
 	return min(commandsMaxLabelWidth, text+2+commandsChevronSize+commandsHeadingGap+2)
 }
 
+// commandHeadingCount is the number a folded group shows beside its name; an
+// open group lists its commands, so it shows none.
+func commandHeadingCount(section commandSection) string {
+	if !section.collapsed || len(section.items) == 0 {
+		return ""
+	}
+	return strconv.Itoa(len(section.items))
+}
+
 // paintCommandChipsBar draws the visible commands in the bottom strip's middle,
-// each group's name followed by its commands. More than fit scroll sideways with
-// the wheel, so a long list stays reachable without widening the bar; the clip
-// keeps a half-scrolled chip from running under the buttons at either end.
+// each group's name followed by its commands. A one-row bar scrolls sideways with
+// the wheel, so a long list stays reachable without widening it; a taller bar
+// wraps the commands into rows and scrolls down instead. The clip keeps a
+// half-scrolled chip from running under the buttons at either end.
 func (state *State) paintCommandChipsBar(canvas *gfx.Canvas, bar gfx.Rect, x, width float32) {
 	sections := state.commandSections()
 	grouped := commandSectionsGrouped(sections)
-	chipH := commandsBarHeight - commandsChipInset*2
-	y := bar.Y + commandsChipInset
-	extent := state.layoutCommandStrip(canvas, sections, grouped, nil)
+	wrapped := state.commandsBottomRows() > 1
+	state.commands.wrapped = wrapped
+	wrapWidth := float32(0)
+	if wrapped {
+		wrapWidth = width
+	}
+	extent, rows := state.layoutCommandFlow(canvas, sections, grouped, wrapWidth, nil)
 	maxOffset := max(extent-width, 0)
+	if wrapped {
+		maxOffset = max(float32(rows)*commandsRowPitch-commandsTagGap-(bar.Height-commandsChipInset*2), 0)
+	}
 	state.commands.maxOffset = maxOffset
 	state.commands.offset = min(max(state.commands.offset, 0), maxOffset)
 	if len(sections) == 0 {
+		if len(state.snippets.list) == 0 {
+			label := gfx.Rect{X: x, Y: bar.Y, Width: width, Height: commandsBarHeight}
+			canvas.Label(state.messages.Tools.CommandsEmpty, label, gfx.TextStyle{Size: state.Theme().Metrics.FontSizeS, Color: withAlpha(state.pal.muted, 0.8)})
+		}
 		return
 	}
-	canvas.Clip(gfx.Rect{X: x, Y: bar.Y, Width: width, Height: bar.Height})
-	state.layoutCommandStrip(canvas, sections, grouped, func(section, index int, left, w float32) {
-		left += x - state.commands.offset
-		if left+w <= x || left >= x+width {
-			return
+	chipH := commandsStripChipHeight
+	canvas.Clip(gfx.Rect{X: x, Y: bar.Y + 2, Width: width, Height: bar.Height - 2})
+	state.layoutCommandFlow(canvas, sections, grouped, wrapWidth, func(section, index int, left float32, row int, w float32) {
+		raw := left
+		left += x
+		y := bar.Y + commandsChipInset + float32(row)*commandsRowPitch
+		if wrapped {
+			y -= state.commands.offset
+			if y+chipH <= bar.Y || y >= bar.Y+bar.Height {
+				return
+			}
+		} else {
+			left -= state.commands.offset
+			if left+w <= x || left >= x+width {
+				return
+			}
 		}
 		if index < 0 {
+			// A hairline sets a group off from the chips before it.
+			if raw > 0 {
+				mid := left - commandsSectionGapX/2
+				canvas.Fill(gfx.Rect{X: mid, Y: y + 4, Width: 1, Height: chipH - 8}, withAlpha(state.pal.line, 0.8))
+			}
 			state.paintCommandHeading(canvas, gfx.Rect{X: left, Y: y, Width: w, Height: chipH}, sections[section], hitCommandsGroupHeading.At(section), false)
 			return
 		}
@@ -793,12 +920,22 @@ func (state *State) paintCommandChipsBar(canvas *gfx.Canvas, bar gfx.Rect, x, wi
 	canvas.Unclip()
 }
 
-// layoutCommandStrip walks the strip's items left to right and returns the width
-// they add up to; visit receives each with its left edge and width, the way
-// layoutCommandRows does for the sidebar.
-func (state *State) layoutCommandStrip(canvas *gfx.Canvas, sections []commandSection, grouped bool, visit func(section, index int, left, width float32)) float32 {
+// layoutCommandFlow walks the strip's items left to right and returns the width
+// the first row adds up to and how many rows there are; visit receives each
+// item with its left edge, row and width, the way layoutCommandRows does for the
+// sidebar. A wrapWidth above zero breaks to a new row where the next item would
+// cross it, and keeps a group's name with its first command; zero is the single
+// scrolling row.
+func (state *State) layoutCommandFlow(canvas *gfx.Canvas, sections []commandSection, grouped bool, wrapWidth float32, visit func(section, index int, left float32, row int, width float32)) (float32, int) {
 	x := float32(0)
+	row := 0
 	shown := 0
+	fit := func(need float32) {
+		if wrapWidth > 0 && x > 0 && x+need > wrapWidth {
+			row++
+			x = 0
+		}
+	}
 	for si, section := range sections {
 		if grouped && section.ancestorCollapsed {
 			continue
@@ -806,30 +943,37 @@ func (state *State) layoutCommandStrip(canvas *gfx.Canvas, sections []commandSec
 		if shown > 0 {
 			x += commandsSectionGapX
 		}
+		folded := section.collapsed || len(section.items) == 0
 		if grouped {
-			w := state.commandHeadingWidth(canvas, section.label)
-			if visit != nil {
-				visit(si, -1, x, w)
+			w := state.commandHeadingWidth(canvas, section)
+			need := w
+			if !folded {
+				need += commandsTagGap + state.commandTagWidth(canvas, state.snippets.list[section.items[0]].Name)
 			}
-			x += w + commandsTagGap
+			fit(need)
+			if visit != nil {
+				visit(si, -1, x, row, w)
+			}
+			x += w
 			shown++
-		}
-		if grouped && (section.collapsed || len(section.items) == 0) {
-			x -= commandsTagGap
-			continue
+			if folded {
+				continue
+			}
+			x += commandsTagGap
 		}
 		for i, index := range section.items {
 			if i > 0 {
 				x += commandsTagGap
 			}
 			w := state.commandTagWidth(canvas, state.snippets.list[index].Name)
+			fit(w)
 			if visit != nil {
-				visit(si, index, x, w)
+				visit(si, index, x, row, w)
 			}
 			x += w
 		}
 	}
-	return x
+	return x, row + 1
 }
 
 // commandsMenuWidth fits a dropdown to its longest row: group names and order
@@ -1020,6 +1164,16 @@ func (state *State) scrollCommandsBar(event gfx.ScrollEvent) (gfx.EventResult, b
 	if state.commands.placement == commandsPlacementBottom {
 		extent = state.commands.bar.Width
 	}
+	if state.commands.placement == commandsPlacementBottom && state.commands.wrapped {
+		// A tall bar lists its chips in rows, so the wheel moves it by rows.
+		delta := event.StepYIn(commandsRowPitch, state.commands.bar.Height)
+		if delta == 0 {
+			return gfx.EventResult{}, false
+		}
+		before := state.commands.offset
+		state.commands.offset = min(max(before+delta, 0), state.commands.maxOffset)
+		return gfx.EventResult{Handled: true, Repaint: state.commands.offset != before}, true
+	}
 	delta := event.StepYIn(commandsScrollStep, extent)
 	if state.commands.placement == commandsPlacementBottom {
 		// A horizontal delta is the user's own sideways gesture; a plain wheel
@@ -1054,6 +1208,11 @@ func (state *State) paintCommandTag(canvas *gfx.Canvas, rect gfx.Rect, entry sni
 	if canvas.Hovered() == id {
 		fill = withAlpha(state.pal.accent, 0.16)
 		border = withAlpha(state.pal.accent, 0.55)
+	}
+	// A pressed chip deepens, so a click is acknowledged before the command runs.
+	if canvas.Pressed() == id {
+		fill = withAlpha(state.pal.accent, 0.3)
+		border = withAlpha(state.pal.accent, 0.8)
 	}
 	canvas.RoundedBorder(rect, cornerPx(commandsChipRadius), 1, border, fill)
 	label := gfx.Rect{X: rect.X + commandsTagPaddingX, Y: rect.Y, Width: rect.Width - commandsTagPaddingX*2, Height: rect.Height}
@@ -1197,9 +1356,11 @@ func (state *State) clickCommandsDrawer(id gfx.ID) bool {
 	return true
 }
 
-// commandsDrawerResize drags the bar's inner edge. It stores the width the
+// commandsDrawerResize drags the bar's inner edge: the width of the sidebar, or
+// the rows of the bottom bar, which snap to whole chip rows. It stores what the
 // user leaves and refits the terminals while the drag runs, so the panes follow
-// the pointer instead of jumping when it is released.
+// the pointer instead of jumping when it is released. Double-clicking the bottom
+// bar's edge returns it to one row.
 func (state *State) commandsDrawerResize(event gfx.PointerEvent) gfx.EventResult {
 	commands := &state.commands
 	// A press elsewhere ends a gesture whose release the window never saw, and
@@ -1207,10 +1368,29 @@ func (state *State) commandsDrawerResize(event gfx.PointerEvent) gfx.EventResult
 	if event.Kind == gfx.PointerDown && event.Target != hitCommandsResize {
 		commands.resizing = false
 	}
-	if !state.commandsBarAvailable() || !commands.shown || commands.placement != commandsPlacementSide || state.modal != modalNone {
+	if !state.commandsBarAvailable() || !commands.shown || state.modal != modalNone {
 		return gfx.EventResult{}
 	}
+	bottom := commands.placement == commandsPlacementBottom
 	if event.Kind == gfx.PointerDown && event.Target == hitCommandsResize && event.Button == gfx.PointerButtonPrimary {
+		if bottom {
+			if event.ClickCount >= 2 {
+				commands.resizing = false
+				if commands.rows > 1 {
+					commands.rows = 0
+					commands.offset = 0
+					state.fitTerminals()
+					state.save()
+				}
+				return gfx.EventResult{Handled: true, Repaint: true}
+			}
+			if bar := state.commandsBarRect(); bar.Width > 0 {
+				commands.resizing = true
+				commands.dragFrom, commands.dragStart = event.Y, bar.Height
+				return gfx.EventResult{Handled: true, Repaint: true}
+			}
+			return gfx.EventResult{}
+		}
 		if bar := state.commandsSidebarBounds(event.Viewport); bar.Width > 0 {
 			commands.resizing = true
 			commands.dragFrom, commands.dragStart = event.X, bar.Width
@@ -1223,6 +1403,16 @@ func (state *State) commandsDrawerResize(event gfx.PointerEvent) gfx.EventResult
 	}
 	switch event.Kind {
 	case gfx.PointerMove, gfx.PointerUp:
+		if bottom {
+			height := commands.dragStart + commands.dragFrom - event.Y
+			rows := int((height-commandsBarHeight)/commandsRowPitch+0.5) + 1
+			rows = min(max(rows, 1), state.commandsBottomMaxRows())
+			if rows != state.commandsBottomRows() {
+				commands.rows = rows
+				state.fitTerminals()
+			}
+			break
+		}
 		least, most := state.commandsSidebarWidthLimits(state.toolbarDockFrame(event.Viewport, true).Width)
 		delta := event.X - commands.dragFrom
 		if !commands.sidebarLeft {

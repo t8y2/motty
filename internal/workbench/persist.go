@@ -137,6 +137,7 @@ type savedState struct {
 	TerminalGutter           string              `json:"terminal_gutter,omitempty"`
 	TerminalIntense          string              `json:"terminal_intense,omitempty"`
 	TerminalLineHeight       string              `json:"terminal_line_height,omitempty"`
+	TerminalScrollbarSize    string              `json:"terminal_scrollbar_size,omitempty"`
 	TerminalNotifications    string              `json:"terminal_notifications,omitempty"`
 	TerminalPasteImage       string              `json:"terminal_paste_image,omitempty"`
 	TerminalPasswordHint     string              `json:"terminal_password_hint,omitempty"`
@@ -266,6 +267,9 @@ type savedState struct {
 	CommandsSort            string   `json:"commands_sort,omitempty"`
 	// CommandsWidth is the width the sidebar was dragged to; zero is the default.
 	CommandsWidth float32 `json:"commands_width,omitempty"`
+	// CommandsRows is how many chip rows the bottom bar was dragged to; below
+	// two is the single strip.
+	CommandsRows int `json:"commands_rows,omitempty"`
 }
 
 type savedOutboundProxy struct {
@@ -646,6 +650,7 @@ func (state *State) snapshot() savedState {
 		TerminalGutter:             state.terminalGutter.String(),
 		TerminalIntense:            state.terminalIntense.String(),
 		TerminalLineHeight:         state.terminalLineHeight.String(),
+		TerminalScrollbarSize:      state.terminalScrollbarSize.String(),
 		TerminalNotifications:      notifyString(state.notifyOff),
 		TerminalPasteImage:         notifyString(state.pasteImageOff),
 		TerminalPasswordHint:       notifyString(state.passwordHintOff),
@@ -740,6 +745,7 @@ func (state *State) snapshot() savedState {
 	saved.CommandsSidebarLeft = state.commands.sidebarLeft
 	saved.CommandsSort = state.commands.sort.String()
 	saved.CommandsWidth = state.commands.width
+	saved.CommandsRows = state.commands.rows
 	for key, hidden := range state.commands.hiddenGroups {
 		if hidden {
 			saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)
@@ -1325,6 +1331,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)
 	state.terminalLineHeight = lineHeightFromString(saved.TerminalLineHeight)
+	state.terminalScrollbarSize = scrollbarSizeFromString(saved.TerminalScrollbarSize)
 	state.appearanceFollowTerminal = saved.AppearanceFollowTerminal
 	state.rebuildTerminalLook()
 	state.notifyOff = saved.TerminalNotifications == "off"

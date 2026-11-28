@@ -481,10 +481,13 @@ func TestForwardAndJumpPickersSkipHostsThatAreNotSSH(t *testing.T) {
 		t.Fatalf("forward host = %d, want %d", state.forwardEditor.hostID, ssh.ID)
 	}
 	state.closeModal()
+	// A jump route is its own record, not a pair of saved hosts (decision 0031),
+	// so it opens with one SSH host and asks for the bastion in the dialog.
 	state.openProxyDialog()
-	if state.modal == modalNewProxy {
-		t.Fatal("a jump route was offered with one SSH host")
+	if state.modal != modalNewProxy {
+		t.Fatal("a jump route was not offered with one SSH host")
 	}
+	state.closeModal()
 }
 
 func TestImportedTelnetAndSerialSessionsKeepDistinctNamesAndSkipRepeats(t *testing.T) {

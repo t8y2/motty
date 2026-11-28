@@ -279,6 +279,10 @@ type Messages struct {
 	SettingsAppearanceLight                     string
 	SettingsAppearanceFollowTerminal            string
 	SettingsAppearanceFollowTerminalDescription string
+	SettingsTerminalScrollbarSize               string
+	SettingsTerminalScrollbarThin               string
+	SettingsTerminalScrollbarMedium             string
+	SettingsTerminalScrollbarWide               string
 	SettingsTransparency                        string
 	SettingsTransparencyDescription             string
 	SettingsCorners                             string

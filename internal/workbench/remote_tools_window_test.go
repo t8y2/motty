@@ -215,7 +215,8 @@ func TestRemoteNativeWindowDoesNotBlockTheWorkbenchAndKeepsItsServer(t *testing.
 		w.act(hitFormSubmit)
 		host.until(t, func() bool { return !w.ui.remote.loading })
 		if server.ran("kill -KILL 2211") != 1 || otherServer.ran("kill") != 0 {
-			t.Fatal("confirmation operated on the selected main tab instead of the captured server")
+			t.Fatalf("confirmation operated on the selected main tab instead of the captured server: captured=%d other=%d",
+				server.ran("kill"), otherServer.ran("kill"))
 		}
 		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabImages)
 		host.until(t, func() bool { return !w.ui.remote.loading })

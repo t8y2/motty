@@ -273,6 +273,7 @@ var syncedSettings = map[string]bool{
 	"terminal_gutter":              true,
 	"terminal_intense":             true,
 	"terminal_line_height":         true,
+	"terminal_scrollbar_size":      true,
 	"terminal_notifications":       true,
 	"terminal_paste_image":         true,
 	"terminal_password_hint":       true,

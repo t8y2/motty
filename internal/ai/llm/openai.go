@@ -91,6 +91,9 @@ type oaToolCall struct {
 	ID       string     `json:"id"`
 	Type     string     `json:"type"`
 	Function oaToolFunc `json:"function"`
+	// ExtraContent is provider state that must go back with the call, such as
+	// Gemini's thought signature.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 // oaPart is one piece of a user message that carries pictures.
@@ -189,7 +192,7 @@ func (p *openAI) buildBody(req Request) ([]byte, error) {
 					return nil, fmt.Errorf("tool call %q: %w", tc.Name, err)
 				}
 				om.ToolCalls = append(om.ToolCalls, oaToolCall{ID: tc.ID, Type: "function",
-					Function: oaToolFunc{Name: tc.Name, Arguments: &args}})
+					Function: oaToolFunc{Name: tc.Name, Arguments: &args}, ExtraContent: tc.ExtraContent})
 			}
 		case RoleTool:
 			if m.ToolCallID == "" {
@@ -276,6 +279,7 @@ type oaToolDelta struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+	ExtraContent json.RawMessage `json:"extra_content"`
 }
 
 type oaDelta struct {
@@ -321,6 +325,10 @@ type oaChunk struct {
 type oaPartial struct {
 	id, name string
 	args     strings.Builder
+	// extra is the provider state that came with the call. The provider sends
+	// it whole, usually with the id and name, so the latest value replaces an
+	// earlier one.
+	extra json.RawMessage
 }
 
 type oaHandler struct {
@@ -395,7 +403,7 @@ func (h *oaHandler) flushTools(em *emitter) error {
 		if id == "" {
 			id = "call_" + strconv.Itoa(i)
 		}
-		tc := &ToolCall{ID: id, Name: c.name, Arguments: args}
+		tc := &ToolCall{ID: id, Name: c.name, Arguments: args, ExtraContent: c.extra}
 		h.toolSent = true
 		if err := em.send(Event{Kind: EventToolCall, ToolCall: tc}); err != nil {
 			return err
@@ -573,6 +581,9 @@ func (h *oaHandler) event(ev sseEvent, em *emitter) (bool, error) {
 			s.name = d.Function.Name
 		}
 		s.args.WriteString(d.Function.Arguments)
+		if len(d.ExtraContent) > 0 {
+			s.extra = d.ExtraContent
+		}
 	}
 	if ch.FinishReason != nil && *ch.FinishReason != "" {
 		h.finished, h.stop = true, *ch.FinishReason

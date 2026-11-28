@@ -292,7 +292,7 @@ func (state *State) leaveWorkspaceForLibrary() {
 	state.clearBroadcast()
 	state.status = state.messages.Tools.StatusBroadcastOff
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-		state.releaseIdleSFTP(session)
+		state.suspendIdleSFTP(session)
 	}
 	state.setActiveSection(sectionWorkspaces)
 	state.workspaceHeaderMenu = workspaceHeaderMenuNone
