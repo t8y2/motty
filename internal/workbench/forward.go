@@ -1078,7 +1078,7 @@ func (state *State) pumpForwards() {
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
 		if status.LastError != nil && sshconn.IsChannelRefused(status.LastError) && !forward.refusedNotified {
 			forward.refusedNotified = true
-			state.showActionWarning(forward.Label, forward.detail)
+			state.showActionWarning(forward.Label, forwardFailureText(state.messages, *forward, status.LastError))
 		}
 	}
 }

@@ -538,7 +538,9 @@ func IsChannelRefused(err error) bool {
 
 // IsRemoteForwardRefused reports whether err is the server declining a
 // tcpip-forward request, such as when AllowTcpForwarding is disabled or
-// PermitListen forbids the requested listener.
+// PermitListen forbids the requested listener. The vendored ssh package reports
+// the refusal as a plain error (third_party/golang.org/x/crypto/ssh/tcpip.go),
+// so the text is the only thing to match; update this with that file.
 func IsRemoteForwardRefused(err error) bool {
 	if err == nil {
 		return false
