@@ -104,86 +104,87 @@ type savedState struct {
 	// sessions at launch switches to an existing session in this window. It
 	// is off by default, so a state without this key opens a separate session
 	// each time; the older negated "startup_no_reuse" key is no longer read.
-	StartupReuse            bool                `json:"startup_reuse,omitempty"`
-	TerminalClipboard       string              `json:"terminal_clipboard,omitempty"`
-	TerminalCursorSteady    bool                `json:"terminal_cursor_steady,omitempty"`
-	TerminalCursorThickness string              `json:"terminal_cursor_thickness,omitempty"`
-	TerminalCopyOnSelect    bool                `json:"terminal_copy_on_select,omitempty"`
-	TerminalWordSeparators  string              `json:"terminal_word_separators,omitempty"`
-	TerminalRightClickPaste bool                `json:"terminal_right_click_paste,omitempty"`
-	TabTitleMode            tabTitleMode        `json:"tab_title_mode,omitempty"`
-	TerminalTabTitle        bool                `json:"terminal_tab_title,omitempty"`
-	TerminalShowLatency     bool                `json:"terminal_show_latency,omitempty"`
-	TerminalToolbarPosition string              `json:"terminal_toolbar_position,omitempty"`
-	ToastPlacement          string              `json:"toast_position,omitempty"`
-	TerminalToolbarSize     string              `json:"terminal_toolbar_size,omitempty"`
-	TerminalBellOff         bool                `json:"terminal_bell_off,omitempty"`
-	TerminalPasteConfirmOff bool                `json:"terminal_paste_confirm_off,omitempty"`
-	TerminalInputClickOff   bool                `json:"terminal_input_click_off,omitempty"`
-	TerminalLinkPlainClick  bool                `json:"terminal_link_plain_click,omitempty"`
-	AIPanelWidth            float32             `json:"ai_panel_width,omitempty"`
-	AIComposerHeight        float32             `json:"ai_composer_height,omitempty"`
-	MonitorPanelWidth       float32             `json:"monitor_panel_width,omitempty"`
-	WindowX                 int                 `json:"window_x,omitempty"`
-	WindowY                 int                 `json:"window_y,omitempty"`
-	WindowWidth             int                 `json:"window_width,omitempty"`
-	WindowHeight            int                 `json:"window_height,omitempty"`
-	WindowMaximized         bool                `json:"window_maximized,omitempty"`
-	TerminalScheme          string              `json:"terminal_scheme,omitempty"` // read only: before the scheme was kept per look
-	TerminalSchemeDark      string              `json:"terminal_scheme_dark,omitempty"`
-	TerminalSchemeLight     string              `json:"terminal_scheme_light,omitempty"`
-	TerminalPadding         string              `json:"terminal_padding,omitempty"`
-	TerminalGutter          string              `json:"terminal_gutter,omitempty"`
-	TerminalIntense         string              `json:"terminal_intense,omitempty"`
-	TerminalLineHeight      string              `json:"terminal_line_height,omitempty"`
-	TerminalNotifications   string              `json:"terminal_notifications,omitempty"`
-	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
-	TerminalPasswordHint    string              `json:"terminal_password_hint,omitempty"`
-	TerminalCloseConfirm    string              `json:"terminal_close_confirm,omitempty"`
-	CloseWindowConfirm      string              `json:"close_window_confirm,omitempty"`
-	SFTPParallel            int                 `json:"sftp_parallel,omitempty"`
-	SFTPKeepTimes           string              `json:"sftp_keep_times,omitempty"`
-	SFTPFollow              string              `json:"sftp_follow,omitempty"`
-	SFTPTerminalFollow      bool                `json:"sftp_terminal_follow,omitempty"`
-	SFTPPathInput           bool                `json:"sftp_path_input,omitempty"`
-	SFTPPanelAutoOpen       bool                `json:"sftp_panel_auto_open,omitempty"`
-	SFTPClearUploads        bool                `json:"sftp_clear_uploads,omitempty"`
-	SFTPTransferAutoOpenOff bool                `json:"sftp_transfer_auto_open_off,omitempty"`
-	SFTPDirectoryTree       bool                `json:"sftp_directory_tree,omitempty"`
-	SFTPPanelSide           string              `json:"sftp_panel_side,omitempty"`
-	SFTPPanelWidth          float32             `json:"sftp_panel_width,omitempty"`
-	SFTPWindowOrder         string              `json:"sftp_window_order,omitempty"`
-	SFTPOpenMode            string              `json:"sftp_open_mode,omitempty"`
-	FilePreviewMB           int                 `json:"file_preview_mb,omitempty"`
-	SFTPColumns             string              `json:"sftp_columns,omitempty"`
-	SFTPDownloadDirectory   string              `json:"sftp_download_directory,omitempty"`
-	SFTPTransferFilter      int                 `json:"sftp_transfer_filter,omitempty"`
-	DefaultEditor           string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
-	CustomEditorPath        string              `json:"custom_editor_path,omitempty"`
-	Toolbars                *savedToolbars      `json:"toolbars,omitempty"`
-	UpdateCheck             string              `json:"update_check,omitempty"`
-	UpdateSource            string              `json:"update_source,omitempty"`
-	CloseAction             string              `json:"close_action,omitempty"`
-	KeepWindowsOnExit       string              `json:"keep_windows_on_exit,omitempty"`
-	RelaunchAction          string              `json:"relaunch_action,omitempty"`
-	TrayHintShown           bool                `json:"tray_hint_shown,omitempty"`
-	TrayIconOff             bool                `json:"tray_icon_off,omitempty"`
-	UpdateSkipped           string              `json:"update_skipped,omitempty"`
-	SFTPBookmarks           []savedBookmark     `json:"sftp_bookmarks,omitempty"`
-	SFTPLocalBookmarks      []string            `json:"sftp_local_bookmarks,omitempty"`
-	OutboundProxy           *savedOutboundProxy `json:"outbound_proxy,omitempty"`
-	SSHBrowser              string              `json:"ssh_browser,omitempty"` // which Chromium-family browser the SSH tab opens
-	HighlightBuiltin        string              `json:"highlight_builtin,omitempty"`
-	Highlights              []savedHighlight    `json:"highlights,omitempty"`
-	Snippets                []savedSnippet      `json:"snippets,omitempty"`
-	SnippetGroups           []savedSnippetGroup `json:"snippet_groups,omitempty"`
-	SnippetShortcuts        []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
-	Autofill                []savedAutofill     `json:"autofill_rules,omitempty"`
-	Credentials             []savedCredential   `json:"credentials,omitempty"`
-	ProxyProfiles           []savedProxyProfile `json:"proxy_profiles,omitempty"`
-	CommandHistory          bool                `json:"command_history,omitempty"`
-	CommandSuggestOff       bool                `json:"command_suggest_off,omitempty"`
-	CommandAcceptHintOff    bool                `json:"command_accept_hint_off,omitempty"`
+	StartupReuse             bool                `json:"startup_reuse,omitempty"`
+	TerminalClipboard        string              `json:"terminal_clipboard,omitempty"`
+	TerminalCursorSteady     bool                `json:"terminal_cursor_steady,omitempty"`
+	TerminalCursorThickness  string              `json:"terminal_cursor_thickness,omitempty"`
+	TerminalCopyOnSelect     bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalWordSeparators   string              `json:"terminal_word_separators,omitempty"`
+	TerminalRightClickPaste  bool                `json:"terminal_right_click_paste,omitempty"`
+	TabTitleMode             tabTitleMode        `json:"tab_title_mode,omitempty"`
+	TerminalTabTitle         bool                `json:"terminal_tab_title,omitempty"`
+	TerminalShowLatency      bool                `json:"terminal_show_latency,omitempty"`
+	TerminalToolbarPosition  string              `json:"terminal_toolbar_position,omitempty"`
+	ToastPlacement           string              `json:"toast_position,omitempty"`
+	TerminalToolbarSize      string              `json:"terminal_toolbar_size,omitempty"`
+	TerminalBellOff          bool                `json:"terminal_bell_off,omitempty"`
+	TerminalPasteConfirmOff  bool                `json:"terminal_paste_confirm_off,omitempty"`
+	TerminalInputClickOff    bool                `json:"terminal_input_click_off,omitempty"`
+	TerminalLinkPlainClick   bool                `json:"terminal_link_plain_click,omitempty"`
+	AIPanelWidth             float32             `json:"ai_panel_width,omitempty"`
+	AIComposerHeight         float32             `json:"ai_composer_height,omitempty"`
+	MonitorPanelWidth        float32             `json:"monitor_panel_width,omitempty"`
+	WindowX                  int                 `json:"window_x,omitempty"`
+	WindowY                  int                 `json:"window_y,omitempty"`
+	WindowWidth              int                 `json:"window_width,omitempty"`
+	WindowHeight             int                 `json:"window_height,omitempty"`
+	WindowMaximized          bool                `json:"window_maximized,omitempty"`
+	TerminalScheme           string              `json:"terminal_scheme,omitempty"` // read only: before the scheme was kept per look
+	TerminalSchemeDark       string              `json:"terminal_scheme_dark,omitempty"`
+	TerminalSchemeLight      string              `json:"terminal_scheme_light,omitempty"`
+	AppearanceFollowTerminal bool                `json:"appearance_follow_terminal,omitempty"`
+	TerminalPadding          string              `json:"terminal_padding,omitempty"`
+	TerminalGutter           string              `json:"terminal_gutter,omitempty"`
+	TerminalIntense          string              `json:"terminal_intense,omitempty"`
+	TerminalLineHeight       string              `json:"terminal_line_height,omitempty"`
+	TerminalNotifications    string              `json:"terminal_notifications,omitempty"`
+	TerminalPasteImage       string              `json:"terminal_paste_image,omitempty"`
+	TerminalPasswordHint     string              `json:"terminal_password_hint,omitempty"`
+	TerminalCloseConfirm     string              `json:"terminal_close_confirm,omitempty"`
+	CloseWindowConfirm       string              `json:"close_window_confirm,omitempty"`
+	SFTPParallel             int                 `json:"sftp_parallel,omitempty"`
+	SFTPKeepTimes            string              `json:"sftp_keep_times,omitempty"`
+	SFTPFollow               string              `json:"sftp_follow,omitempty"`
+	SFTPTerminalFollow       bool                `json:"sftp_terminal_follow,omitempty"`
+	SFTPPathInput            bool                `json:"sftp_path_input,omitempty"`
+	SFTPPanelAutoOpen        bool                `json:"sftp_panel_auto_open,omitempty"`
+	SFTPClearUploads         bool                `json:"sftp_clear_uploads,omitempty"`
+	SFTPTransferAutoOpenOff  bool                `json:"sftp_transfer_auto_open_off,omitempty"`
+	SFTPDirectoryTree        bool                `json:"sftp_directory_tree,omitempty"`
+	SFTPPanelSide            string              `json:"sftp_panel_side,omitempty"`
+	SFTPPanelWidth           float32             `json:"sftp_panel_width,omitempty"`
+	SFTPWindowOrder          string              `json:"sftp_window_order,omitempty"`
+	SFTPOpenMode             string              `json:"sftp_open_mode,omitempty"`
+	FilePreviewMB            int                 `json:"file_preview_mb,omitempty"`
+	SFTPColumns              string              `json:"sftp_columns,omitempty"`
+	SFTPDownloadDirectory    string              `json:"sftp_download_directory,omitempty"`
+	SFTPTransferFilter       int                 `json:"sftp_transfer_filter,omitempty"`
+	DefaultEditor            string              `json:"default_editor,omitempty"` // this computer's editor for remote folders
+	CustomEditorPath         string              `json:"custom_editor_path,omitempty"`
+	Toolbars                 *savedToolbars      `json:"toolbars,omitempty"`
+	UpdateCheck              string              `json:"update_check,omitempty"`
+	UpdateSource             string              `json:"update_source,omitempty"`
+	CloseAction              string              `json:"close_action,omitempty"`
+	KeepWindowsOnExit        string              `json:"keep_windows_on_exit,omitempty"`
+	RelaunchAction           string              `json:"relaunch_action,omitempty"`
+	TrayHintShown            bool                `json:"tray_hint_shown,omitempty"`
+	TrayIconOff              bool                `json:"tray_icon_off,omitempty"`
+	UpdateSkipped            string              `json:"update_skipped,omitempty"`
+	SFTPBookmarks            []savedBookmark     `json:"sftp_bookmarks,omitempty"`
+	SFTPLocalBookmarks       []string            `json:"sftp_local_bookmarks,omitempty"`
+	OutboundProxy            *savedOutboundProxy `json:"outbound_proxy,omitempty"`
+	SSHBrowser               string              `json:"ssh_browser,omitempty"` // which Chromium-family browser the SSH tab opens
+	HighlightBuiltin         string              `json:"highlight_builtin,omitempty"`
+	Highlights               []savedHighlight    `json:"highlights,omitempty"`
+	Snippets                 []savedSnippet      `json:"snippets,omitempty"`
+	SnippetGroups            []savedSnippetGroup `json:"snippet_groups,omitempty"`
+	SnippetShortcuts         []savedSnippetKey   `json:"snippet_shortcuts,omitempty"`
+	Autofill                 []savedAutofill     `json:"autofill_rules,omitempty"`
+	Credentials              []savedCredential   `json:"credentials,omitempty"`
+	ProxyProfiles            []savedProxyProfile `json:"proxy_profiles,omitempty"`
+	CommandHistory           bool                `json:"command_history,omitempty"`
+	CommandSuggestOff        bool                `json:"command_suggest_off,omitempty"`
+	CommandAcceptHintOff     bool                `json:"command_accept_hint_off,omitempty"`
 	// CommandCompletionMode is the completion mode as one value: "off", "list"
 	// (automatic) or "inline". It is absent in a file written before the modes
 	// were named; the two booleans are then read instead.
@@ -640,6 +641,7 @@ func (state *State) snapshot() savedState {
 		MonitorPanelWidth:          state.monitorWidth,
 		TerminalSchemeDark:         state.terminalSchemes[appearanceDark],
 		TerminalSchemeLight:        state.terminalSchemes[appearanceLight],
+		AppearanceFollowTerminal:   state.appearanceFollowTerminal,
 		TerminalPadding:            state.terminalPad.String(),
 		TerminalGutter:             state.terminalGutter.String(),
 		TerminalIntense:            state.terminalIntense.String(),
@@ -1323,6 +1325,8 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)
 	state.terminalLineHeight = lineHeightFromString(saved.TerminalLineHeight)
+	state.appearanceFollowTerminal = saved.AppearanceFollowTerminal
+	state.rebuildTerminalLook()
 	state.notifyOff = saved.TerminalNotifications == "off"
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"

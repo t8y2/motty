@@ -268,6 +268,7 @@ var syncedSettings = map[string]bool{
 	"terminal_scheme":              true,
 	"terminal_scheme_dark":         true,
 	"terminal_scheme_light":        true,
+	"appearance_follow_terminal":   true,
 	"terminal_padding":             true,
 	"terminal_gutter":              true,
 	"terminal_intense":             true,

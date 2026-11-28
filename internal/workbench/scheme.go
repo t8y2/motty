@@ -200,30 +200,98 @@ func (state *State) migrateTerminalScheme(id string) (dark, light string) {
 // the chosen scheme and the highlight rules, and starts a new epoch so every
 // prepared line is built again with it.
 func (state *State) rebuildTerminalLook() {
-	look := *state.pal
-	look.termFG = look.text
+	basePal := state.appearance.palette()
 	schemeID := state.activeScheme()
 	if state.schemePreview.shown != "" {
 		schemeID = state.schemePreview.shown
 	}
 	if scheme, ok := state.schemeByID(schemeID); ok {
+		if state.appearanceFollowTerminal {
+			state.uiPal = paletteFromScheme(basePal, scheme)
+			state.pal = &state.uiPal
+		} else {
+			state.pal = basePal
+		}
+		state.theme = state.pal.theme()
+		look := *state.pal
 		look.dark = luminance(scheme.background) < 0.5
 		look.terminal = gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
 		look.termFG = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
 		look.cursor = gfx.RGB(scheme.cursor[0], scheme.cursor[1], scheme.cursor[2])
 		look.ansi = scheme.ansi
+		look.highlight = state.highlights
+		look.intense = state.terminalIntense
+		state.termEpoch++
+		look.epoch = state.termEpoch
+		state.termPal = look
+	} else {
+		state.pal = basePal
+		state.theme = state.pal.theme()
+		look := *state.pal
+		look.termFG = look.text
+		look.highlight = state.highlights
+		look.intense = state.terminalIntense
+		state.termEpoch++
+		look.epoch = state.termEpoch
+		state.termPal = look
 	}
-	look.highlight = state.highlights
-	look.intense = state.terminalIntense
-	state.termEpoch++
-	look.epoch = state.termEpoch
-	state.termPal = look
 	for index := range state.sessions {
 		state.reportTerminalColors(state.sessions[index].term)
 	}
 	if login := state.ai.login; login != nil {
 		state.reportTerminalColors(login.term)
 	}
+}
+
+func mixColor(a, b gfx.Color, t float32) gfx.Color {
+	return gfx.Color{
+		Red:   a.Red + (b.Red-a.Red)*t,
+		Green: a.Green + (b.Green-a.Green)*t,
+		Blue:  a.Blue + (b.Blue-a.Blue)*t,
+		Alpha: a.Alpha + (b.Alpha-a.Alpha)*t,
+	}
+}
+
+func paletteFromScheme(fallback *palette, scheme *colorScheme) palette {
+	isDark := luminance(scheme.background) < 0.5
+	var pal palette
+	if isDark {
+		pal = darkPalette
+	} else {
+		pal = lightPalette
+	}
+	if fallback != nil {
+		pal.hideApplicationBackground = fallback.hideApplicationBackground
+	}
+	bg := gfx.RGB(scheme.background[0], scheme.background[1], scheme.background[2])
+	white := gfx.RGB(255, 255, 255)
+	black := gfx.RGB(0, 0, 0)
+	pal.terminal = bg
+	pal.workspace = bg
+	if isDark {
+		pal.shell = mixColor(bg, white, 0.04)
+		pal.surface = mixColor(bg, white, 0.07)
+		pal.surfaceSoft = mixColor(bg, white, 0.11)
+		pal.surfaceHot = mixColor(bg, white, 0.19)
+		pal.line = mixColor(bg, white, 0.15)
+		pal.windowStroke = mixColor(bg, white, 0.22)
+		pal.tab = mixColor(bg, white, 0.07)
+		pal.tabHover = mixColor(bg, white, 0.12)
+		pal.tabActive = mixColor(bg, white, 0.19)
+		pal.tabCloseHot = mixColor(bg, white, 0.24)
+	} else {
+		pal.shell = mixColor(bg, black, 0.05)
+		pal.surface = mixColor(bg, white, 0.45)
+		pal.surfaceSoft = mixColor(bg, black, 0.04)
+		pal.surfaceHot = mixColor(bg, black, 0.10)
+		pal.line = mixColor(bg, black, 0.11)
+		pal.windowStroke = mixColor(bg, black, 0.18)
+		pal.tab = mixColor(bg, black, 0.08)
+		pal.tabHover = mixColor(bg, black, 0.03)
+		pal.tabActive = mixColor(bg, white, 0.45)
+		pal.tabCloseHot = mixColor(bg, black, 0.07)
+	}
+	return pal
 }
 
 // reportTerminalColors tells a terminal the colors it is drawn with, which is
