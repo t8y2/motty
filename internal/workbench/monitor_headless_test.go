@@ -242,7 +242,7 @@ func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 				}
 			}
 
-			for page, label := range []string{state.messages.Monitor.Overview, state.messages.Monitor.Disks, state.messages.Monitor.Network} {
+			for page, label := range []string{state.messages.Monitor.Overview, state.messages.Monitor.ProcessSection, state.messages.Monitor.Disks, state.messages.Monitor.Network} {
 				if err = view.ClickLabel(label); err != nil {
 					t.Fatal(err)
 				}
@@ -277,7 +277,7 @@ func TestMonitorNativePanelAtDifferentScales(t *testing.T) {
 				if state.monitorRect.Width != width {
 					t.Fatalf("stretch width=%v want%v", state.monitorRect.Width, width)
 				}
-				for _, label := range []string{state.messages.Monitor.Overview, state.messages.Monitor.Disks, state.messages.Monitor.Network} {
+				for _, label := range []string{state.messages.Monitor.Overview, state.messages.Monitor.ProcessSection, state.messages.Monitor.Disks, state.messages.Monitor.Network} {
 					hit, ok := view.Hit(label)
 					if !ok || hit.Bounds.Width < 60 || hit.Bounds.X < state.monitorRect.X || hit.Bounds.X+hit.Bounds.Width > state.monitorRect.X+state.monitorRect.Width {
 						t.Fatalf("tab outside elastic panel: %+v", hit)

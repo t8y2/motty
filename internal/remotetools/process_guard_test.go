@@ -27,7 +27,6 @@ func TestSafeSnapshotPairsIdentityAcrossCollection(t *testing.T) {
 		t.Fatalf("reused PID got an actionable identity: %+v", snapshot.Processes)
 	}
 }
-
 func TestSafeSnapshotUnsupportedIdentityStillListsProcesses(t *testing.T) {
 	runner := &scriptedRunner{results: []scriptedResult{
 		{err: errors.New("no procfs")},
@@ -148,7 +147,6 @@ func TestGuardedShellChecksBootAndTicksBeforeEveryMutation(t *testing.T) {
 		})
 	}
 }
-
 func TestIdentityProbeDoesNotInterpretProcessCommandAsShell(t *testing.T) {
 	runner := procFixture(t, "100", "worker ) with * $HOME ; echo bad")
 	output, err := runner.RunCommand(context.Background(), processIdentityCommand, 1<<20)

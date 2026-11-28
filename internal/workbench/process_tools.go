@@ -1,8 +1,8 @@
 package workbench
 
-// openProcessTools uses the same independent tools window as containers. The
-// process icon opens directly on its tab, while the window keeps every remote
-// resource available through the existing tabs.
-func (state *State) openProcessTools(session *Session) {
-	state.openRemoteToolsTab(session, remoteProcesses, true)
+// openToolsWindow opens the containers-and-processes window on its first tab,
+// containers. The process list is one tab away, and the resource monitor points
+// at it from its own page.
+func (state *State) openToolsWindow(session *Session) {
+	state.openRemoteToolsTab(session, remoteContainers, true)
 }

@@ -76,7 +76,7 @@ func (state *State) clickRemoteToolsOpen(id gfx.ID) bool {
 	}
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && state.modal == modalNone {
 		if id == hitProcessToolsOpen {
-			state.openProcessTools(session)
+			state.openToolsWindow(session)
 		} else {
 			state.openRemoteTools(session)
 		}
@@ -86,23 +86,25 @@ func (state *State) clickRemoteToolsOpen(id gfx.ID) bool {
 
 type remoteTab uint8
 
+// The tab values are also their default: the window opens on the first tab,
+// which is the containers it is named for.
 const (
-	remoteProcesses remoteTab = iota
-	remoteContainers
+	remoteContainers remoteTab = iota
 	remoteImages
 	remoteVolumes
 	remoteNetworks
 	remoteCompose
+	remoteProcesses
 )
 
 // remoteTabChoices are the tabs in the order the switch shows them.
-var remoteTabChoices = [...]remoteTab{remoteProcesses, remoteContainers, remoteImages, remoteVolumes, remoteNetworks, remoteCompose}
+var remoteTabChoices = [...]remoteTab{remoteContainers, remoteImages, remoteVolumes, remoteNetworks, remoteCompose, remoteProcesses}
 
 func (state *State) remoteTabLabel(tab remoteTab) string {
 	m := state.messages.Tools
 	switch tab {
-	case remoteContainers:
-		return m.RemoteTabContainers
+	case remoteProcesses:
+		return m.RemoteTabProcesses
 	case remoteImages:
 		return m.RemoteTabImages
 	case remoteVolumes:
@@ -112,7 +114,7 @@ func (state *State) remoteTabLabel(tab remoteTab) string {
 	case remoteCompose:
 		return m.RemoteTabCompose
 	}
-	return m.RemoteTabProcesses
+	return m.RemoteTabContainers
 }
 
 // applyRemoteTab resets the view for the tab the page's choice already wrote and

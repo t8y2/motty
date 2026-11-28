@@ -2894,7 +2894,7 @@ var lucideIcons = [...]gfx.Icon{
 	iconEyeOff:              icons.EyeOff,
 	iconEllipsis:            icons.Ellipsis,
 	iconWrench:              icons.Wrench,
-	iconProcess:             icons.Process,
+	iconProcess:             icons.MitDocker,
 	iconDirectoryTree:       icons.PanelLeft,
 	iconListTree:            icons.ListTree,
 	iconArrowUpDown:         icons.ArrowUpDown,

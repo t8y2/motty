@@ -166,7 +166,8 @@ func TestMonitorHostInfoLayoutAndScrollAcrossPages(t *testing.T) {
 			}
 			state.monitorRect = b
 			geometry := state.monitorScrollArea(p).Geometry()
-			if geometry.Viewport.Y != b.Y+infoBarHeight+monitorControlsHeight {
+			wantTop := b.Y + infoBarHeight + monitorControlsHeight
+			if geometry.Viewport.Y != wantTop {
 				t.Fatalf("scroll viewport overlaps host information: %+v", geometry.Viewport)
 			}
 			state.scrollMonitor(gfx.ScrollEvent{X: b.X + 100, Y: b.Y + 200, DeltaY: 10000})

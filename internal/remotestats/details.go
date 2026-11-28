@@ -30,8 +30,41 @@ type Network struct {
 	Received, Sent                  uint64
 	ReceivePerSecond, SendPerSecond uint64
 	HasRate                         bool
+	// Addresses are the interface's own addresses as the platform prints them,
+	// without the prefix length: IPv4 first, then IPv6, at most four.
+	Addresses []string
 	// Windows formatted performance counters expose rates, not byte totals.
 	TotalsUnavailable bool
+}
+
+// Listen is one socket a host is listening on: what it speaks, where it binds,
+// and, where the platform tells an unprivileged reader, which process owns it.
+type Listen struct {
+	Proto   string
+	Address string
+	Port    int
+	Process string
+	PID     int
+}
+
+// Process is one row of the host's process list: what it is called, how much of
+// a CPU it is using now, and how much of the host's memory it holds.
+type Process struct {
+	PID           int
+	Name          string
+	CPUPercent    float64
+	MemoryPercent float64
+	// MemoryBytes is the resident set size the platform reports: the memory the
+	// process holds at this moment, not what it has laid claim to.
+	MemoryBytes uint64
+}
+
+// MemoryDetail is the host's memory as its kernel breaks it down, in bytes.
+// A platform that has no equivalent of one of the pools leaves it zero rather
+// than filling it with a guess.
+type MemoryDetail struct {
+	Total, Available, Free, Buffers, Cached uint64
+	SwapTotal, SwapFree                     uint64
 }
 
 type Details struct {
@@ -43,9 +76,12 @@ type Details struct {
 	Kernel          string
 	Disks           []Disk
 	Networks        []Network
+	Listens         []Listen
 	Logins          []Login
 	LoginsAvailable bool
 	LoginsTruncated bool
+	Processes       []Process
+	Memory          MemoryDetail
 }
 
 type Login struct {
@@ -96,7 +132,7 @@ func startDetails(runner DetailRunner, notify func(), seconds int, command strin
 		var previousAt time.Time
 		for {
 			request, finish := context.WithTimeout(ctx, 4*time.Second)
-			data, err := runner.RunCommand(request, command, 96<<10)
+			data, err := runner.RunCommand(request, command, maxDetailsOutput)
 			finish()
 			if ctx.Err() != nil {
 				return
@@ -161,7 +197,87 @@ awk 'NR>2 {
     if (name!="lo") printf "net\t%s\t%s\t%s\n",name,v[1],v[9]
     if (++n>=64) exit
 }' /proc/net/dev
-` + loginsCommand
+# The addresses of the interfaces /proc/net/dev just listed: iproute2 where it
+# is installed, the older ifconfig otherwise.
+if command -v ip >/dev/null 2>&1; then
+ip -o addr show 2>/dev/null | awk '{
+    name = $2; sub(/:$/, "", name)
+    if (name ~ /^lo/) next
+    for (i = 3; i < NF; i++) if ($i == "inet" || $i == "inet6") {
+        address = $(i + 1); sub(/\/.*/, "", address)
+        printf "netaddr\t%s\t%s\n", name, address
+    }
+}'
+else
+ifconfig -a 2>/dev/null | awk '
+    /^[^ \t]/ { name = $1; sub(/:$/, "", name) }
+    name ~ /^lo/ { next }
+    $1 == "inet" || $1 == "inet6" {
+        address = $2; sub(/^addr:/, "", address); sub(/\/.*/, "", address); sub(/%.*/, "", address)
+        printf "netaddr\t%s\t%s\n", name, address
+    }
+'
+fi
+# The sockets this host listens on: ss where iproute2 is installed, netstat's
+# -l list where it is not (that one has no process column without root).
+if command -v ss >/dev/null 2>&1; then
+ss -H -lntup 2>/dev/null | awk '
+    {
+        proto = $1; local = $5
+        host = local; sub(/:[^:]*$/, "", host); gsub(/\[/, "", host); gsub(/\]/, "", host)
+        port = local; sub(/.*:/, "", port)
+        if (port !~ /^[0-9]+$/) next
+        if (host == "" || host == "*") host = "0.0.0.0"
+        users = ""; for (i = 7; i <= NF; i++) users = users " " $i
+        process = "-"; pid = 0
+        if ((k = index(users, "users:")) > 0) {
+            inner = substr(users, k)
+            if ((q = index(inner, "\"")) > 0) {
+                rest = substr(inner, q + 1)
+                if ((q2 = index(rest, "\"")) > 1) process = substr(rest, 1, q2 - 1)
+            }
+            if ((k2 = index(inner, "pid=")) > 0) {
+                digits = substr(inner, k2 + 4); sub(/[^0-9].*/, "", digits)
+                if (digits != "") pid = digits
+            }
+        }
+        printf "listen\t%s\t%s\t%s\t%s\t%s\n", proto, host, port, process, pid
+        if (++count >= 64) exit
+    }'
+else
+netstat -lntu 2>/dev/null | awk '
+    NR > 2 {
+        proto = $1; local = $4
+        host = local; sub(/:[^:]*$/, "", host); gsub(/\[/, "", host); gsub(/\]/, "", host)
+        port = local; sub(/.*:/, "", port)
+        if (port !~ /^[0-9]+$/) next
+        if (host == "" || host == "*") host = "0.0.0.0"
+        printf "listen\t%s\t%s\t%s\t-\t0\n", proto, host, port
+        if (++count >= 64) exit
+    }'
+fi
+` + loginsCommand + processesCommand
+
+// processesCommand reads what the host is running and how its kernel breaks its
+// memory down. ps orders by CPU, and a name is the rest of the row after the RSS:
+// `comm` may contain spaces, and the last column runs to the end of the line.
+const processesCommand = `# motty-monitor-processes-v1
+ps -eo pid,pcpu,pmem,rss,comm --sort=-pcpu 2>/dev/null | awk 'NR>1 && NR<=1025 {
+	name = $5
+	for (i = 6; i <= NF; i++) name = name " " $i
+	printf "proc\t%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, name
+}'
+awk '
+/MemTotal:/ { total = $2 }
+/MemAvailable:/ { available = $2 }
+/MemFree:/ { free = $2 }
+/^Buffers:/ { buffers = $2 }
+/^Cached:/ { cached = $2 }
+/^SwapTotal:/ { swaptotal = $2 }
+/^SwapFree:/ { swapfree = $2 }
+END { printf "mem\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", total, available, free, buffers, cached, swaptotal, swapfree }
+' /proc/meminfo
+`
 
 const loginsCommand = `if command -v who >/dev/null 2>&1 && logins=$(who 2>/dev/null); then
 	printf 'logins-ready\n'
@@ -176,13 +292,34 @@ else
 fi
 `
 
+// maxNetworkAddresses bounds the addresses one interface may report: a host
+// with a link-local IPv6, a global one and two IPv4 aliases fills it.
+const maxNetworkAddresses = 4
+
+// maxListens bounds the listening sockets one host reports: a desktop with a
+// full container stack settles well below it.
+const maxListens = 64
+
+// maxProcesses bounds the process rows one host reports. It is a bound on one
+// reading, not a screenful: a busy container host runs a few hundred, and the
+// panel scrolls and searches them like any other list.
+const maxProcesses = 1024
+
+// maxDetailsOutput bounds one details reading. The payload carries every
+// process of a large host along with the disks, interfaces, sockets and
+// logins, so the limit follows maxProcesses rather than a screenful.
+const maxDetailsOutput = 512 << 10
+
 func parseDetails(data []byte) (Details, error) {
 	var d Details
-	if len(data) > 96<<10 {
+	if len(data) > maxDetailsOutput {
 		return d, ErrMalformed
 	}
+	// The interface rows and their addresses arrive in either order, so the
+	// addresses wait for the rows they name.
+	addresses := make(map[string][]string, 8)
 	for _, line := range strings.Split(string(data), "\n") {
-		p := strings.SplitN(strings.TrimSuffix(line, "\r"), "\t", 7)
+		p := strings.SplitN(strings.TrimSuffix(line, "\r"), "\t", 8)
 		switch p[0] {
 		case "logins-ready":
 			d.LoginsAvailable = true
@@ -241,9 +378,95 @@ func parseDetails(data []byte) (Details, error) {
 			if e1 == nil && e2 == nil {
 				d.Networks = append(d.Networks, Network{Name: detailText(p[1], 64), Received: rx, Sent: tx})
 			}
+		case "netaddr":
+			if len(p) != 3 {
+				continue
+			}
+			name, address := detailText(p[1], 64), detailText(p[2], 64)
+			if name == "" || address == "" {
+				continue
+			}
+			if list := addresses[name]; len(list) < maxNetworkAddresses && !hasAddress(list, address) {
+				addresses[name] = append(list, address)
+			}
+		case "listen":
+			// listen\t<proto>\t<address>\t<port>\t<process>\t<pid>
+			if len(p) != 6 || len(d.Listens) >= maxListens {
+				continue
+			}
+			port, err := strconv.Atoi(p[3])
+			if err != nil || port < 1 || port > 65535 {
+				continue
+			}
+			pid, err := strconv.Atoi(p[5])
+			if err != nil || pid < 0 {
+				pid = 0
+			}
+			d.Listens = append(d.Listens, Listen{
+				Proto: detailText(p[1], 8), Address: detailText(p[2], 64),
+				Port: port, Process: detailText(p[4], 64), PID: pid,
+			})
+		case "proc":
+			// proc\t<pid>\t<cpu>\t<mem%>\t<rss KB>\t<name>
+			if len(p) != 6 || len(d.Processes) >= maxProcesses {
+				continue
+			}
+			pid, err := strconv.Atoi(p[1])
+			if err != nil || pid < 1 {
+				continue
+			}
+			cpu, ok1 := detailFloat(p[2])
+			percent, ok2 := detailFloat(p[3])
+			rss, ok3 := detailBytes(p[4])
+			name := detailText(p[5], 64)
+			if !ok1 || !ok2 || !ok3 || name == "" {
+				continue
+			}
+			d.Processes = append(d.Processes, Process{
+				PID: pid, Name: name, CPUPercent: min(cpu, 100),
+				MemoryPercent: min(percent, 100), MemoryBytes: rss,
+			})
+		case "mem":
+			// mem\t<total>\t<available>\t<free>\t<buffers>\t<cached>\t<swap total>\t<swap free> in KB
+			if len(p) != 8 {
+				continue
+			}
+			total, ok1 := detailBytes(p[1])
+			available, ok2 := detailBytes(p[2])
+			free, ok3 := detailBytes(p[3])
+			buffers, ok4 := detailBytes(p[4])
+			cached, ok5 := detailBytes(p[5])
+			if !ok1 || !ok2 || !ok3 || !ok4 || !ok5 || total == 0 {
+				continue
+			}
+			swapTotal, ok6 := detailBytes(p[6])
+			swapFree, ok7 := detailBytes(p[7])
+			if !ok6 || !ok7 {
+				continue
+			}
+			d.Memory = MemoryDetail{Total: total, Available: min(available, total), Free: min(free, total),
+				Buffers: min(buffers, total), Cached: min(cached, total),
+				SwapTotal: swapTotal, SwapFree: min(swapFree, swapTotal)}
 
 		}
 	}
+	for i := range d.Networks {
+		d.Networks[i].Addresses = networkAddresses(addresses[d.Networks[i].Name])
+	}
+	sort.SliceStable(d.Listens, func(i, j int) bool {
+		if d.Listens[i].Port != d.Listens[j].Port {
+			return d.Listens[i].Port < d.Listens[j].Port
+		}
+		return d.Listens[i].Proto < d.Listens[j].Proto
+	})
+	// The rows are kept in CPU order whichever sort the panel shows: a later
+	// re-order is the panel's, over the reading the host has already given.
+	sort.SliceStable(d.Processes, func(i, j int) bool {
+		if d.Processes[i].CPUPercent != d.Processes[j].CPUPercent {
+			return d.Processes[i].CPUPercent > d.Processes[j].CPUPercent
+		}
+		return d.Processes[i].PID < d.Processes[j].PID
+	})
 	if d.CPUCount == 0 {
 		return Details{}, fmt.Errorf("%w: no system details", ErrMalformed)
 	}
@@ -258,6 +481,36 @@ func parseDetails(data []byte) (Details, error) {
 		return a.Percent > b.Percent
 	})
 	return d, nil
+}
+
+// networkAddresses keeps what one row shows of an interface's addresses: the
+// platform's own text, at most maxNetworkAddresses, IPv4 before IPv6, no
+// duplicates.
+func networkAddresses(values []string) []string {
+	out := make([]string, 0, maxNetworkAddresses)
+	for _, value := range values {
+		address := detailText(value, 64)
+		if address == "" || hasAddress(out, address) {
+			continue
+		}
+		out = append(out, address)
+		if len(out) == maxNetworkAddresses {
+			break
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return !strings.Contains(out[i], ":") && strings.Contains(out[j], ":")
+	})
+	return out
+}
+
+func hasAddress(list []string, address string) bool {
+	for _, existing := range list {
+		if existing == address {
+			return true
+		}
+	}
+	return false
 }
 
 func detailText(value string, limit int) string {

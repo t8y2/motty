@@ -3215,6 +3215,14 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return state.noteExitKey(event)
 	}
 	defer state.afterEvent(&outcome)
+	// The resource monitor's process details are layered over the terminal page
+	// without a modal behind them: take the keys the dialog owns, and nothing
+	// else, so the shell underneath does not read them.
+	if state.remote.processDetails.fromMonitor {
+		if result, handled := state.remoteProcessDetailsKey(event); handled {
+			return result
+		}
+	}
 	if state.modal == modalNone && state.terminalPage() {
 		if view := state.workspaceRemoteLogs(state.deck.ActiveWorkspace()); view != nil && view.formMode == remoteLogFormNone {
 			if event.Target == hitRemoteLogOutput {

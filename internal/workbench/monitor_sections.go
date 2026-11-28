@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -14,7 +15,31 @@ const monitorControlsHeight = float32(44)
 const monitorTileHeight = float32(128)
 const monitorLowerTileHeight = float32(128)
 const monitorGap = float32(10)
+
+// monitorNetworkRowHeight is one interface row: its name over its addresses,
+// with what it is carrying on the right.
+const monitorNetworkRowHeight = float32(40)
+
+// monitorListenRowHeight is one listening socket's row: its address and port on
+// the left, the process that owns it on the right.
+const monitorListenRowHeight = float32(32)
+
+// monitorProcessRowHeight is one process row: its name and pid on the left, its
+// CPU and memory shares on the right.
+const monitorProcessRowHeight = float32(44)
+
+// monitorProcessSearchRow is the room the search box takes inside the process
+// card, under its header.
+const monitorProcessSearchRow = float32(44)
+
+// monitorMemoryRowHeight is one line of the memory breakdown: the pool it names
+// on the left, how much of the host's memory is in it on the right.
+const monitorMemoryRowHeight = float32(26)
 const monitorHostSummaryHeight = float32(112)
+
+// monitorHintHeight is the line under the process list that points at the
+// window which lists every process the host runs.
+const monitorHintHeight = float32(22)
 const monitorHardwareHeaderHeight = float32(32)
 const monitorHardwareFactHeight = float32(22)
 const monitorBottomPadding = float32(20)
@@ -129,15 +154,43 @@ func monitorDisksHeight(p *monitorView) float32 {
 	}
 	return h
 }
+
+// monitorMemoryHeight is the room the memory breakdown takes: its header alone
+// while collapsed, and one line per pool while open, over its bottom padding.
+func monitorMemoryHeight(p *monitorView) float32 {
+	if !p.memoryOpen {
+		return 32
+	}
+	return 32 + 8 + float32(len(p.memoryRows))*monitorMemoryRowHeight + 8
+}
+
+// monitorProcessRowsHeight is the room the rows take: one row each, or the line
+// that says the list is empty, over the card's bottom padding.
+func monitorProcessRowsHeight(p *monitorView) float32 {
+	return float32(max(1, len(p.procShown)))*monitorProcessRowHeight + 8
+}
+
+// monitorProcessHeight is the room the process card takes: its header alone while
+// collapsed, and its search box plus one row per process while open.
+func monitorProcessHeight(p *monitorView) float32 {
+	if !p.procsOpen {
+		return 32
+	}
+	return 32 + monitorProcessSearchRow + monitorProcessRowsHeight(p)
+}
 func monitorContentHeight(p *monitorView, currentSSHUser string) float32 {
 	h := float32(8)
 	switch p.page {
 	case 0:
 		h += monitorTileHeight + monitorLowerTileHeight + monitorGap*3 + monitorHostSummaryHeight + monitorCoresBlock(p) + monitorDisksHeight(p)
 	case 1:
-		h += monitorTileHeight + monitorGap + monitorDisksHeight(p)
+		h += monitorTileHeight + monitorGap + monitorCoresBlock(p) + monitorMemoryHeight(p) + monitorGap
+		h += monitorProcessHeight(p) + monitorGap + monitorHintHeight
 	case 2:
-		h += 142 + monitorGap + 32 + float32(max(1, len(p.networks)))*34 + 8
+		h += monitorTileHeight + monitorGap + monitorDisksHeight(p)
+	case 3:
+		h += 142 + monitorGap + 32 + float32(max(1, len(p.networks)))*monitorNetworkRowHeight + 8
+		h += monitorGap + monitorListensHeight(p)
 	}
 	if p.page == 0 {
 		h += monitorGap + monitorHardwareHeight(p)
@@ -438,6 +491,117 @@ func (s *State) paintMonitorDisks(c *gfx.Canvas, p *monitorView, b, viewport gfx
 	}
 }
 
+// paintMonitorMemory draws the host's memory as its kernel divides it: one line
+// per pool, the pool on the left and how much of the host is in it on the right.
+func (s *State) paintMonitorMemory(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
+	colors, m := s.monitorColors(), s.messages.Monitor
+	if monitorRowVisible(viewport, b.Y, b.Height) {
+		c.RoundedBorder(b, cornerPx(10), 1, colors.border, colors.surface)
+	}
+	if monitorRowVisible(viewport, b.Y, 32) {
+		s.monitorSection(c, hitMonitorMemory, gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}, m.MemoryInfoSection, icons.MemoryStick, colors.memory, p.memoryOpen)
+	}
+	if !p.memoryOpen {
+		return
+	}
+	if monitorRowVisible(viewport, b.Y+32, 1) {
+		c.Fill(gfx.Rect{X: b.X, Y: b.Y + 32, Width: b.Width, Height: 1}, colors.border)
+	}
+	x, y, w := b.X+10, b.Y+40, b.Width-20
+	for _, row := range p.memoryRows {
+		if monitorRowVisible(viewport, y, monitorMemoryRowHeight) {
+			monitorLabel(c, row.label, gfx.Rect{X: x, Y: y, Width: w * .5, Height: monitorMemoryRowHeight}, 11, colors.muted, gfx.WeightRegular)
+			monitorRight(c, row.value, gfx.Rect{X: x + w*.5, Y: y, Width: w * .5, Height: monitorMemoryRowHeight}, 11, colors.text, gfx.WeightMedium)
+		}
+		y += monitorMemoryRowHeight
+	}
+}
+
+// paintMonitorProcessHeader paints the process card's top row: what the list is,
+// how many rows it reported, whether it is open, and the sort control, whose
+// menu hangs off the rectangle this painter last left.
+func (s *State) paintMonitorProcessHeader(c *gfx.Canvas, p *monitorView, b gfx.Rect) {
+	colors, m := s.monitorColors(), s.messages.Monitor
+	p.sortAnchor = gfx.Rect{}
+	header := gfx.Rect{X: b.X, Y: b.Y, Width: b.Width, Height: 32}
+	if c.Hovered() == hitMonitorProcesses {
+		c.Rounded(header.Inset(gfx.Insets{Left: 1, Right: 1, Top: 1}), cornerPx(9), s.pal.surfaceSoft)
+	}
+	c.DrawIcon(icons.Process, gfx.Rect{X: header.X + 10, Y: header.Y + (header.Height-14)/2, Width: 14, Height: 14}, colors.cpu)
+	monitorLabel(c, fmt.Sprintf("%s · %d", m.ProcessSection, len(p.procs)), gfx.Rect{X: header.X + 31, Y: header.Y, Width: header.Width - 62, Height: header.Height}, 12, colors.text, gfx.WeightSemibold)
+	glyph := iconChevronRight
+	if p.procsOpen {
+		glyph = iconChevronDown
+	}
+	c.DrawIcon(lucideIcons[glyph], gfx.Rect{X: header.X + header.Width - 23, Y: header.Y + (header.Height-12)/2, Width: 12, Height: 12}, colors.muted)
+	// The header collapses the card; the sort control drawn over it keeps its
+	// own hit, so the two never answer the same press.
+	c.HitWithOptions(hitMonitorProcesses, header, m.ProcessSection, gfx.HitOptions{Role: gfx.RoleButton, Expandable: true, Expanded: p.procsOpen})
+	sortButton := gfx.Rect{X: header.X + header.Width - 51, Y: header.Y + 4, Width: 24, Height: 24}
+	sorts := [4]string{m.SortCPU, m.SortMemory, m.SortPID, m.SortName}
+	s.paintIconButtonWithOptions(c, hitMonitorProcSort, iconArrowUpDown, sortButton, m.SortBy, false, iconButtonQuiet,
+		colors.surface, 0, gfx.HitOptions{Expandable: true, Expanded: p.sortMenu, Value: sorts[p.procSort]})
+	p.sortAnchor = sortButton
+	// The divider belongs to the open card, under its header. A collapsed card
+	// ends at this row: drawing it there would double the card's bottom border.
+	if p.procsOpen {
+		c.Fill(gfx.Rect{X: b.X, Y: b.Y + 31, Width: b.Width, Height: 1}, colors.border)
+	}
+}
+
+// paintMonitorProcessRows draws the rows the card shows, in the order the sort
+// control chose. The card's surface, border and header are the page's, so this
+// painter fills only the room the rows take.
+func (s *State) paintMonitorProcessRows(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
+	colors, m := s.monitorColors(), s.messages.Monitor
+	x, y, w := b.X+10, b.Y, b.Width-20
+	if len(p.procShown) == 0 {
+		empty := m.ProcessEmpty
+		if session := s.contextSession(); session != nil && monitorSystem(session) == sshconn.SystemWindows {
+			empty = m.Unavailable
+		} else if len(p.procs) > 0 {
+			empty = m.ProcessNoMatch
+		}
+		if monitorRowVisible(viewport, y, monitorProcessRowHeight) {
+			monitorLabel(c, empty, gfx.Rect{X: x, Y: y, Width: w, Height: monitorProcessRowHeight}, 11, colors.muted, gfx.WeightRegular)
+		}
+		return
+	}
+	for index, process := range p.procShown {
+		if monitorRowVisible(viewport, y, monitorProcessRowHeight) {
+			row := gfx.Rect{X: b.X, Y: y, Width: b.Width, Height: monitorProcessRowHeight}
+			// A row cut by the viewport edge keeps only the part on screen, so
+			// neither its surface nor its hit reaches the footer.
+			visible := monitorClipRow(viewport, row)
+			// The row under the pointer or the row the open menu belongs to
+			// reads as one surface, so the hit and the action are the same row.
+			if c.Hovered() == hitMonitorProcRows.At(index) || p.procMenu && p.procMenuPID == process.pid {
+				c.Rounded(visible.Inset(gfx.Insets{Left: 4, Right: 4, Top: 2, Bottom: 2}), cornerPx(7), s.pal.surfaceSoft)
+			}
+			monitorLabel(c, fmt.Sprintf("%s · %d", process.name, process.pid),
+				gfx.Rect{X: x, Y: y + 2, Width: w * .58, Height: 20}, 11, colors.text, gfx.WeightMedium)
+			monitorRight(c, process.cpu, gfx.Rect{X: x + w*.58, Y: y + 2, Width: w * .42, Height: 20}, 10, colors.cpu, gfx.WeightMedium)
+			monitorLabel(c, process.rss, gfx.Rect{X: x, Y: y + 22, Width: w * .58, Height: 18}, 9, colors.muted, gfx.WeightRegular)
+			monitorRight(c, process.memory, gfx.Rect{X: x + w*.58, Y: y + 22, Width: w * .42, Height: 18}, 9, colors.memory, gfx.WeightRegular)
+			c.HitWithOptions(hitMonitorProcRows.At(index), visible, process.name, gfx.HitOptions{Role: gfx.RoleButton})
+		}
+		y += monitorProcessRowHeight
+	}
+}
+
+// monitorClipRow keeps the part of a row the viewport shows. A caller that has
+// already tested monitorRowVisible gets a rect with some height back.
+func monitorClipRow(viewport, row gfx.Rect) gfx.Rect {
+	if row.Y < viewport.Y {
+		cut := viewport.Y - row.Y
+		row.Y, row.Height = viewport.Y, row.Height-cut
+	}
+	if bottom := viewport.Y + viewport.Height; row.Y+row.Height > bottom {
+		row.Height = max(0, bottom-row.Y)
+	}
+	return row
+}
+
 func monitorSystemName(system sshconn.RemoteSystem) string {
 	if system == sshconn.SystemUnknown {
 		return "—"
@@ -580,28 +744,136 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, session *Session, v *remoteS
 			h = monitorLoginsHeight(p, currentSSHUser)
 			s.paintMonitorLogins(c, p, currentSSHUser, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
 		}
-	case 1:
+	case 2:
 		s.monitorTile(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorTileHeight}, m.PrimaryDisk, p.diskText, p.diskCapacity, icons.HardDrive, colors.disk, monitorDisk)
 		y += monitorTileHeight + monitorGap
 		s.paintMonitorDisks(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorDisksHeight(p)}, viewport)
-	case 2:
+	case 3:
 		s.paintMonitorNetworkTile(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: 142}, true)
 		y += 142 + monitorGap
-		h := float32(32 + max(1, len(p.networks))*34 + 8)
+		h := 32 + float32(max(1, len(p.networks)))*monitorNetworkRowHeight + 8
 		c.RoundedBorder(gfx.Rect{X: x, Y: y, Width: w, Height: h}, cornerPx(10), 1, colors.border, colors.surface)
 		monitorLabel(c, m.NetworkSection, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 32}, 12, colors.text, gfx.WeightSemibold)
 		y += 32
 		if len(p.networks) == 0 {
-			if monitorRowVisible(viewport, y, 34) {
-				monitorLabel(c, p.networkText, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: 34}, 11, colors.muted, gfx.WeightRegular)
+			if monitorRowVisible(viewport, y, monitorNetworkRowHeight) {
+				monitorLabel(c, p.networkText, gfx.Rect{X: x + 10, Y: y, Width: w - 20, Height: monitorNetworkRowHeight}, 11, colors.muted, gfx.WeightRegular)
 			}
 		}
 		for _, n := range p.networks {
-			if monitorRowVisible(viewport, y, 34) {
-				monitorLabel(c, n.name, gfx.Rect{X: x + 10, Y: y, Width: w*.45 - 10, Height: 34}, 10, colors.muted, gfx.WeightRegular)
-				monitorRight(c, n.rates, gfx.Rect{X: x + w*.45, Y: y, Width: w*.55 - 10, Height: 34}, 10, colors.text, gfx.WeightRegular)
+			if monitorRowVisible(viewport, y, monitorNetworkRowHeight) {
+				nameWidth := w*.45 - 10
+				monitorLabel(c, n.name, gfx.Rect{X: x + 10, Y: y + 3, Width: nameWidth, Height: 18}, 10, colors.text, gfx.WeightRegular)
+				if n.addr != "" {
+					monitorLabel(c, n.addr, gfx.Rect{X: x + 10, Y: y + 20, Width: nameWidth, Height: 14}, 9, colors.muted, gfx.WeightRegular)
+				}
+				monitorRight(c, n.rates, gfx.Rect{X: x + w*.45, Y: y, Width: w*.55 - 10, Height: monitorNetworkRowHeight}, 10, colors.text, gfx.WeightRegular)
 			}
-			y += 34
+			y += monitorNetworkRowHeight
+		}
+		// The interfaces box is h tall and the rows only walked its header and
+		// rows: step over its bottom padding before the gap, or the next card
+		// sits against it.
+		y += 8 + monitorGap
+		h = monitorListensHeight(p)
+		c.RoundedBorder(gfx.Rect{X: x, Y: y, Width: w, Height: h}, cornerPx(10), 1, colors.border, colors.surface)
+		listensTitle := fmt.Sprintf("%s · %d", m.ListenSection, len(p.listens))
+		if session := s.contextSession(); session != nil && monitorSystem(session) == sshconn.SystemWindows {
+			listensTitle = m.ListenSection
+		}
+		s.monitorSection(c, hitMonitorListens, gfx.Rect{X: x, Y: y, Width: w, Height: 32},
+			listensTitle, icons.Server, colors.network, p.listensOpen)
+		if !p.listensOpen {
+			break
+		}
+		c.Fill(gfx.Rect{X: x, Y: y + 32, Width: w, Height: 1}, colors.border)
+		rowY := y + 40
+		if len(p.listens) == 0 {
+			empty := m.NoListens
+			if session := s.contextSession(); session != nil && monitorSystem(session) == sshconn.SystemWindows {
+				empty = m.Unavailable
+			}
+			monitorLabel(c, empty, gfx.Rect{X: x + 10, Y: rowY, Width: w - 20, Height: monitorListenRowHeight}, 11, colors.muted, gfx.WeightRegular)
+			break
+		}
+		for _, l := range p.listens {
+			if monitorRowVisible(viewport, rowY, monitorListenRowHeight) {
+				tint := colors.network
+				if strings.HasPrefix(l.proto, "udp") {
+					tint = colors.cpu
+				}
+				monitorLabel(c, l.proto, gfx.Rect{X: x + 10, Y: rowY, Width: 34, Height: monitorListenRowHeight}, 9, tint, gfx.WeightMedium)
+				monitorLabel(c, fmt.Sprintf("%s:%d", l.address, l.port), gfx.Rect{X: x + 44, Y: rowY, Width: w*.50 - 44, Height: monitorListenRowHeight}, 10, colors.text, gfx.WeightRegular)
+				monitorRight(c, monitorListenOwner(l), gfx.Rect{X: x + w*.52, Y: rowY, Width: w*.48 - 10, Height: monitorListenRowHeight}, 10, colors.muted, gfx.WeightRegular)
+			}
+			rowY += monitorListenRowHeight
 		}
 	}
+}
+
+// monitorProcessTopHeight is the part of the process tab above its card: the
+// two meters, the cores and the memory breakdown, and the gap under the last
+// card for the one that follows it.
+func monitorProcessTopHeight(p *monitorView) float32 {
+	return 8 + monitorTileHeight + monitorGap + monitorCoresBlock(p) + monitorMemoryHeight(p) + monitorGap
+}
+
+// monitorProcessHintHeight is the line under the card and the page's bottom
+// padding after it.
+func monitorProcessHintHeight() float32 {
+	return monitorGap + monitorHintHeight + monitorBottomPadding
+}
+
+// paintMonitorProcessTop draws the process tab down to the memory card; the
+// search box and the list follow it as declarations of the page.
+func (s *State) paintMonitorProcessTop(c *gfx.Canvas, p *monitorView, b, viewport gfx.Rect) {
+	colors, m := s.monitorColors(), s.messages.Monitor
+	x, y, w := b.X+monitorInset, b.Y+8, max(0, b.Width-monitorInset*2)
+	half := (w - monitorGap) / 2
+	s.monitorTile(c, p, gfx.Rect{X: x, Y: y, Width: half, Height: monitorTileHeight}, m.CPU, p.cpuText, p.cpuNote, icons.Cpu, colors.cpu, monitorCPU)
+	s.monitorTile(c, p, gfx.Rect{X: x + half + monitorGap, Y: y, Width: half, Height: monitorTileHeight}, m.Memory, p.memoryText, p.memoryCapacity, icons.MemoryStick, colors.memory, monitorMemory)
+	y += monitorTileHeight + monitorGap
+	if !p.noPerCore {
+		h := monitorCoresHeight(p)
+		s.paintMonitorCores(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: h}, viewport)
+		y += h + monitorGap
+	}
+	s.paintMonitorMemory(c, p, gfx.Rect{X: x, Y: y, Width: w, Height: monitorMemoryHeight(p)}, viewport)
+}
+
+// paintMonitorProcessHint paints, under the card, where the whole host's list
+// lives: this page shows what it samples, not every process.
+func (s *State) paintMonitorProcessHint(c *gfx.Canvas, b, viewport gfx.Rect) {
+	y := b.Y + monitorGap
+	if !monitorRowVisible(viewport, y, monitorHintHeight) {
+		return
+	}
+	monitorCenter(c, s.messages.Monitor.ProcessFullListHint,
+		gfx.Rect{X: b.X + monitorInset, Y: y, Width: max(0, b.Width-2*monitorInset), Height: monitorHintHeight},
+		10, s.monitorColors().muted, gfx.WeightRegular)
+}
+
+// monitorListensHeight is the room the listening-port section takes: its header
+// alone while collapsed, and one row per socket while open.
+func monitorListensHeight(p *monitorView) float32 {
+	if !p.listensOpen {
+		return 32
+	}
+	if len(p.listens) == 0 {
+		return 32 + 8 + monitorListenRowHeight + 8
+	}
+	return 32 + 8 + float32(len(p.listens))*monitorListenRowHeight + 8
+}
+
+// monitorListenOwner is the process that owns the socket, with its pid where the
+// host reports one. The protocol has its own column, so an unknown owner is a
+// dash rather than a second reading of it.
+func monitorListenOwner(l monitorListenText) string {
+	if l.process != "" && l.process != "-" {
+		if l.pid > 0 {
+			return fmt.Sprintf("%s %d", l.process, l.pid)
+		}
+		return l.process
+	}
+	return "—"
 }

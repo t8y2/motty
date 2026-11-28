@@ -93,11 +93,26 @@ while ($true) {
     }
     $net=@(); $netOK=$true
     try {
+        # The addresses of each adapter, keyed by description: a performance
+        # counter's instance name spells the trademark 'Intel[R]' where an
+        # adapter description spells it 'Intel(R)', so the name is folded to the
+        # description's spelling before the two are matched.
+        $adapters=@{}
+        try {
+            foreach ($a in (Query 'Win32_NetworkAdapterConfiguration' | Where-Object { $_.IPEnabled -eq $true } | Select-Object -First 16)) {
+                $desc=([string]$a.Description) -replace '\[R\]','(R)' -replace '\[TM\]','(TM)'
+                $addresses=@($a.IPAddress | Where-Object { $_ -and ([string]$_).Length -le 64 } | Select-Object -First 4)
+                if ($desc -and $addresses.Count -gt 0) { $adapters[$desc]=$addresses }
+            }
+        } catch { }
         foreach ($n in (Query 'Win32_PerfFormattedData_Tcpip_NetworkInterface' | Select-Object -First 16)) {
             if ($n.Name -match '(?i)loopback') { continue }
             if ($null -eq $n.BytesReceivedPersec -or $null -eq $n.BytesSentPersec) { $netOK=$false; continue }
             $name=[string]$n.Name; if ($name.Length -gt 64) { $name=$name.Substring(0,64) }
-            $net+=@{name=$name;rx=[uint64]$n.BytesReceivedPersec;tx=[uint64]$n.BytesSentPersec}
+            $entry=@{name=$name;rx=[uint64]$n.BytesReceivedPersec;tx=[uint64]$n.BytesSentPersec}
+            $key=([string]$n.Name) -replace '\[R\]','(R)' -replace '\[TM\]','(TM)'
+            if ($adapters.ContainsKey($key)) { $entry['addr']=$adapters[$key] }
+            $net+=$entry
         }
     } catch { $netOK=$false }
     if ($net.Count -eq 0) { $netOK=$false }
@@ -136,6 +151,7 @@ func parseWindows(line []byte) (Result, error) {
 		Net []struct {
 			Name   string
 			RX, TX uint64
+			Addr   []string `json:"addr"`
 		}
 		NetworkAvailable bool
 		GPUs             []windowsGPUReading
@@ -175,7 +191,7 @@ func parseWindows(line []byte) (Result, error) {
 		}
 		s.ReceiveBytesPerSecond += n.RX
 		s.SendBytesPerSecond += n.TX
-		d.Networks = append(d.Networks, Network{Name: detailText(n.Name, 64), ReceivePerSecond: n.RX, SendPerSecond: n.TX, HasRate: true, TotalsUnavailable: true})
+		d.Networks = append(d.Networks, Network{Name: detailText(n.Name, 64), ReceivePerSecond: n.RX, SendPerSecond: n.TX, HasRate: true, TotalsUnavailable: true, Addresses: networkAddresses(n.Addr)})
 	}
 	for _, disk := range r.Meta.Disks {
 		if disk.Total == 0 || disk.Free > disk.Total {
