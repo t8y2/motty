@@ -720,6 +720,11 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 	case hitSettingsVerticalTabsGrouping:
 		changed = state.setVerticalTabsGrouping(!state.verticalTabs.grouping)
+	case hitSettingsAppearanceFollowTerminal:
+		state.appearanceFollowTerminal = !state.appearanceFollowTerminal
+		state.rebuildTerminalLook()
+		state.invalidateRemoteToolsWindows()
+		changed = true
 	case hitSettingsTextSizeDown:
 		changed = state.setInterfaceTextSize(state.interfaceTextSize - interfaceTextSizeStep)
 	case hitSettingsTextSizeUp:

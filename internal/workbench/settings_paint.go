@@ -384,6 +384,7 @@ func (state *State) paintAppearanceSettings(page *settingsPage) {
 		page.group("", func() {
 			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
 				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
+			page.toggleRow(messages.SettingsAppearanceFollowTerminal, messages.SettingsAppearanceFollowTerminalDescription, state.appearanceFollowTerminal, hitSettingsAppearanceFollowTerminal)
 			if state.terminalTransparent() {
 				state.paintTerminalTransparencySetting(page)
 			}
