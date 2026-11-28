@@ -251,6 +251,7 @@ func (state *State) paintAISettings(page *settingsPage) {
 		state.paintAICLIAuth(page)
 		state.paintAIModels(page)
 		state.paintAIBehaviour(page)
+		state.declareAISuggestionLibrary(page)
 	})
 }
 
@@ -855,6 +856,8 @@ func (state *State) declareAIDialogs(c ui.C) {
 		state.declareAIProbe(c)
 	case aiDialogModelReasoning:
 		state.declareAIReasoning(c)
+	case aiDialogSuggestionEdit:
+		state.declareAISuggestionEditor(c)
 	}
 }
 

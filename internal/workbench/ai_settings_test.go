@@ -1277,20 +1277,28 @@ func TestSettingsPageScrollsToTheAssistantSection(t *testing.T) {
 	if state.settingsContent <= size.Height {
 		t.Fatalf("the page (%v) is not taller than the window", state.settingsContent)
 	}
-	for range 80 {
-		state.scrollSettings(gfx.ScrollEvent{DeltaY: 200, Precise: true})
+	groups := map[string]bool{
+		state.messages.AISettings.BehaviourTitle:  false,
+		state.messages.AISettings.SuggestionTitle: false,
 	}
-	canvas = gfx.Canvas{}
-	state.Paint(&canvas, size)
-	var visible bool
-	for _, text := range canvas.Texts() {
-		if text.Value == state.messages.AISettings.BehaviourTitle && text.Bounds.Y > 0 && text.Bounds.Y < size.Height {
-			visible = true
+	for range 80 {
+		for _, text := range canvas.Texts() {
+			if _, tracked := groups[text.Value]; tracked && text.Bounds.Y > 0 && text.Bounds.Y+text.Bounds.Height < size.Height {
+				groups[text.Value] = true
+			}
+		}
+		if !state.scrollSettings(gfx.ScrollEvent{DeltaY: 100, Precise: true}).Repaint {
+			break
+		}
+		canvas = gfx.Canvas{}
+		state.Paint(&canvas, size)
+	}
+	for title, visible := range groups {
+		if !visible {
+			t.Errorf("%q is not reachable by scrolling (scroll %v of %v)", title, state.settingsScroll, state.settingsContent)
 		}
 	}
-	if !visible {
-		t.Fatalf("the last group is not reachable by scrolling (scroll %v of %v)", state.settingsScroll, state.settingsContent)
-	}
+	panelHit(t, &canvas, hitAISetSuggestAdd)
 }
 
 func TestAISettingsDialogBlocksThePageBehindIt(t *testing.T) {

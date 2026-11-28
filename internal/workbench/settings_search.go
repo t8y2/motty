@@ -325,6 +325,8 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	group(settingsAssistant, ai.BehaviourTitle, ai.Redact, ai.RedactDesc)
 	group(settingsAssistant, ai.BehaviourTitle, ai.History, ai.HistoryDesc)
 	group(settingsAssistant, ai.BehaviourTitle, ai.ClearHistory, ai.ClearHistoryDesc)
+	group(settingsAssistant, ai.SuggestionTitle, ai.SuggestionCategory, ai.SuggestionCommandDesc)
+	group(settingsAssistant, ai.SuggestionTitle, ai.SuggestionAdd, ai.SuggestionCommand)
 
 	row(settingsMCP, ai.MCPEnable, ai.MCPEnableDesc)
 	group(settingsMCP, ai.MCPHTTPTitle, ai.MCPHTTPTitle, ai.MCPHTTPDescription)

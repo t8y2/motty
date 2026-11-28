@@ -608,34 +608,50 @@ func TestSettingsPageScrollsWhenTheWindowIsShort(t *testing.T) {
 		state.Paint(&canvas, size)
 		return &canvas
 	}
-	canvas := paint()
-	last, ok := hitByID(canvas, hitAISetClearHistory)
-	if ok && last.Bounds.Y+last.Bounds.Height <= size.Height {
-		t.Fatalf("the last row already fits a short window: %+v", last.Bounds)
+	visible := func(canvas *gfx.Canvas, id gfx.ID) bool {
+		viewport := panelHit(t, canvas, hitSettingsViewport).Bounds
+		hit, ok := hitByID(canvas, id)
+		return ok && hit.Bounds.Height > 0 && hit.Bounds.Y >= viewport.Y &&
+			hit.Bounds.Y+hit.Bounds.Height <= viewport.Y+viewport.Height
 	}
-	if state.settingsContent <= size.Height {
-		t.Fatalf("page height %v does not exceed the window", state.settingsContent)
+	canvas := paint()
+	if visible(canvas, hitAISetSuggestAdd) {
+		t.Fatal("the last row already fits a short window")
+	}
+	bottom := state.settingsContent - state.settings.pageView
+	if bottom <= 0 {
+		t.Fatalf("page height %v does not exceed the viewport %v", state.settingsContent, state.settings.pageView)
 	}
 
-	// A positive delta reveals content below; far enough reveals the last row and then stops.
-	for range 120 {
+	clearHistorySeen := visible(canvas, hitAISetClearHistory)
+	for state.settingsScroll < bottom {
+		previous := state.settingsScroll
 		state.Scroll(gfx.ScrollEvent{DeltaY: 60, Precise: true, Viewport: size})
+		if state.settingsScroll <= previous {
+			t.Fatalf("scroll stopped at %v before the bottom %v", state.settingsScroll, bottom)
+		}
+		canvas = paint()
+		clearHistorySeen = clearHistorySeen || visible(canvas, hitAISetClearHistory)
 	}
-	canvas = paint()
-	last, ok = hitByID(canvas, hitAISetClearHistory) // the assistant's category ends the page
-	if !ok || last.Bounds.Y+last.Bounds.Height > size.Height {
-		t.Fatalf("after scrolling the last row is %+v, %v", last.Bounds, ok)
+	if !clearHistorySeen {
+		t.Error("Clear history was never fully visible while scrolling")
 	}
-	bottom := state.settingsScroll
+	if !visible(canvas, hitAISetSuggestAdd) {
+		t.Fatal("Add suggestion is not fully visible at the bottom")
+	}
 	state.Scroll(gfx.ScrollEvent{DeltaY: 60, Precise: true, Viewport: size})
 	if state.settingsScroll != bottom {
-		t.Fatalf("scrolled past the end: %v then %v", bottom, state.settingsScroll)
+		t.Fatalf("scroll = %v, want the bottom %v", state.settingsScroll, bottom)
 	}
 
-	// And back to the top, without going above it.
-	for range 80 {
+	for state.settingsScroll > 0 {
+		previous := state.settingsScroll
 		state.Scroll(gfx.ScrollEvent{DeltaY: -60, Precise: true, Viewport: size})
+		if state.settingsScroll >= previous {
+			t.Fatalf("scroll stopped at %v before the top", state.settingsScroll)
+		}
 	}
+	state.Scroll(gfx.ScrollEvent{DeltaY: -60, Precise: true, Viewport: size})
 	if state.settingsScroll != 0 {
 		t.Fatalf("scroll = %v, want the top", state.settingsScroll)
 	}

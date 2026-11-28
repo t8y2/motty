@@ -227,6 +227,7 @@ func (state *State) aiSelectedIDs() []uint32 {
 // aiSetSelected makes ids the ticked connections; the first becomes the default.
 // Sessions that are gone are skipped.
 func (state *State) aiSetSelected(ids []uint32) {
+	state.aiInvalidateSuggestions()
 	state.dropEscalationApprovals()
 	state.ai.retry, state.ai.answerOnly = false, false
 	state.ai.target, state.ai.extras = gate.SessionInfo{}, nil

@@ -298,6 +298,12 @@ func (state *State) activateTab(index int) bool {
 }
 
 func (state *State) syncActiveSession() {
+	previous := state.activeSessionID
+	defer func() {
+		if previous != state.activeSessionID && !state.ai.targetSet {
+			state.aiInvalidateSuggestions()
+		}
+	}()
 	workspaceID := state.deck.ActiveWorkspace()
 	if state.noteSidebarWorkspace != workspaceID {
 		if v := state.noteSidebars[state.noteSidebarWorkspace]; v != nil {
