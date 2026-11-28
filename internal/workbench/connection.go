@@ -314,9 +314,10 @@ type Options struct {
 	// pixel size, as the file panel shows an application bundle with its own icon.
 	// Nil uses app.FileIcon.
 	FileIcon func(path string, pixels int) (gfx.Bitmap, error)
-	// EditPollInterval is how often a file open in the system's editor is looked
-	// at for a save. Zero means a second.
-	EditPollInterval time.Duration
+	// EditQuietPeriod is how long a file open in the system's editor must stay
+	// as the editor wrote it before it is sent back. Zero means
+	// defaultEditQuietPeriod.
+	EditQuietPeriod time.Duration
 	// PreferredLanguages is the system's language list, most preferred first. It
 	// decides the language of a user who has not chosen one. Nil uses
 	// app.PreferredLanguages.
@@ -460,8 +461,8 @@ func (options Options) withDefaults() Options {
 	if options.FileIcon == nil {
 		options.FileIcon = app.FileIcon
 	}
-	if options.EditPollInterval <= 0 {
-		options.EditPollInterval = defaultEditPollInterval
+	if options.EditQuietPeriod <= 0 {
+		options.EditQuietPeriod = defaultEditQuietPeriod
 	}
 	if options.OpenURL == nil {
 		options.OpenURL = app.OpenURL
@@ -1012,9 +1013,7 @@ func (state *State) Wake() {
 	state.syncNoteWindows()
 	state.aiPumpCLILogin()
 	state.syncRemoteToolsWindows()
-	if len(state.edits.list) > 0 && !state.edits.watching {
-		state.watchExternalEdits()
-	}
+	state.pumpExternalEdits()
 	// Sessions were created, ended, or moved into a retry above: the network
 	// watcher follows the live ones, so idle windows poll nothing.
 	state.syncLinkWatch()

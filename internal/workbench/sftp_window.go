@@ -190,9 +190,7 @@ func (w *sftpWindow) wake() {
 		w.syncBorrowedConnection()
 	}
 	w.pump()
-	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
-		w.owner.watchExternalEdits()
-	}
+	w.owner.pumpExternalEdits()
 }
 
 // wakeEmbedded runs the per-browser work for a main-window tab. State.Wake has
@@ -204,9 +202,7 @@ func (w *sftpWindow) wakeEmbedded() {
 		return
 	}
 	w.pump()
-	if len(w.owner.edits.list) > 0 && !w.owner.edits.watching {
-		w.owner.watchExternalEdits()
-	}
+	w.owner.pumpExternalEdits()
 }
 
 func (w *sftpWindow) pump() {

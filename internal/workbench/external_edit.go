@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -20,17 +21,26 @@ import (
 // Editing a remote text file in the system's editor. The file is read through
 // the panel's SFTP worker (the same bounded UTF-8 read the built-in editor
 // uses), written to a private temporary folder and opened with the system. While
-// the edit is open a once-a-second look at that one file finds saves; each is
+// the edit is open, the system's notification for its private folder
+// (app.WatchDirectory) says when the editor wrote the file; the file is read off
+// the window thread, and once it has stayed the same for a quiet period it is
 // sent back with the content-identity check the built-in editor uses, so a file
-// that changed on the server in the meantime is never replaced unasked. The look
-// runs only while an edit is open, and the temporary folder goes with the edit.
+// that changed on the server in the meantime is never replaced unasked. Nothing
+// runs while the file is left alone: no timer, no polling. The temporary folder
+// goes with the edit.
 
 var (
 	hitSFTPEditExternal = tree.ID(sftpHits, "sftp-edit-external")
 )
 
 const (
-	defaultEditPollInterval = time.Second
+	// defaultEditQuietPeriod is how long a changed file must stay as it is
+	// before it is sent: an editor's save is a burst of writes and renames, and
+	// the copy is sent once, after the burst.
+	defaultEditQuietPeriod = 300 * time.Millisecond
+	// editUnwatchedLook is how often a file is looked at when its folder cannot
+	// be watched, the one case left that has to look without being told.
+	editUnwatchedLook = time.Second
 )
 
 var externalEditBOM = []byte{0xef, 0xbb, 0xbf}
@@ -93,6 +103,18 @@ type externalEdit struct {
 	badFile        bool
 	invalid        bool
 	remoteDiverged bool
+
+	// watch reports the editor's writes to the edit's private folder;
+	// unwatched says it could not be opened, and the file is then looked at on a
+	// timer instead.
+	watch     *app.DirectoryWatch
+	unwatched bool
+	// lookAt is when the file is next read, zero for not until the folder
+	// reports a write; lookStop cancels the wake asked for it. looking says a
+	// read is on its way, and lookAgain that a write came in meanwhile.
+	lookAt              time.Time
+	lookStop            func()
+	looking, lookAgain bool
 }
 
 type externalEdits struct {
@@ -112,8 +134,8 @@ type externalEdits struct {
 		binary bool
 		worker *sftpclient.Worker
 	}
-	watching bool
-	stop     chan struct{}
+	// names is the buffer the folders' changes are read into.
+	names []string
 }
 
 // safeLocalName keeps what a remote name may be as a local file name; see
@@ -160,7 +182,6 @@ func (state *State) startExternalEdit(session *Session, view *sftpView) {
 			view.errorText = message
 			state.fileOpenNotice(view.detached, existing.name, message, components.ToastWarning)
 		}
-		state.watchExternalEdits()
 		if err := state.openWithConfiguredEditor(existing.local); err != nil {
 			view.errorText = fmt.Sprintf(state.messages.Tools.ExtEditOpenFailedFmt, entry.Name, err)
 		}
@@ -238,6 +259,7 @@ func (state *State) externalEditResult(session *Session, view *sftpView, result 
 				edit.revision, edit.bom, edit.asking = revision, bom, false
 				edit.forceSend, edit.dirty = true, true
 				edit.retryAt, edit.retryWait = time.Time{}, 0
+				state.lookAtExternalEdit(edit, 0)
 			}
 			return true
 		}
@@ -274,6 +296,10 @@ func (state *State) externalEditResult(session *Session, view *sftpView, result 
 			view.errorText = ""
 			state.fileOpenNotice(view.detached, edit.name, view.status, components.ToastSuccess)
 			state.refreshSFTPAfterRemoteSave(view, result.Path)
+			if edit.dirty {
+				// The editor wrote again while this one was on its way.
+				state.lookAtExternalEdit(edit, 0)
+			}
 		case errors.Is(result.Err, sftpclient.ErrRemoteChanged):
 			edit.conflicted, edit.dirty = true, false
 			edit.remoteDiverged = true
@@ -329,94 +355,122 @@ func (state *State) openInSystemEditor(session *Session, view *sftpView, remote 
 	})
 	view.status = fmt.Sprintf(m.ExtEditOpenedFmt, name)
 	view.errorText = ""
-	state.watchExternalEdits()
+	state.watchExternalEdit(&state.edits.list[len(state.edits.list)-1])
 }
 
-// watchExternalEdits starts the once-a-second look, which runs while there is an
-// edit to look at and ends with the last one.
-func (state *State) watchExternalEdits() {
-	edits := &state.edits
-	if edits.watching || len(edits.list) == 0 {
+// watchExternalEdit opens the notification for the edit's private folder, which
+// holds the one file. The wake runs Wake on the window's loop, hidden or not.
+func (state *State) watchExternalEdit(edit *externalEdit) {
+	if edit.watch != nil || edit.unwatched {
 		return
 	}
-	edits.watching, edits.stop = true, make(chan struct{})
-	stop := edits.stop
-	interval := state.options.EditPollInterval
-	go func() {
-		defer func() {
-			state.aiPost(func(s *State) {
-				s.finishExternalEditWatch(stop)
-			})
-		}()
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-stop:
-				return
-			case <-ticker.C:
-				requests := make(chan []externalEditFile, 1)
-				if !state.aiPost(func(state *State) {
-					if state.edits.stop != stop {
-						return
-					}
-					files := make([]externalEditFile, 0, len(state.edits.list))
-					for _, edit := range state.edits.list {
-						files = append(files, externalEditFile{id: edit.id, path: edit.local, limit: externalEditLimit(edit.binary)})
-					}
-					requests <- files
-				}) {
-					if state.callbacksClosed.Load() {
-						return
-					}
-					continue
-				}
-				var files []externalEditFile
-				select {
-				case <-stop:
-					return
-				case files = <-requests:
-				}
-				for _, file := range files {
-					select {
-					case <-stop:
-						return
-					default:
-					}
-					file.data, file.info, file.err = readExternalEditFile(file.path, file.limit)
-					applied := make(chan struct{}, 1)
-					if !state.aiPost(func(state *State) {
-						if state.edits.stop == stop {
-							state.pollExternalEdits([]externalEditFile{file})
-						}
-						applied <- struct{}{}
-					}) {
-						if state.callbacksClosed.Load() {
-							return
-						}
-						break
-					}
-					select {
-					case <-stop:
-						return
-					case <-applied:
-					}
-				}
+	watch, err := app.WatchDirectory(edit.dir, state.postWake)
+	if err != nil {
+		edit.unwatched = true
+		state.lookAtExternalEdit(edit, editUnwatchedLook)
+		return
+	}
+	edit.watch = watch
+}
+
+// lookAtExternalEdit asks for the edit's file to be read after delay, or sooner
+// if a read was already asked for sooner.
+func (state *State) lookAtExternalEdit(edit *externalEdit, delay time.Duration) {
+	due := time.Now().Add(delay)
+	if !edit.lookAt.IsZero() && !due.Before(edit.lookAt) {
+		return
+	}
+	edit.lookAt = due
+	if edit.lookStop != nil {
+		edit.lookStop()
+	}
+	edit.lookStop = state.scheduleWake(delay)
+}
+
+// pumpExternalEdits reads what the folders reported, settles sends whose worker
+// ended, and starts the reads that are due. Wake calls it.
+func (state *State) pumpExternalEdits() {
+	now := time.Now()
+	for index := range state.edits.list {
+		edit := &state.edits.list[index]
+		state.watchExternalEdit(edit)
+		if edit.watch != nil {
+			changes := edit.watch.Changes(state.edits.names)
+			state.edits.names = changes.Names[:0]
+			name := filepath.Base(edit.local)
+			written := changes.Resync || slices.ContainsFunc(changes.Names, func(changed string) bool { return sameFileName(changed, name) })
+			if changes.Resync {
+				// Events were lost or the folder itself changed: watch it anew.
+				edit.watch.Close()
+				edit.watch = nil
+				state.watchExternalEdit(edit)
+			}
+			if written {
+				state.lookAtExternalEdit(edit, 0)
 			}
 		}
+		if edit.saving && edit.worker != nil {
+			select {
+			case <-edit.worker.Done():
+				state.lookAtExternalEdit(edit, 0)
+			default:
+			}
+		}
+		if !edit.lookAt.IsZero() && !now.Before(edit.lookAt) {
+			state.startExternalEditLook(edit)
+		}
+	}
+	state.askExternalConflict()
+}
+
+// startExternalEditLook reads the edit's file on a goroutine; the answer comes
+// back to the window thread. A write reported while it reads asks for one more.
+func (state *State) startExternalEditLook(edit *externalEdit) {
+	edit.lookAt = time.Time{}
+	if edit.lookStop != nil {
+		edit.lookStop()
+		edit.lookStop = nil
+	}
+	if edit.looking {
+		edit.lookAgain = true
+		return
+	}
+	edit.looking = true
+	file := externalEditFile{id: edit.id, path: edit.local, limit: externalEditLimit(edit.binary)}
+	go func() {
+		file.data, file.info, file.err = readExternalEditFile(file.path, file.limit)
+		state.aiPost(func(state *State) { state.finishExternalEditLook(file) })
 	}()
 }
 
-func (state *State) finishExternalEditWatch(stop chan struct{}) {
-	if state.edits.stop == stop {
-		state.edits.watching, state.edits.stop = false, nil
+func (state *State) finishExternalEditLook(file externalEditFile) {
+	edit := state.editByID(file.id)
+	if edit == nil || edit.local != file.path {
+		return
+	}
+	edit.looking = false
+	state.pollExternalEdits([]externalEditFile{file})
+	if edit = state.editByID(file.id); edit == nil {
+		return
+	}
+	switch {
+	case edit.lookAgain:
+		edit.lookAgain = false
+		state.lookAtExternalEdit(edit, 0)
+	case edit.unwatched:
+		state.lookAtExternalEdit(edit, editUnwatchedLook)
 	}
 }
 
-func (state *State) stopWatchingExternalEdits() {
-	if state.edits.watching {
-		close(state.edits.stop)
-		state.edits.watching, state.edits.stop = false, nil
+// closeExternalEdit lets go of what an edit holds besides its folder.
+func closeExternalEdit(edit *externalEdit) {
+	if edit.watch != nil {
+		edit.watch.Close()
+		edit.watch = nil
+	}
+	if edit.lookStop != nil {
+		edit.lookStop()
+		edit.lookStop = nil
 	}
 }
 
@@ -494,6 +548,7 @@ func (state *State) pollExternalEdits(files []externalEditFile) {
 		if edit.invalid && !changed {
 			continue
 		}
+		pending := edit.dirty || edit.forceSend || currentSum != edit.synced
 		switch {
 		case changed:
 			edit.seenSize, edit.seenTime = file.info.Size(), file.info.ModTime()
@@ -502,8 +557,12 @@ func (state *State) pollExternalEdits(files []externalEditFile) {
 			edit.kept = [sha256.Size]byte{}
 			edit.invalid = false
 			edit.retryAt, edit.retryWait = time.Time{}, 0
-		case (edit.dirty || edit.forceSend || currentSum != edit.synced) && !edit.saving && !time.Now().Before(edit.retryAt):
+			// Sent once it has stayed like this for the quiet period.
+			state.lookAtExternalEdit(edit, state.options.EditQuietPeriod)
+		case pending && !edit.saving && !time.Now().Before(edit.retryAt):
 			state.sendExternalEdit(edit, file.data)
+		case pending && !edit.saving:
+			state.lookAtExternalEdit(edit, time.Until(edit.retryAt))
 		}
 	}
 	state.askExternalConflict()
@@ -528,7 +587,7 @@ func (state *State) settleExternalSend(edit *externalEdit) {
 // externalEditHeldLocally reports whether the local copy holds content the
 // server does not have and nothing is on its way to it. Comparing the bytes is
 // what makes this true after a save the server refused to take, and after a
-// save the once-a-second look never recognised.
+// save no look recognised.
 func externalEditHeldLocally(edit *externalEdit) bool {
 	if edit.saving {
 		return false // a save is still on its way
@@ -617,6 +676,7 @@ func (state *State) retryExternalEdit(edit *externalEdit) {
 		}
 	}
 	edit.retryAt = time.Now().Add(edit.retryWait)
+	state.lookAtExternalEdit(edit, edit.retryWait)
 }
 
 // reportExternalEdit says a save did not reach the server, where the user can
@@ -711,6 +771,7 @@ func (state *State) dropExternalEdits(session uint32) {
 	kept := state.edits.list[:0]
 	for _, edit := range state.edits.list {
 		if session == 0 || edit.session == session {
+			closeExternalEdit(&edit)
 			_ = os.RemoveAll(edit.dir)
 			continue
 		}
@@ -721,9 +782,6 @@ func (state *State) dropExternalEdits(session uint32) {
 	if state.edits.opening.active && (session == 0 || state.edits.opening.session == session) {
 		state.edits.opening.active, state.edits.opening.worker = false, nil
 	}
-	if len(state.edits.list) == 0 {
-		state.stopWatchingExternalEdits()
-	}
 }
 
 func isExecutablePathError(err error) bool { return errors.Is(err, app.ErrExecutablePath) }
@@ -732,6 +790,7 @@ func (state *State) dropWindowExternalEdits(window *sftpWindow) {
 	kept := state.edits.list[:0]
 	for _, edit := range state.edits.list {
 		if edit.origin == window {
+			closeExternalEdit(&edit)
 			_ = os.RemoveAll(edit.dir)
 			continue
 		}
@@ -742,8 +801,5 @@ func (state *State) dropWindowExternalEdits(window *sftpWindow) {
 	if state.edits.opening.origin == window {
 		state.edits.opening.active, state.edits.opening.worker = false, nil
 		state.edits.opening.origin = nil
-	}
-	if len(kept) == 0 {
-		state.stopWatchingExternalEdits()
 	}
 }

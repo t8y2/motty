@@ -8,6 +8,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func externalEditSetup(t *testing.T) (*State, *Session, *workbenchSFTPRemote, *o
 		opened.paths = append(opened.paths, path)
 		return opened.err
 	}
-	state.options.EditPollInterval = 5 * time.Millisecond
+	state.options.EditQuietPeriod = 5 * time.Millisecond
 	return state, session, remote, opened
 }
 
@@ -137,8 +138,8 @@ func TestAFileTheSystemWouldRunIsNotOpenedAsAnEdit(t *testing.T) {
 	clickSFTPRow(t, state, session.files, "notes.txt")
 	state.Click(hitSFTPEditExternal)
 	waitFor(t, state, func() bool { return session.files.errorText != "" })
-	if session.files.errorText != state.messages.Tools.ExtEditRefused || len(state.edits.list) != 0 || state.edits.watching {
-		t.Fatalf("error %q, %d edits, watching %v", session.files.errorText, len(state.edits.list), state.edits.watching)
+	if session.files.errorText != state.messages.Tools.ExtEditRefused || len(state.edits.list) != 0 {
+		t.Fatalf("error %q, %d edits", session.files.errorText, len(state.edits.list))
 	}
 	if len(opened.paths) != 1 {
 		t.Fatalf("opened %v", opened.paths)
@@ -164,15 +165,16 @@ func TestClosingTheSessionRemovesTheTemporaryCopyAndStopsLooking(t *testing.T) {
 	state, session, _, _ := externalEditSetup(t)
 	edit := startExternalEditOf(t, state, session, "notes.txt")
 	dir := edit.dir
-	if !state.edits.watching {
+	watch := edit.watch
+	if watch == nil {
 		t.Fatal("nothing is watching the open edit")
 	}
 	state.closeSession(session.ID)
 	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("the folder stays: %v", err)
 	}
-	if len(state.edits.list) != 0 || state.edits.watching {
-		t.Fatalf("%d edits, watching %v", len(state.edits.list), state.edits.watching)
+	if len(state.edits.list) != 0 {
+		t.Fatalf("%d edits", len(state.edits.list))
 	}
 }
 
@@ -455,20 +457,40 @@ func TestKeepingARevertedCopyStillReportsTheServerConflict(t *testing.T) {
 	}
 }
 
-func TestAnOldExternalEditWatcherCannotStopItsReplacement(t *testing.T) {
-	state, session, _, _ := externalEditSetup(t)
-	startExternalEditOf(t, state, session, "notes.txt")
-	old := state.edits.stop
-	state.stopWatchingExternalEdits()
-	state.watchExternalEdits()
-	current := state.edits.stop
-	state.finishExternalEditWatch(old)
-	state.stopWatchingExternalEdits()
-	select {
-	case <-current:
-	default:
-		t.Fatal("the replacement watcher lost its stop signal")
+// An open edit the editor leaves alone costs nothing: no wake is asked for and
+// no read runs until the folder reports a write, and one write asks for the read
+// and the quiet-period look that sends it, no more.
+func TestAnUntouchedExternalEditSchedulesNothing(t *testing.T) {
+	state, session, remote, _ := externalEditSetup(t)
+	var mu sync.Mutex
+	var asked []time.Duration
+	state.options.PostAfter = func(d time.Duration, fn func()) func() {
+		mu.Lock()
+		asked = append(asked, d)
+		mu.Unlock()
+		return func() {}
 	}
+	edit := startExternalEditOf(t, state, session, "notes.txt")
+	settle := func() int {
+		for deadline := time.Now().Add(300 * time.Millisecond); time.Now().Before(deadline); {
+			state.Wake()
+			time.Sleep(5 * time.Millisecond)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return len(asked)
+	}
+	// A platform may report the copy's own creation once, just after the watch
+	// opens; reading it finds nothing new. What must not happen is a wake that
+	// comes back on its own.
+	opened := settle()
+	if idle := settle(); idle != opened || edit.looking || !edit.lookAt.IsZero() {
+		t.Fatalf("an untouched edit kept asking for wakes: %d then %d, looking=%v lookAt=%v", opened, idle, edit.looking, edit.lookAt)
+	}
+	if err := os.WriteFile(edit.local, []byte("written once"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, state, func() bool { return remoteText(remote, "/home/test/notes.txt") == "written once" && !state.edits.list[0].saving })
 }
 
 func TestOversizedExternalEditIsReportedAndCanBeCorrected(t *testing.T) {

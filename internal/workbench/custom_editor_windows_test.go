@@ -75,7 +75,7 @@ func TestCustomEditorReceivesRemoteTemporaryFileAndSyncsBack(t *testing.T) {
 		launched <- [2]string{exe, path}
 		return nil
 	}
-	state.options.EditPollInterval = 5 * time.Millisecond
+	state.options.EditQuietPeriod = 5 * time.Millisecond
 
 	clickSFTPRow(t, state, session.files, "notes.txt")
 	state.Click(hitSFTPEditExternal)

@@ -294,7 +294,7 @@ func TestSFTPWindowExternalEditorConflictAndCloseStayInOrigin(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1.25)
 	view := host.windows[0].view
 	state.options.OpenPath = func(string) error { return nil }
-	state.options.EditPollInterval = 5 * time.Millisecond
+	state.options.EditQuietPeriod = 5 * time.Millisecond
 	state.activeSessionID = 0
 	for i := range w.view.rows {
 		if w.view.rows[i].entry.Name == "notes.txt" {
@@ -501,7 +501,7 @@ func TestSFTPWindowMovesSelectionThroughContextMenu(t *testing.T) {
 
 func TestSFTPWindowExternalEditorSendsEverySaveBack(t *testing.T) {
 	state, w, remote, host, _ := dualSFTPFixture(t, 1.0)
-	state.options.EditPollInterval = 10 * time.Millisecond
+	state.options.EditQuietPeriod = 10 * time.Millisecond
 	state.options.OpenPath = func(string) error { return nil }
 
 	remoteRows := w.folder(false).rows
