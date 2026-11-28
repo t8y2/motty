@@ -818,7 +818,7 @@ func (state *State) chooseSnippetFolderMenu(id gfx.ID) {
 	case hitSnippetFolderMenuAdd:
 		state.startInlineSnippetDraft(group)
 	case hitSnippetFolderMenuNewChild:
-		state.openSnippetGroupCreate(group + "/")
+		state.openSnippetGroupCreate(group)
 	case hitSnippetFolderMenuRename:
 		state.openSnippetGroupRenameDirect(group)
 	case hitSnippetFolderMenuDelete:

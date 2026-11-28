@@ -246,3 +246,102 @@ func TestSnippetFolderDeleteWithSnippetsAndMoveToRootHeadless(t *testing.T) {
 	}
 	clean("snippets page after remove from group")
 }
+
+// Creating a subgroup and renaming a nested group display the parent path
+// separately from the leaf name without layout defects.
+func TestSnippetNestedGroupCreateAndRenameDialogHeadless(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.setLanguage(i18n.Chinese)
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "web", Command: "nginx -t", Group: "Ops/Web"},
+	)
+
+	view, err := headless.Open(app.Config{
+		Width: 1200, Height: 800, Tree: Tree(), Paint: state.Paint,
+		OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll,
+		TextInput: func(c app.TextInputContext) *app.TextInput {
+			if editor := state.EditorFor(c.ID); editor != nil {
+				return &app.TextInput{Editor: editor}
+			}
+			return nil
+		},
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	rightClickFolder := func(group string) {
+		t.Helper()
+		for i, row := range state.snippets.treeRows {
+			if row.folder && sameSnippetGroup(row.group, group) {
+				rowID := state.snippets.tree.RowID(i)
+				for _, hit := range view.Snapshot().Hits {
+					if hit.ID == rowID {
+						if err := view.RightClick(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+							t.Fatal(err)
+						}
+						return
+					}
+				}
+			}
+		}
+		t.Fatalf("folder %q not found in %+v", group, state.snippets.treeRows)
+	}
+	clickLabel := func(label string) {
+		t.Helper()
+		for _, hit := range view.Snapshot().Hits {
+			if hit.Label == label {
+				if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+		}
+		t.Fatalf("missing menu item %q; frame has %v", label, view.Texts())
+	}
+	clean := func(where string) {
+		t.Helper()
+		if problems := headless.CheckLayout(view.Snapshot()); len(problems) > 0 {
+			t.Fatalf("%s: %v", where, problems)
+		}
+	}
+
+	// Create child under Ops/Web.
+	rightClickFolder("Ops/Web")
+	clickLabel(state.messages.HostGroupActions.NewChild)
+	if state.modal != modalSnippetGroupRename || !state.snippetGroups.creating || state.snippetGroups.parent != "Ops/Web" {
+		t.Fatalf("create child state: modal=%d creating=%v parent=%q", state.modal, state.snippetGroups.creating, state.snippetGroups.parent)
+	}
+	clean("create child group dialog")
+	if err := view.Type("API"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || state.snippetGroups.error != "" {
+		t.Fatalf("create child failed: modal=%d err=%q", state.modal, state.snippetGroups.error)
+	}
+
+	// Rename nested group Ops/Web -> Ops/Edge.
+	rightClickFolder("Ops/Web")
+	clickLabel(state.messages.Tools.SnippetGroupRename)
+	if state.modal != modalSnippetGroupRename || state.snippetGroups.creating || state.snippetGroups.parent != "Ops" {
+		t.Fatalf("rename nested state: modal=%d creating=%v parent=%q", state.modal, state.snippetGroups.creating, state.snippetGroups.parent)
+	}
+	clean("rename nested group dialog")
+	if err := view.Type("Edge"); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Keys("Enter"); err != nil {
+		t.Fatal(err)
+	}
+	if state.modal != modalNone || state.snippets.list[0].Group != "Ops/Edge" {
+		t.Fatalf("rename nested failed: modal=%d group=%q", state.modal, state.snippets.list[0].Group)
+	}
+}

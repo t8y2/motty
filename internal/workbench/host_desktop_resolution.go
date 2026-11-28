@@ -134,7 +134,7 @@ func (state *State) declareResolutionSelect(c ui.C, rowHeight float32) {
 // choice is a custom one.
 func (state *State) declareResolutionCustom(c ui.C, rowHeight float32) {
 	editor, form := &state.editor, &state.editor.form
-	form.resolutionBody.custom = ui.Slot(c).Height(rowHeight)
+	form.resolutionBody.custom = ui.Slot(c).FillWidth().Height(rowHeight)
 	state.declareHostTextField(c, form.resolutionBody.custom, &form.fieldResolution, hitDialogResolution, &editor.resolutionCustom,
 		state.messages.Desktop.ResolutionCustomField, desktopSizeChoices[3].String(), false, rowHeight)
 }

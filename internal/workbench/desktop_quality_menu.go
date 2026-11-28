@@ -21,7 +21,8 @@ func (state *State) setDesktopQuality(session *Session, change func(*Host)) {
 	change(&host)
 	if host.ColorDepth == session.host.ColorDepth && host.PreferredEncoding == session.host.PreferredEncoding &&
 		host.desktopEffects() == session.host.desktopEffects() &&
-		host.DesktopWidth == session.host.DesktopWidth && host.DesktopHeight == session.host.DesktopHeight {
+		host.DesktopWidth == session.host.DesktopWidth && host.DesktopHeight == session.host.DesktopHeight &&
+		host.DesktopScale == session.host.DesktopScale {
 		return
 	}
 	if index := state.hostIndex(session.HostID); index >= 0 {
@@ -48,7 +49,7 @@ func (state *State) setDesktopQuality(session *Session, change func(*Host)) {
 // the saved host is taken from the session's copy.
 func hostWithQuality(saved, chosen Host) Host {
 	saved.ColorDepth, saved.PreferredEncoding, saved.Effects = chosen.ColorDepth, chosen.PreferredEncoding, chosen.Effects
-	saved.DesktopWidth, saved.DesktopHeight = chosen.DesktopWidth, chosen.DesktopHeight
+	saved.DesktopWidth, saved.DesktopHeight, saved.DesktopScale = chosen.DesktopWidth, chosen.DesktopHeight, chosen.DesktopScale
 	return saved
 }
 
@@ -75,6 +76,21 @@ func (state *State) declareDesktopQualityMenu(c ui.C, session *Session, view *de
 			if menu.Item(state.colorDepthLabel(depth)).Chosen(colorDepthOrDefault(host.ColorDepth) == depth).Clicked() {
 				chosen := savedColorDepth(depth, depths[1:])
 				c.After(func() { state.setDesktopQuality(session, func(host *Host) { host.ColorDepth = chosen }) })
+			}
+		}
+		if rdp {
+			// A fixed resolution is at 100% whatever the host chose.
+			_, fixed := host.fixedDesktopSize()
+			menu.Separator()
+			menu.Label(m.RemoteScaleField)
+			for _, scale := range desktopScaleChoices {
+				current := host.DesktopScale
+				if fixed {
+					current = desktopScaleStandard
+				}
+				if menu.Item(state.desktopScaleLabel(scale)).Chosen(current == scale).Disabled(fixed).Clicked() {
+					c.After(func() { state.setDesktopQuality(session, func(host *Host) { host.DesktopScale = scale }) })
+				}
 			}
 		}
 		menu.Separator()

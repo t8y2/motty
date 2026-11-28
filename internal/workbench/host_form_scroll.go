@@ -113,6 +113,8 @@ type hostFormScroll struct {
 	qualityBody hostQualityBody
 	// resolutionBody is the resolution rows of an RDP host.
 	resolutionBody hostResolutionBody
+	// scaleBody is the remote scale row of an RDP host.
+	scaleBody hostScaleBody
 	// idleLayout and idleInputLayout are the probe values this frame's rows were
 	// laid out for, before a click writes the values the next frame shows.
 	idleLayout      idleKeepAlivePreset
@@ -254,7 +256,7 @@ func (state *State) scrollHostForm(event gfx.ScrollEvent) gfx.EventResult {
 // its list open: the open list owns the wheel wherever the pointer is.
 func (state *State) hostFormPageListOpen() bool {
 	f := &state.editor.form
-	for _, box := range [...]ui.Box{f.iconBox, f.authBox, f.portsBox, f.idleIntervalBox, f.idleUnitBox, f.idleInputBox, f.qualityBody.depthBox, f.qualityBody.encodingBox, f.resolutionBody.box} {
+	for _, box := range [...]ui.Box{f.iconBox, f.authBox, f.portsBox, f.idleIntervalBox, f.idleUnitBox, f.idleInputBox, f.qualityBody.depthBox, f.qualityBody.encodingBox, f.resolutionBody.box, f.scaleBody.box} {
 		if !box.Valid() {
 			continue
 		}

@@ -149,7 +149,7 @@ func TestRDPFullscreenFollowsMonitorPixelsAndLeavesForDialogs(t *testing.T) {
 	if err := driver.Advance(desktopResizeDelay + time.Millisecond); err != nil {
 		t.Fatal(err)
 	}
-	wanted := desktopTargetFor(gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, state.pixelScale)
+	wanted := desktopTargetFor(gfx.Rect{Width: state.viewport.Width, Height: state.viewport.Height}, session.host.remoteScale(state.pixelScale))
 	resizes := server.asked()
 	if len(resizes) == 0 || resizes[len(resizes)-1] != wanted {
 		t.Fatalf("fullscreen resized to %v, want %+v", resizes, wanted)
@@ -319,14 +319,14 @@ func TestLiveRDPFullscreenUsesTheRealSession(t *testing.T) {
 				colors[[3]uint32{r, g, b}] = struct{}{}
 			}
 		}
-		target := desktopTargetFor(session.desk.area, session.desk.pixelScale)
-		resized := !session.desk.pixelPerfect() || session.desk.width == target.width && session.desk.height == target.height
+		target := desktopTargetFor(session.desk.area, session.desk.remoteScale())
+		resized := !session.desk.follows() || session.desk.width == target.width && session.desk.height == target.height
 		if len(colors) >= 16 && resized {
 			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("RDP fullscreen did not render and resize: picture %dx%d, target %dx%d, canResize=%v",
-				session.desk.width, session.desk.height, target.width, target.height, session.desk.pixelPerfect())
+				session.desk.width, session.desk.height, target.width, target.height, session.desk.follows())
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
