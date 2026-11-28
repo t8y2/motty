@@ -23,6 +23,13 @@ func runFidoAskpass(args []string) int {
 // fidoAskpass is runFidoAskpass with an explicit answer stream, so a test can
 // read the answer without replacing the process's stdout.
 func fidoAskpass(args []string, out io.Writer) int {
+	// OpenSSH sets SSH_ASKPASS_PROMPT=none for passive presence notices
+	// ("Confirm user presence..."). Motty already displays touch status via
+	// Status.SecurityKey, and opening the PIN/passphrase form here would block
+	// or outlive the touch prompt.
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("SSH_ASKPASS_PROMPT")), "none") {
+		return 0
+	}
 	prompt := strings.TrimSpace(strings.Join(args, " "))
 	if prompt == "" {
 		prompt = strings.TrimSpace(os.Getenv("SSH_ASKPASS_PROMPT"))
