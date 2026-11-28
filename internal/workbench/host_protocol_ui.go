@@ -24,6 +24,7 @@ var (
 	hitDialogClipboard            = tree.ID(hostProtocolUiHits, "dialog-clipboard")
 	hitDialogConsole              = tree.ID(hostProtocolUiHits, "dialog-console")
 	hitDialogRemoteAudio          = tree.ID(hostProtocolUiHits, "dialog-remote-audio")
+	hitDialogMicrophone           = tree.ID(hostProtocolUiHits, "dialog-microphone")
 	hitDialogStandardSecurity     = tree.ID(hostProtocolUiHits, "dialog-standard-security")
 	hitDialogStandardSecurityHelp = tree.ID(hostProtocolUiHits, "dialog-standard-security-help")
 	hitDialogLegacyTLS            = tree.ID(hostProtocolUiHits, "dialog-legacy-tls")
@@ -588,6 +589,8 @@ func (state *State) clickHostProtocol(id gfx.ID) bool {
 		editor.console = !editor.console
 	case id == hitDialogRemoteAudio:
 		editor.noAudio = !editor.noAudio
+	case id == hitDialogMicrophone:
+		editor.microphone = !editor.microphone
 	case id == hitDialogStandardSecurity:
 		editor.standardSecurity = !editor.standardSecurity
 	case id == hitDialogLegacyTLS:
@@ -965,9 +968,9 @@ func (state *State) declareHostAlgoRows(c ui.C) {
 // vncRowsHeight is the room of the three switches every remote desktop host has.
 const vncRowsHeight = 4 + 20 + (12 + 20) + (12 + 20) + 16
 
-// rdpRowsHeight adds the four switches only an RDP host has: the console
-// session, remote audio, Standard RDP Security and legacy TLS.
-const rdpRowsHeight = vncRowsHeight + 4*(12+20)
+// rdpRowsHeight adds the five switches only an RDP host has: the console
+// session, remote audio, microphone, Standard RDP Security and legacy TLS.
+const rdpRowsHeight = vncRowsHeight + 5*(12+20)
 
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
@@ -1022,6 +1025,7 @@ func (state *State) declareHostVNCRows(c ui.C) {
 		if editor.protocol == protocolRDP {
 			state.declareDialogCheck(c, hitDialogConsole, m.ConsoleSession, editor.console, 12, 0)
 			state.declareDialogCheck(c, hitDialogRemoteAudio, m.RemoteAudio, !editor.noAudio, 12, 0)
+			state.declareDialogCheck(c, hitDialogMicrophone, m.Microphone, editor.microphone, 12, 0)
 			_, b.legacyTLSHelp = state.declareDialogCheckHelp(c, hitDialogLegacyTLS, m.LegacyTLS, editor.legacyTLS, 12, 0)
 			_, b.standardSecurityHelp = state.declareDialogCheckHelp(c, hitDialogStandardSecurity, m.StandardSecurity, editor.standardSecurity, 12, 0)
 		}

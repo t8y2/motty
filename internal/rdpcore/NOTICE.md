@@ -17,7 +17,8 @@ Removed: `client/`, `display/`, `util/ppm.go`, and the protocol packages
 serial, parallel, smartcard, USB and camera redirection), with the options and
 code in `client.go` that used them, and `Dump*` debugging functions that wrote
 files. Audio output came back as a new `protocol/rdpsnd` package (PCM only)
-after the copy was taken; see `docs/remote-desktop.md`.
+and microphone input as a new `protocol/audin` package (PCM only) after the
+copy was taken; see `docs/remote-desktop.md`.
 
 Changed:
 

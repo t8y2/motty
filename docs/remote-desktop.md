@@ -347,7 +347,11 @@ in which case the client asks the server for no audio channel at all and this
 computer opens no output device. The system's own output volume and mute decide
 whether what is played is heard. The sound is written on the session's receive
 path, so an output device that stops consuming pauses the session's other
-channel data for at most the sound buffer, a fifth of a second. Suppress Output while the tab is hidden. The initial desktop matches
+channel data for at most the sound buffer, a fifth of a second. Microphone
+input is redirected over the `AUDIO_INPUT` dynamic virtual channel (MS-RDPEAI,
+16-bit PCM mono or stereo): it is off by default per host, and the host's
+**Forward local microphone** switch turns it on, opening the computer's default
+input device only when a remote application starts recording. Suppress Output while the tab is hidden. The initial desktop matches
 the pane's device pixels and display scale (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
@@ -558,7 +562,7 @@ than leaving a paste that looks complete.
 
 ### Limits
 
-Audio input (microphone redirection), drive/printer/smartcard/USB redirection,
+Drive, printer, smartcard and USB redirection,
 multiple monitors, dynamic resolution change from the client, RD Gateway,
 Kerberos or certificate-based logon
 (NTLM only), network-level authentication to a domain server that disables NTLM,

@@ -142,6 +142,24 @@ func applyQuality(config *rdpcore.Options, opts desktop.Options) {
 	config.CursorShadow = effects.CursorShadow
 }
 
+// applyAudio sets the audio output and microphone redirection callbacks a host
+// asked for.
+func applyAudio(config *rdpcore.Options, opts desktop.Options) {
+	if opts.Audio {
+		// The server picks one of the PCM formats the player accepts; opening
+		// happens then, not at connect, so a session that never plays sound
+		// never touches the output device.
+		config.Sound = func(sampleRate uint32, channels uint16) (io.WriteCloser, error) {
+			return audio.Open(audio.Format{SampleRate: int(sampleRate), Channels: int(channels)})
+		}
+	}
+	if opts.Microphone {
+		config.AudioInput = func(sampleRate uint32, channels uint16, _ uint32) (io.ReadCloser, error) {
+			return audio.OpenInput(audio.Format{SampleRate: int(sampleRate), Channels: int(channels)})
+		}
+	}
+}
+
 // Open connects to address through dial and starts reading the server. It
 // returns ErrAuthFailed when the server refused the account, and
 // ErrAuthRequired when there is no password to try.
@@ -179,15 +197,8 @@ func Open(ctx context.Context, dial desktop.Dialer, address string, opts desktop
 	}
 	config.LegacyTLS = opts.LegacyTLS
 	applyQuality(config, opts)
+	applyAudio(config, opts)
 	config.NoAVC = true // no H.264 decoder: the server then sends RemoteFX or ClearCodec
-	if opts.Audio {
-		// The server picks one of the PCM formats the player accepts; opening
-		// happens then, not at connect, so a session that never plays sound
-		// never touches the output device.
-		config.Sound = func(sampleRate uint32, channels uint16) (io.WriteCloser, error) {
-			return audio.Open(audio.Format{SampleRate: int(sampleRate), Channels: int(channels)})
-		}
-	}
 	config.Dial = transport.dialConn
 	// The user is asked while the handshake waits, so its timeout is suspended
 	// for the question. The certificate comes first and the password after it,

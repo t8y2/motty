@@ -434,6 +434,11 @@ type Options struct {
 	// whose device cannot be opened, or whose server offers no PCM format,
 	// simply plays nothing; the connection is unaffected.
 	Audio bool
+	// Microphone redirects this computer's default input device to the remote
+	// system when the backend supports it (RDP). Off, the backend asks the
+	// server for no microphone redirection. A machine whose input device cannot
+	// be opened simply sends no microphone audio; the connection is unaffected.
+	Microphone bool
 	// Console asks an RDP server for its console (administrative) session
 	// instead of a new one, as mstsc /admin does. Windows decides whether the
 	// request is granted: the account still needs the right to log on, and what

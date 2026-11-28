@@ -27,7 +27,7 @@ copyright = "Motty"
 entitlements = "assets/macos.entitlements"
 
 [mac.info]
-NSMicrophoneUsageDescription = "A program running in a Motty local terminal is requesting access to your microphone."
+NSMicrophoneUsageDescription = "Motty requests microphone access for programs running in a local terminal or for remote desktop sessions with microphone forwarding enabled."
 
 [mac.dmg]
 background = "assets/dmg-background.png"

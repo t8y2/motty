@@ -68,3 +68,17 @@ func TestQualityOptionsReachTheRDPClient(t *testing.T) {
 		t.Errorf("custom effects: %+v", config)
 	}
 }
+
+func TestAudioOptionsReachTheRDPClient(t *testing.T) {
+	config := rdpcore.DefaultOptions()
+	applyAudio(config, desktop.Options{})
+	if config.Sound != nil || config.AudioInput != nil {
+		t.Fatalf("default audio options set callbacks: Sound=%v AudioInput=%v", config.Sound != nil, config.AudioInput != nil)
+	}
+
+	config = rdpcore.DefaultOptions()
+	applyAudio(config, desktop.Options{Audio: true, Microphone: true})
+	if config.Sound == nil || config.AudioInput == nil {
+		t.Fatalf("enabled audio options missing callbacks: Sound=%v AudioInput=%v", config.Sound != nil, config.AudioInput != nil)
+	}
+}

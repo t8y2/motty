@@ -1,11 +1,13 @@
 package rdp
 
 import (
+	"bytes"
 	"encoding/binary"
 	"io"
 	"log/slog"
 	"testing"
 
+	"motty/internal/rdpcore/protocol/audin"
 	"motty/internal/rdpcore/protocol/clearcodec"
 	"motty/internal/rdpcore/protocol/egfx"
 	"motty/internal/rdpcore/protocol/fastpath"
@@ -112,6 +114,34 @@ func FuzzGraphicsPipeline(f *testing.F) {
 		handler.OnBitmap(func(uint16, int, int, int, int, []byte) {})
 		handler.OnStridedBitmap(func(uint16, int, int, int, int, []byte, int) {})
 		handler.ProcessPDU(data)
+		handler.Close()
+	})
+}
+
+// FuzzAudioInput feeds the MS-RDPEAI (AUDIO_INPUT) channel handler with
+// untrusted server PDUs.
+func FuzzAudioInput(f *testing.F) {
+	formats := make([]byte, 1+8+18)
+	formats[0] = 0x02 // MSG_SNDIN_FORMATS
+	binary.LittleEndian.PutUint32(formats[1:5], 1)
+	binary.LittleEndian.PutUint32(formats[5:9], uint32(len(formats)))
+	binary.LittleEndian.PutUint16(formats[9:], 1)      // PCM
+	binary.LittleEndian.PutUint16(formats[11:], 2)     // stereo
+	binary.LittleEndian.PutUint32(formats[13:], 48000) // 48kHz
+	binary.LittleEndian.PutUint32(formats[17:], 192000)
+	binary.LittleEndian.PutUint16(formats[21:], 4)
+	binary.LittleEndian.PutUint16(formats[23:], 16)
+	open := make([]byte, 9)
+	open[0] = 0x03 // MSG_SNDIN_OPEN
+	binary.LittleEndian.PutUint32(open[1:5], 480)
+	f.Add(formats, open)
+	f.Add([]byte{0x01, 2, 0, 0, 0}, []byte{0x07, 0, 0, 0, 0})
+	f.Fuzz(func(t *testing.T, pdu1, pdu2 []byte) {
+		handler := audin.NewHandler(func([]byte) error { return nil }, func(uint32, uint16, uint32) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(nil)), nil
+		}, quiet)
+		handler.ProcessPDU(pdu1)
+		handler.ProcessPDU(pdu2)
 		handler.Close()
 	})
 }

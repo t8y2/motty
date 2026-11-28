@@ -312,7 +312,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.IdleInputCustom == right.IdleInputCustom &&
 		slices.Equal(left.RemoteLogPaths, right.RemoteLogPaths) &&
 		left.ViaSSH == right.ViaSSH && left.Clipboard == right.Clipboard && left.Console == right.Console &&
-		left.NoAudio == right.NoAudio &&
+		left.NoAudio == right.NoAudio && left.Microphone == right.Microphone &&
 		left.StandardSecurity == right.StandardSecurity && left.LegacyTLS == right.LegacyTLS &&
 		left.Chromeless == right.Chromeless &&
 		left.ColorDepth == right.ColorDepth && left.DesktopEncoding == right.DesktopEncoding &&

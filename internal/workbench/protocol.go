@@ -220,6 +220,7 @@ type savedTransport struct {
 	Clipboard        bool `json:"clipboard,omitempty"`
 	Console          bool `json:"console,omitempty"`
 	NoAudio          bool `json:"no_audio,omitempty"`
+	Microphone       bool `json:"microphone,omitempty"`
 	StandardSecurity bool `json:"standard_security,omitempty"`
 	LegacyTLS        bool `json:"legacy_tls,omitempty"`
 	Chromeless       bool `json:"chromeless,omitempty"`
@@ -266,6 +267,7 @@ func (host Host) transport() savedTransport {
 		transport.Protocol, transport.ViaSSH, transport.Clipboard, transport.Chromeless = "rdp", host.ViaSSH, host.Clipboard, host.Chromeless
 		transport.Console = host.Console
 		transport.NoAudio = host.NoAudio
+		transport.Microphone = host.Microphone
 		transport.StandardSecurity = host.StandardSecurity
 		transport.LegacyTLS = host.LegacyTLS
 		transport.ColorDepth = host.ColorDepth
@@ -388,6 +390,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.Protocol, host.ViaSSH, host.Clipboard, host.Chromeless = protocolRDP, transport.ViaSSH, transport.Clipboard, transport.Chromeless
 		host.Console = transport.Console
 		host.NoAudio = transport.NoAudio
+		host.Microphone = transport.Microphone
 		host.StandardSecurity = transport.StandardSecurity
 		host.LegacyTLS = transport.LegacyTLS
 		host.ColorDepth = rdpColorDepth(transport.ColorDepth)

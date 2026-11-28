@@ -28,6 +28,7 @@ type DesktopMessages struct {
 	HideBars                  string
 	ConsoleSession            string
 	RemoteAudio               string
+	Microphone                string
 	StandardSecurity          string
 	StandardSecurityNote      string
 	LegacyTLS                 string
