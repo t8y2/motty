@@ -336,6 +336,13 @@ func (state *State) desktopTransparency() float32 {
 func (state *State) terminalGround() gfx.Color {
 	color := state.ground(state.termPal.terminal)
 	color.Alpha *= 1 - state.desktopTransparency()
+	schemeID := state.activeScheme()
+	if state.schemePreview.shown != "" {
+		schemeID = state.schemePreview.shown
+	}
+	if scheme, ok := state.schemeByID(schemeID); ok && scheme.opacity != nil {
+		color.Alpha *= float32(max(0, min(100, *scheme.opacity))) / 100
+	}
 	return color
 }
 
@@ -354,6 +361,9 @@ func (state *State) paintBackground(canvas *gfx.Canvas, size gfx.Size) bool {
 	}
 	// The picture fills what lies under the window bar.
 	area := gfx.Rect{Y: windowBarHeight, Width: size.Width, Height: max(size.Height-windowBarHeight, 0)}
+	if state.applicationOpacity() < 100 {
+		area = gfx.Rect{Width: size.Width, Height: size.Height}
+	}
 	if area.Width <= 0 || area.Height <= 0 {
 		return false
 	}

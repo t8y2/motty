@@ -671,9 +671,9 @@ func (state *State) aiBackgroundScrollBlocked() bool {
 // the shell around a workspace card stays a step away from the card.
 func (state *State) windowFrameColor() gfx.Color {
 	if state.chrome.shellFullPage {
-		return state.pal.workspace
+		return state.applicationGround(state.pal.workspace)
 	}
-	return state.pal.shell
+	return state.applicationGround(state.pal.shell)
 }
 
 // windowBarRightPad keeps the bar's last control centred over the side rail's
@@ -720,7 +720,7 @@ func (state *State) declareShell(c ui.C) {
 			ui.Slot(c).Width(state.toolbarDockSideReserveFor(true, false)).Shrink(0)
 			state.declareNavigation(c)
 			workspace := ui.Slot(c).Grow(1).MarginSides(0, chrome.shellCardRight, sectionCardMargin, 0).
-				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(pal.workspace)
+				Radius(radius.surface).Border(workspaceBorder, pal.windowStroke).Background(state.applicationGround(pal.workspace))
 			// The hosts page is part of this page like the panes: its header is a
 			// slot the window paints, and its Tree names, scrolls and routes its
 			// rows here rather than in a page of its own.
@@ -3065,6 +3065,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareFormDialog(c)
 	case modalFontPicker:
 		state.declareFontPicker(c)
+	case modalThemeEditor:
+		state.declareThemeEditor(c)
 	case modalIconColorPicker:
 		state.declareIconColorPicker(c)
 	case modalOutboundProxy:

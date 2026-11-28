@@ -20,7 +20,7 @@ const (
 	// cut: a long font family must not push the row's own name out of the card.
 	settingsValueMax = float32(180)
 	// settingsChoiceMax is the largest number of options a choice row offers.
-	settingsChoiceMax = 4
+	settingsChoiceMax = 5
 )
 
 // settingsControlKind is how a recorded control is painted.
@@ -382,9 +382,12 @@ func (state *State) paintAppearanceSettings(page *settingsPage) {
 	messages := state.messages
 	page.groups(func() {
 		page.group("", func() {
-			settingsChoiceRow(page, messages.SettingsAppearance, "", &state.appearanceMode, settingsAppearanceChoices[:], state.settingsAppearanceLabel,
-				func() { state.chooseAppearanceMode(state.appearanceMode); state.save() }, nil)
+			state.paintAppearanceMode(page)
 			page.toggleRow(messages.SettingsAppearanceFollowTerminal, messages.SettingsAppearanceFollowTerminalDescription, state.appearanceFollowTerminal, hitSettingsAppearanceFollowTerminal)
+			state.paintApplicationOpacity(page)
+		})
+		state.paintApplicationThemeSettings(page)
+		page.group("", func() {
 			if state.terminalTransparent() {
 				state.paintTerminalTransparencySetting(page)
 			}
@@ -410,6 +413,38 @@ func (state *State) paintAppearanceSettings(page *settingsPage) {
 				page.toggleRow(messages.SettingsTabsGrouping, messages.SettingsTabsGroupingDescription, state.verticalTabs.grouping, hitSettingsVerticalTabsGrouping)
 			}
 		})
+	})
+}
+
+func (state *State) paintAppearanceMode(page *settingsPage) {
+	choices, label, name := settingsAppearanceChoices[:], state.messages.SettingsAppearance, state.settingsAppearanceLabel
+	mode := &state.applicationThemeUI.mode
+	*mode = state.appearanceMode
+	changed := func() { state.chooseAppearanceMode(*mode); state.save() }
+	labelWidth := page.canvas().TextWidthWeight(label, metrics.FontSizeM, gfx.WeightMedium)
+	if settingsChoiceWidth(page, choices, name)+labelWidth <= page.width-60 {
+		settingsChoiceRow(page, label, "", mode, choices, name, changed, nil)
+		return
+	}
+
+	page.separator()
+	c := page.c
+	row := ui.Column(c).PadSides(12, 18, 12, 18).Gap(6)
+	page.matchAnchor(label, row, 0)
+	row.Children(func() {
+		ui.Text(c, label).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(state.pal.text).LineHeight(21)
+		ui.RadioGroup(c).Gap(0).Children(func() {
+			for _, options := range [][]appearanceMode{choices[:3], choices[3:]} {
+				ui.Row(c).Gap(16).Children(func() {
+					for _, option := range options {
+						ui.Radio(c, mode, option, name(option))
+					}
+				})
+			}
+		})
+		if *mode != state.appearanceMode {
+			changed()
+		}
 	})
 }
 

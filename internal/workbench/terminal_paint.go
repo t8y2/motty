@@ -576,7 +576,11 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 		if from, to, selected := t.selection.span(t.screen.LineNumber(row), t.presentedRow(row), cols); selected {
 			left := snap(geometry.left + float32(from)*cellWidth)
 			right := snap(geometry.left + float32(to)*cellWidth)
-			canvas.Fill(gfx.Rect{X: left, Y: y, Width: right - left, Height: cellHeight}, withAlpha(pal.termFG, 0.25))
+			selectionColor := withAlpha(pal.termFG, 0.25)
+			if pal.customSelection {
+				selectionColor = pal.selection
+			}
+			canvas.Fill(gfx.Rect{X: left, Y: y, Width: right - left, Height: cellHeight}, selectionColor)
 		}
 		if gutterShown && row <= cursor.Y {
 			// Rows below the cursor have not been written yet.
@@ -603,6 +607,11 @@ func (state *State) paintGridBody(canvas *gfx.Canvas, session *Session, geometry
 				}
 			}
 			canvas.LabelRunsWithIdentity(identity, entry.text, gfx.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, runs)
+			if pal.customSelection {
+				if from, to, selected := t.selection.span(t.screen.LineNumber(row), t.presentedRow(row), cols); selected {
+					paintThemeSelectionText(canvas, entry, gfx.Rect{X: geometry.left, Y: y, Width: rowWidth, Height: cellHeight}, style, cellWidth, from, to, pal.selectionText)
+				}
+			}
 		}
 		if t.sync == nil {
 			state.paintTerminalLink(canvas, t, geometry, row)

@@ -358,6 +358,7 @@ func (state *State) clickBroadcastMenu(id gfx.ID) bool {
 // id was one of them.
 func (state *State) clickTerminalTools(id gfx.ID) bool {
 	switch {
+	case state.clickThemeManagement(id):
 	case id == hitBroadcast:
 		state.openBroadcastMenu()
 	case id == hitBroadcastTab:

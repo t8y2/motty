@@ -17,12 +17,18 @@ func TestLocalShellSettingVisibilityAndPosition(t *testing.T) {
 		state.selectSettingsCategory(settingsTerminal)
 		var canvas gfx.Canvas
 		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
-		if _, visible := hitByID(&canvas, hitSettingsLocalShell); !visible {
-			// The terminal page has grown past this canvas, so reach the row
-			// the way a user does; both rows sit together at the page's end.
-			state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+		// 终端设置增加主题管理后，逐屏寻找目标，不能假定它位于最后一屏。
+		for {
+			if _, visible := hitByID(&canvas, hitSettingsLocalShell); visible {
+				break
+			}
+			before := state.settingsScroll
+			state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settings.pageView / 2, Precise: true})
 			canvas.Reset()
 			state.Paint(&canvas, gfx.Size{Width: 1400, Height: 1800})
+			if state.settingsScroll == before {
+				break
+			}
 		}
 		hit, visible := hitByID(&canvas, hitSettingsLocalShell)
 		if !visible {

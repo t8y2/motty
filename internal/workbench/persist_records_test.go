@@ -18,7 +18,8 @@ import (
 // other, so each must be named here or in the record tables.
 func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 	ownDevice := map[string]bool{
-		"notes_view": true, "note_sidebars": true, "recent_connect_sort": true, "recent_connections": true,
+		"application_theme": true,
+		"notes_view":        true, "note_sidebars": true, "recent_connect_sort": true, "recent_connections": true,
 		"monitor_panels": true, "monitor_active": true,
 		"language": true, "theme": true, "corners": true, "terminal_transparency": true, "icon_color": true, "network_proxy": true, "terminal_font_size": true, "text_scale": true, "interface_text_size": true, "interface_font": true, "interface_font_main_weight": true, "interface_font_bold_weight": true, "terminal_font_face": true, "terminal_font_family": true, "terminal_font_main_weight": true, "terminal_font_bold_weight": true, "terminal_font_fallbacks": true,
 		"restore_connect": true, "share_connections": true, "update_check": true, "close_action": true, "keep_windows_on_exit": true, "relaunch_action": true, "tray_hint_shown": true, "update_skipped": true, "ai_panel_width": true, "ai_composer_height": true,
