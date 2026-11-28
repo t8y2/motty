@@ -500,17 +500,13 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 			page.toggleRow(state.messages.Tools.NotifyRow, state.messages.Tools.NotifyDescription, !state.notifyOff, hitSettingsNotifyToggle)
 			state.paintLocalStartSetting(page)
 			state.paintLocalShellSetting(page)
+			page.toggleRow(state.messages.Blocks.SettingsRow, state.messages.Blocks.SettingsDescription, state.terminalCommandBlocks, hitSettingsCommandBlocks)
 		})
 		state.paintSchemeSettings(page)
 		state.paintHighlightSettings(page)
 		state.paintAutofillSettings(page)
 		state.paintBackgroundSettings(page)
 		state.paintTerminalFindSettingsGroup(page)
-		// Command block settings come last so they do not move the existing
-		// terminal/background rows and their fixed-height test snapshots.
-		page.group("", func() {
-			page.toggleRow(state.messages.Blocks.SettingsRow, state.messages.Blocks.SettingsDescription, state.terminalCommandBlocks, hitSettingsCommandBlocks)
-		})
 	})
 }
 

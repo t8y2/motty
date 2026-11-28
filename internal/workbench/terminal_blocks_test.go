@@ -1012,6 +1012,32 @@ func TestChangingTheCommandBlockDefaultKeepsExistingBlocks(t *testing.T) {
 	}
 }
 
+func TestCommandBlocksSettingFollowsTheStartupCommandsRow(t *testing.T) {
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.Click(hitSettings)
+	state.selectSettingsCategory(settingsTerminal)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2000})
+	startup, startupVisible := hitByID(&canvas, hitSettingsLocalStartupOpen)
+	if !startupVisible {
+		state.scrollSettings(gfx.ScrollEvent{DeltaY: state.settingsContent, Precise: true})
+		canvas.Reset()
+		state.Paint(&canvas, gfx.Size{Width: 1400, Height: 2000})
+		startup, startupVisible = hitByID(&canvas, hitSettingsLocalStartupOpen)
+	}
+	if !startupVisible {
+		t.Fatal("the startup commands row is not visible")
+	}
+	blocks, blocksVisible := hitByID(&canvas, hitSettingsCommandBlocks)
+	if !blocksVisible {
+		t.Fatal("the command blocks row is not visible")
+	}
+	if blocks.Bounds.Y <= startup.Bounds.Y {
+		t.Fatalf("command blocks row y=%.1f is not below startup commands y=%.1f", blocks.Bounds.Y, startup.Bounds.Y)
+	}
+}
+
 func TestCommandBlockSettingsToggleFromThePage(t *testing.T) {
 	_, options := newWorld(t)
 	state := newTestState(t, options)

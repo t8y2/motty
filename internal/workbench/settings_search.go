@@ -205,7 +205,6 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 	row(settingsTerminal, m.SettingsTerminalScrollback, m.SettingsTerminalScrollbackDescription)
 	row(settingsTerminal, m.SettingsTerminalClipboard, m.SettingsTerminalClipboardDescription)
 	row(settingsTerminal, tools.CopyOnSelectRow, tools.CopyOnSelectDescription)
-	row(settingsTerminal, m.Blocks.SettingsRow, m.Blocks.SettingsDescription)
 	row(settingsTerminal, tools.WordSeparatorsRow, tools.WordSeparatorsDescription)
 	row(settingsTerminal, tools.RightClickPasteRow, tools.RightClickPasteDescription)
 	row(settingsTerminal, tools.InputClickRow, tools.InputClickDescription)
@@ -234,6 +233,7 @@ func (state *State) eachSettingsEntry(add func(settingsEntry)) {
 		row(settingsTerminal, m.SettingsLocalShell, m.SettingsLocalShellDescription)
 		row(settingsTerminal, m.SettingsLocalStartupCommands, m.SettingsLocalStartupDescription)
 	}
+	row(settingsTerminal, m.Blocks.SettingsRow, m.Blocks.SettingsDescription)
 	group(settingsTerminal, tools.SchemeGroup, tools.SchemeGroup, tools.SchemeDescription)
 	row(settingsTerminal, tools.HighlightBuiltin, tools.HighlightBuiltinDescription)
 	row(settingsTerminal, tools.HighlightCustom, tools.HighlightCustomDescription)
