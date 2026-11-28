@@ -97,7 +97,9 @@ func TestDocumentWindowNativeTextInputAndLayoutAtDisplayScales(t *testing.T) {
 func TestDocumentLongPathsAndFooterEncodingMenu(t *testing.T) {
 	for _, language := range []i18n.Language{i18n.Chinese, i18n.English} {
 		for _, scale := range []float64{1, 1.25, 1.5, 1.75, 2} {
-			for _, size := range []gfx.Size{{Width: 520, Height: 320}, {Width: 1000, Height: 760}} {
+			// The smallest size the window can have: below it the native window is
+			// never shown, and a control's fit there says nothing about the app.
+			for _, size := range []gfx.Size{{Width: fileWindowMinWidth, Height: fileWindowMinHeight}, {Width: 1000, Height: 760}} {
 				d := documentFixture(t)
 				d.owner.setLanguage(language)
 				d.cacheKey = "long-path"

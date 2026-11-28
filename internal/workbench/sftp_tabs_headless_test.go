@@ -76,7 +76,16 @@ func TestSFTPBackgroundMenuCreatesFolderInClickedPane(t *testing.T) {
 					t.Fatalf("local=%t: dialog=%v, active local=%t", local, w.view.dialog, w.view.local)
 				}
 				w.view.dialogEditor.Insert("from-context-menu")
-				w.click(hitSFTPDialogSubmit)
+				// The dialog is submitted by a press, as the user does: the press
+				// is what lets go of the pointer the dialog took, so later presses
+				// reach the panes.
+				submit, ok := findSnapshotHit(preview.Snapshot(), hitSFTPDialogSubmit)
+				if !ok {
+					t.Fatal("the create dialog is not painted")
+				}
+				if err := preview.Click(submit.Bounds.X+submit.Bounds.Width/2, submit.Bounds.Y+submit.Bounds.Height/2); err != nil {
+					t.Fatal(err)
+				}
 				waitSFTPTab(t, state, w, func() bool {
 					for _, row := range folder.rows {
 						if row.entry.Name == "from-context-menu" && row.entry.IsDir() {

@@ -511,7 +511,9 @@ func TestHeadlessHistoryRowsOpenRenameAndDelete(t *testing.T) {
 	if state.modal != modalAIRename || state.ai.rename.id != first.ID {
 		t.Fatalf("the rename button opened modal %v for conversation %v", state.modal, state.ai.rename.id)
 	}
-	state.modal = modalNone
+	// Cancel is pressed, not assigned: the press is what lets go of the pointer
+	// the dialog took, so the next press reaches the list under it.
+	click(hitAIRenameCancel)
 
 	click(hitAIHistoryDelete.At(1))
 	list, err := db.Conversations("", 10)

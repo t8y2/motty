@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -190,17 +191,34 @@ func TestLinkChangeDispatchesThroughPostWhenAvailable(t *testing.T) {
 	world, options := newSharingWorld(t)
 	watcher := &linkWatcher{}
 	options.WatchNetworkChanges = watcher.start
+	// Post is called from any goroutine, so the queue it fills is guarded: the
+	// run's session log posts from its own goroutine while the test reads.
+	var postedMu sync.Mutex
 	var posted []func()
-	options.Post = func(fn func()) { posted = append(posted, fn) }
+	options.Post = func(fn func()) {
+		postedMu.Lock()
+		posted = append(posted, fn)
+		postedMu.Unlock()
+	}
 	state := newTestState(t, options)
 	fake := world.connectFirst(t, state)
+	postedMu.Lock()
 	posted = nil
+	postedMu.Unlock()
 
 	watcher.fire(linkwatch.Change{At: time.Now(), Up: true})
-	if len(posted) != 1 {
-		t.Fatalf("posted callbacks = %d, want 1", len(posted))
+	postedMu.Lock()
+	count, first := len(posted), func() func() {
+		if len(posted) == 0 {
+			return nil
+		}
+		return posted[0]
+	}()
+	postedMu.Unlock()
+	if count != 1 || first == nil {
+		t.Fatalf("posted callbacks = %d, want 1", count)
 	}
-	posted[0]()
+	first()
 	waitForVerifies(t, fake, 1)
 }
 

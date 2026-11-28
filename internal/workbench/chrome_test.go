@@ -449,6 +449,10 @@ func TestPalettesKeepTextReadable(t *testing.T) {
 
 func TestDialogFieldsShowEachHintOnlyOnce(t *testing.T) {
 	state := newTestState(t, testOptions(t))
+	// A short account name: the hint is the placeholder of a field, and a name
+	// too long for it would be drawn ellipsized by one platform's font and not
+	// another's, which the dialog is not what decides.
+	state.hostCatalog.systemUser = "me"
 	state.Click(hitAddHost)
 	_, texts := paintedTexts(state)
 	m := state.messages

@@ -90,7 +90,9 @@ func lockedPKCS8(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(data)
+	// The checkout may hand the file over with CRLF line endings; the editor and
+	// the store keep the text as PEM writes it.
+	return strings.ReplaceAll(string(data), "\r\n", "\n")
 }
 
 // The edit form shows a stored key as it is kept. Its text is a password's: not

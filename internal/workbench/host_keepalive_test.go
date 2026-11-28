@@ -3,6 +3,8 @@ package workbench
 import (
 	"bytes"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -928,24 +930,36 @@ func TestArmIdleKeepAliveDispatchesThroughPost(t *testing.T) {
 	state, session, shell := idleKeepAliveSession(t, Host{Protocol: protocolSSH, IdleKeepAlive: time.Minute})
 	now := time.Duration(0)
 	state.options.Now = func() time.Duration { return now }
-	invalidated := 0
-	state.options.Invalidate = func() { invalidated++ }
+	// Invalidate and PostAfter are called from any goroutine, so what they
+	// record is guarded: the run's other workers report through the same options.
+	var invalidated atomic.Int32
+	state.options.Invalidate = func() { invalidated.Add(1) }
+	var wakeMu sync.Mutex
 	var wake func()
 	state.options.PostAfter = func(d time.Duration, fn func()) func() {
+		wakeMu.Lock()
 		wake = fn
-		return func() { wake = nil }
+		wakeMu.Unlock()
+		return func() {
+			wakeMu.Lock()
+			wake = nil
+			wakeMu.Unlock()
+		}
 	}
 	state.sessions = append(state.sessions, *session)
 	state.armIdleKeepAlive(session, time.Minute, now)
-	if wake == nil {
+	wakeMu.Lock()
+	scheduled := wake
+	wakeMu.Unlock()
+	if scheduled == nil {
 		t.Fatal("armIdleKeepAlive did not schedule a wake")
 	}
 	now = time.Minute
-	wake()
+	scheduled()
 	if got := shell.typed(); got != "\x00" {
 		t.Fatalf("typed %q, want the idle probe", got)
 	}
-	if invalidated == 0 {
+	if invalidated.Load() == 0 {
 		t.Fatal("the wake did not ask for a repaint")
 	}
 }
