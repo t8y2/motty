@@ -100,6 +100,62 @@ func TestTerminalExecSendsAConsoleCommandVerbatimAndWaitsForItsPrompt(t *testing
 	}
 }
 
+// zshEchoShell answers the way an interactive zsh does: it redraws the typed
+// wrapper with bracketed-paste toggles and a backspaced brace, prefixes the
+// continuation line with its secondary prompt, then prints the completion
+// marker itself.
+func zshEchoShell(shell *fakeShell) {
+	shell.onWrite = func(p []byte) {
+		lines := strings.Split(strings.TrimRight(string(p), "\n"), "\n")
+		var echo strings.Builder
+		for i, line := range lines {
+			if i == 0 {
+				echo.WriteString("{\b")
+			} else {
+				echo.WriteString("\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jcursh> \x1b[K\x1b[?2004h")
+				if i == len(lines)-1 {
+					echo.WriteString("}\b")
+				}
+			}
+			echo.WriteString(strings.TrimSpace(line))
+			echo.WriteString("\x1b[?2004l\r\r\n")
+		}
+		nonce := ""
+		fields := strings.Fields(lines[len(lines)-1])
+		for i, field := range fields {
+			if field == "GOPAI_" && i+1 < len(fields) {
+				nonce = fields[i+1]
+			}
+		}
+		shell.say(echo.String() + "out\r\n\r\nGOPAI_" + nonce + "0\r\nPROMPT% ")
+	}
+}
+
+// The visible terminal must show the command the assistant asked for, not the
+// zsh-redrawn capture wrapper.
+func TestAssistantExecReplacesAZshRedrawnWrapperEcho(t *testing.T) {
+	model := &scriptedModel{turn: func(index int, request llm.Request) []llm.Event {
+		if index == 0 {
+			return toolTurn("terminal_exec", `{"command":"df -h"}`)
+		}
+		return textTurn("done")
+	}}
+	state, shell := assistantTestSession(t, model)
+	zshEchoShell(shell)
+	ask(state, "check free disk space", agent.ModeAgent)
+	pumpUntil(t, state, "the command to finish", func() bool { return state.ai.run == nil })
+
+	screen := screenText(state, 0)
+	if !strings.Contains(screen, "df -h") {
+		t.Fatalf("the logical command is not visible:\n%s", screen)
+	}
+	for _, leak := range []string{"GOPAI_", "printf", "};", "cursh>"} {
+		if strings.Contains(screen, leak) {
+			t.Fatalf("the capture wrapper leaked %q into the terminal:\n%s", leak, screen)
+		}
+	}
+}
+
 func TestConsoleExecRefusesToTypeWithoutAPromptToWaitFor(t *testing.T) {
 	state, shell := assistantTestSession(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("ok") }})
 	state.sessions[0].term.shell = kindShell{shell, shellkind.Console}

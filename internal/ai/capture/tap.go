@@ -262,8 +262,8 @@ func (t *Tap) display(b []byte) {
 		if i < 0 {
 			return
 		}
-		line := rest[:i]
-		if t.echoIndex >= len(t.echoLines) || !matchEcho(line, t.echoLines[t.echoIndex]) {
+		line := terminalLine(rest[:i])
+		if t.echoIndex >= len(t.echoLines) || !matchDisplayEcho(line, t.echoLines[t.echoIndex], t.echoIndex > 0) {
 			t.out = append(t.out, t.flushDisplay()...)
 			return
 		}
@@ -287,6 +287,34 @@ func (t *Tap) display(b []byte) {
 			return
 		}
 	}
+}
+
+// terminalLine returns the plain text a terminal line shows once the escape
+// sequences, backspaces and carriage-return redraws a line editor emits are
+// applied. It runs the recorder's normalizer, so display matching sees the text
+// a person sees rather than the raw pty bytes.
+func terminalLine(raw []byte) []byte {
+	var r recorder
+	r.write(raw)
+	return r.cur
+}
+
+// minScrolledEcho is the shortest visible tail of an echoed line that still
+// identifies it. zsh's line editor scrolls a line wider than the terminal and
+// redraws only this tail, so an exact match is impossible there.
+const minScrolledEcho = 8
+
+// matchDisplayEcho reports whether the normalized terminal line is the echo of
+// exp. Besides the recorder's prompt-tolerant match, a continuation line may be
+// a proper suffix of exp: zsh's line editor scrolls a line wider than the
+// terminal and redraws only that tail. The opening wrapper line is matched
+// exactly, so a shell that echoes nothing cannot lose its first output line.
+func matchDisplayEcho(line, exp []byte, continuation bool) bool {
+	line = bytes.TrimSpace(line)
+	if matchEcho(line, exp) {
+		return true
+	}
+	return continuation && len(line) >= minScrolledEcho && bytes.HasSuffix(exp, line)
 }
 
 // flushDisplay returns everything still held for the display filter unchanged.
