@@ -93,6 +93,9 @@ type ToolsMessages struct {
 	SnippetGroupRename        string
 	SnippetGroupRenameTitle   string
 	SnippetGroupRenameField   string
+	SnippetGroupParentField   string
+	SnippetGroupParentRoot    string
+	SnippetGroupNameHint      string
 	SnippetGroupRenameSave    string
 	SnippetGroupRenameInvalid string
 	SnippetGroupConflict      string
@@ -100,10 +103,14 @@ type ToolsMessages struct {
 	SnippetGroupDelete        string
 	SnippetGroupDeleteTitle   string
 	SnippetGroupDeleteBodyFmt string
+	SnippetGroupDeleteKeep    string
+	SnippetGroupDeletePurge   string
+	SnippetGroupPurgeBodyFmt  string
 	SnippetGroupDeleteConfirm string
 	SnippetGroupsClose        string
 	StatusGroupRenamedFmt     string
 	StatusGroupDeletedFmt     string
+	StatusGroupPurgedFmt      string
 	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
 	SnippetSortAction         string

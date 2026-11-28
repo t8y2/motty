@@ -80,7 +80,8 @@ type line struct {
 	marks      []Mark
 	hyperlinks *[]uint32 // nil until this line receives OSC 8 text
 	id         uint64
-	at         int64 // unix seconds of the first write; 0 when unrecorded
+	logical    uint64 // the logical line this row belongs to; see line_identity.go
+	at         int64  // unix seconds of the first write; 0 when unrecorded
 	version    uint32
 	used       int // one past the last column written since the line was recycled
 	wrapped    bool

@@ -8,6 +8,7 @@ import (
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
 	"github.com/vivaui/viva/ui"
+	"motty/internal/workbench/icons"
 )
 
 // Groups are named by the snippets in them, so managing one is managing every
@@ -26,6 +27,8 @@ var (
 	hitSnippetGroupRenameSubmit  = tree.ID(snippetsHits, "snippet-group-rename-submit")
 	hitSnippetGroupRenameCancel  = tree.ID(snippetsHits, "snippet-group-rename-cancel")
 	hitSnippetGroupRenameClose   = tree.ID(snippetsHits, "snippet-group-rename-close")
+	hitSnippetGroupDeleteKeep    = tree.ID(snippetsHits, "snippet-group-delete-keep")
+	hitSnippetGroupDeletePurge   = tree.ID(snippetsHits, "snippet-group-delete-purge")
 	hitSnippetGroupDeleteConfirm = tree.ID(snippetsHits, "snippet-group-delete-confirm")
 	hitSnippetGroupDeleteCancel  = tree.ID(snippetsHits, "snippet-group-delete-cancel")
 	hitSnippetGroupDeleteClose   = tree.ID(snippetsHits, "snippet-group-delete-close")
@@ -37,9 +40,17 @@ type snippetGroupsUI struct {
 	target string
 	// creating switches modalSnippetGroupRename into a create-group dialog.
 	creating bool
-	editor   text.Editor
-	field    dialogField
-	error    string
+	// deleteSnippets makes modalSnippetGroupDelete also delete every snippet
+	// under target instead of ungrouping them.
+	deleteSnippets bool
+	// parent is the selected parent group path when creating or renaming a group
+	// ("" means top-level).
+	parent        string
+	parentField   ui.FormFieldState
+	parentChoices []string
+	editor        text.Editor
+	field         dialogField
+	error         string
 	// returning reopens the manager after the rename or delete dialog closes.
 	returning bool
 	// bounds is the manager's scroll area, for the wheel.
@@ -83,23 +94,24 @@ func (state *State) openSnippetGroupRenameDirect(group string) {
 	state.openSnippetGroupRenameMode(group, false)
 }
 
-func (state *State) openSnippetGroupCreate(prefix string) {
+func (state *State) openSnippetGroupCreate(parent string) {
 	form := &state.snippetGroups
 	form.target, form.creating, form.error, form.returning = "", true, "", false
+	form.parent = cleanSnippetGroup(parent)
+	form.parentField = ui.FormFieldState{}
 	form.field = dialogField{}
 	form.editor = text.Editor{}
-	if prefix != "" {
-		form.editor.Insert(prefix)
-	}
 	state.modal = modalSnippetGroupRename
 }
 
 func (state *State) openSnippetGroupRenameMode(group string, returning bool) {
 	form := &state.snippetGroups
 	form.target, form.creating, form.error, form.returning = group, false, "", returning
+	form.parent = snippetGroupParent(group)
+	form.parentField = ui.FormFieldState{}
 	form.field = dialogField{}
 	form.editor = text.Editor{}
-	form.editor.Insert(group)
+	form.editor.Insert(snippetGroupLeaf(group))
 	form.editor.SetSelection(text.Range{End: form.editor.RuneCount()})
 	state.modal = modalSnippetGroupRename
 }
@@ -114,7 +126,7 @@ func (state *State) openSnippetGroupDeleteDirect(group string) {
 
 func (state *State) openSnippetGroupDeleteMode(group string, returning bool) {
 	form := &state.snippetGroups
-	form.target, form.error, form.returning = group, "", returning
+	form.target, form.deleteSnippets, form.error, form.returning = group, false, "", returning
 	state.modal = modalSnippetGroupDelete
 }
 
@@ -131,10 +143,19 @@ func (state *State) clickSnippetGroupDialog(id gfx.ID) {
 		return
 	}
 	switch id {
+	case hitSnippetGroupDeleteKeep:
+		form.deleteSnippets = false
+	case hitSnippetGroupDeletePurge:
+		form.deleteSnippets = true
 	case hitSnippetGroupDeleteCancel, hitSnippetGroupDeleteClose, hitSnippetGroupDeleteDismiss:
 		state.closeModal()
 	case hitSnippetGroupDeleteConfirm:
-		state.deleteSnippetGroup(form.target)
+		if form.deleteSnippets {
+			state.flushInlineSnippetSave()
+			state.deleteSnippetGroupWithSnippets(form.target)
+		} else {
+			state.deleteSnippetGroup(form.target)
+		}
 		state.closeModal()
 	}
 }
@@ -146,14 +167,23 @@ func (state *State) submitSnippetGroupRename() {
 	if _, composing := form.editor.Composition(); composing {
 		return
 	}
+	raw := strings.TrimSpace(form.editor.String())
+	if form.parent != "" && strings.Contains(raw, "/") {
+		form.error = state.messages.Tools.SnippetGroupRenameInvalid
+		return
+	}
+	fullPath := raw
+	if form.parent != "" && raw != "" {
+		fullPath = form.parent + "/" + raw
+	}
 	if form.creating {
-		if !state.createSnippetGroup(form.editor.String()) {
+		if !state.createSnippetGroup(fullPath) {
 			return
 		}
 		state.closeModal()
 		return
 	}
-	if !state.renameSnippetGroup(form.target, form.editor.String()) {
+	if !state.renameSnippetGroup(form.target, fullPath) {
 		return
 	}
 	state.closeModal()
@@ -308,6 +338,55 @@ func (state *State) deleteSnippetGroup(group string) {
 	state.status = fmt.Sprintf(m.StatusGroupDeletedFmt, group, count)
 }
 
+// deleteSnippetGroupWithSnippets removes group, its descendant groups, and
+// every snippet contained within that subtree.
+func (state *State) deleteSnippetGroupWithSnippets(group string) {
+	form, m := &state.snippets, state.messages.Tools
+	count := 0
+	keptList := form.list[:0]
+	for _, entry := range form.list {
+		if snippetGroupWithin(entry.Group, group) {
+			count++
+			continue
+		}
+		keptList = append(keptList, entry)
+	}
+	form.list = keptList
+	removedCustom := false
+	keptGroups := form.customGroups[:0]
+	for _, custom := range form.customGroups {
+		if snippetGroupWithin(custom, group) {
+			removedCustom = true
+			continue
+		}
+		keptGroups = append(keptGroups, custom)
+	}
+	form.customGroups = keptGroups
+	if count == 0 && !removedCustom {
+		return
+	}
+	if form.filter.group != "" && snippetGroupWithin(form.filter.group, group) {
+		form.filter = snippetFilter{}
+	}
+	deleteCommandGroupMap(state.commands.hiddenGroups, group)
+	deleteCommandGroupMap(state.commands.collapsedGroups, group)
+	deleteCommandGroupMap(state.snippets.treeCollapsedGroups, group)
+	if state.snippets.selectedFolder != "" && snippetGroupWithin(state.snippets.selectedFolder, group) {
+		state.snippets.selectedFolder = ""
+	}
+	if form.inline.draft && snippetGroupWithin(form.inline.loadedSnap.Group, group) {
+		form.inline.loadedSnap.Group = ""
+	}
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	if form.inline.draft {
+		state.refreshInlineGroupOptions(form.inline.loadedSnap.Group)
+		state.refreshInlineMeta(form.inline.loadedSnap)
+	}
+	state.save()
+	state.status = fmt.Sprintf(m.StatusGroupPurgedFmt, group, count)
+}
+
 func remapCommandGroupMap(entries map[string]bool, from, to string) {
 	if len(entries) == 0 {
 		return
@@ -412,25 +491,72 @@ func (state *State) scrollSnippetGroups(event gfx.ScrollEvent) gfx.EventResult {
 	return result
 }
 
-// declareSnippetGroupRenameDialog declares the one-field create or rename
-// dialog.
+func (state *State) snippetGroupBreadcrumb(path string) string {
+	if path == "" {
+		return state.messages.Tools.SnippetGroupParentRoot
+	}
+	return strings.ReplaceAll(path, "/", "  ›  ")
+}
+
+// declareSnippetGroupRenameDialog declares the create or rename group dialog:
+// creating offers a Parent group selector (rendered with breadcrumb separators)
+// above the Group name input; renaming shows the read-only parent breadcrumb
+// when inside a parent group and edits only the leaf group name.
 func (state *State) declareSnippetGroupRenameDialog(c ui.C) {
-	manager, m := &state.snippetGroups, state.messages.Tools
+	manager, form, m, pal := &state.snippetGroups, &state.snippets, state.messages.Tools, state.pal
 	title, saveLabel := m.SnippetGroupRenameTitle, m.SnippetGroupRenameSave
 	if manager.creating {
-		title, saveLabel = state.messages.NewGroup, state.messages.HostGroupActions.Create
+		saveLabel = state.messages.HostGroupActions.Create
+		if manager.parent != "" {
+			title = state.messages.HostGroupActions.NewChild
+		} else {
+			title = state.messages.NewGroup
+		}
+	}
+	showParentSelect := manager.creating
+	showParentReadOnly := !manager.creating && manager.parent != ""
+	var bodyHeight float32 = 90
+	if showParentSelect {
+		bodyHeight = 166
+	} else if showParentReadOnly {
+		bodyHeight = 162
 	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", 90)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", bodyHeight)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: title, Width: 460, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, CloseID: hitSnippetGroupRenameClose, InitialFocusID: hitSnippetGroupRenameField,
 	})
 	dialog.Body(func() {
-		ui.Column(c).Fill().Children(func() {
+		ui.Column(c).Fill().Gap(10).Children(func() {
+			if showParentSelect {
+				choices := manager.parentChoices[:0]
+				choices = append(choices, "")
+				choices = append(choices, form.groups...)
+				manager.parentChoices = choices
+				ui.FormField(c, &manager.parentField, m.SnippetGroupParentField).FillWidth().Height(66).Children(func() {
+					ui.Select(c, &manager.parent, manager.parentChoices, state.snippetGroupBreadcrumb).
+						Label(m.SnippetGroupParentField).FillWidth().Height(36)
+				})
+			} else if showParentReadOnly {
+				segments := strings.Split(manager.parent, "/")
+				ui.Column(c).FillWidth().Height(62).Gap(6).Children(func() {
+					ui.Text(c, m.SnippetGroupParentField).FontSize(metrics.FontSizeM).Weight(gfx.WeightMedium).Color(pal.text)
+					ui.Row(c).FillWidth().Height(34).PadSides(0, 10, 0, 10).Gap(6).Items(ui.Center).
+						Background(pal.surfaceSoft).Border(1, pal.line).Radius(radius.control).Children(func() {
+						ui.Icon(c, icons.FolderSolid).Size(14, 14).Color(pal.muted).Shrink(0)
+						for idx, seg := range segments {
+							if idx > 0 {
+								ui.Icon(c, lucideIcons[iconChevronRight]).Size(12, 12).Color(pal.faint).Shrink(0)
+							}
+							ui.Text(c, seg).FontSize(metrics.FontSizeS).Weight(gfx.WeightMedium).Color(pal.muted).Ellipsis()
+						}
+					})
+				})
+			}
 			manager.field.declare(c, state, &manager.editor, dialogFieldSpec{
 				ID: hitSnippetGroupRenameField, Label: m.SnippetGroupRenameField,
-				Placeholder: state.messages.FieldGroupPlaceholder, Error: manager.error, Height: 90,
+				Placeholder: m.SnippetGroupNameHint, Error: manager.error, Height: 90,
 			})
 		})
 	})
@@ -444,18 +570,31 @@ func (state *State) declareSnippetGroupRenameDialog(c ui.C) {
 	})
 }
 
-// declareSnippetGroupDeleteDialog asks before the group stops naming the
-// commands in it.
+// declareSnippetGroupDeleteDialog asks before deleting a group, letting the
+// user choose whether to keep its commands ungrouped (default) or delete them
+// together with the group.
 func (state *State) declareSnippetGroupDeleteDialog(c ui.C) {
 	manager, m := &state.snippetGroups, state.messages.Tools
-	description := fmt.Sprintf(m.SnippetGroupDeleteBodyFmt, manager.target, state.snippetGroupCount(manager.target))
+	count := state.snippetGroupCount(manager.target)
+	description := fmt.Sprintf(m.SnippetGroupDeleteBodyFmt, manager.target, count)
+	if manager.deleteSnippets {
+		description = fmt.Sprintf(m.SnippetGroupPurgeBodyFmt, manager.target, count)
+	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, 0)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, groupDeleteChoiceRows)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.SnippetGroupDeleteTitle, Description: description,
 		Width: 480, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitSnippetGroupDeleteDismiss, CloseID: hitSnippetGroupDeleteClose,
-		InitialFocusID: hitSnippetGroupDeleteCancel,
+		InitialFocusID: hitSnippetGroupDeleteKeep,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			ui.RadioGroup(c).Fill().Children(func() {
+				ui.Radio(c, &manager.deleteSnippets, false, m.SnippetGroupDeleteKeep, ui.WithID(hitSnippetGroupDeleteKeep)).Grow(1)
+				ui.Radio(c, &manager.deleteSnippets, true, m.SnippetGroupDeletePurge, ui.WithID(hitSnippetGroupDeletePurge)).Grow(1)
+			})
+		})
 	})
 	dialog.Footer(func() {
 		state.dialogActionFooter(c,

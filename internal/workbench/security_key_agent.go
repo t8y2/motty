@@ -185,15 +185,20 @@ func (agent *securityKeyAgent) addKey(request sshconn.SecurityKeyRequest) error 
 	if err := file.Close(); err != nil {
 		return fmt.Errorf("write the temporary key file: %w", err)
 	}
+	if err := restrictToOwner(file.Name()); err != nil {
+		return fmt.Errorf("secure the temporary key file: %w", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), securityKeyAddTimeout)
 	defer cancel()
 	command := exec.CommandContext(ctx, agent.sshAdd, file.Name())
-	command.Env = append(os.Environ(), agent.prompts.env()...)
-	command.Env = append(command.Env,
+	hideSecurityKeyCommand(command)
+	env := append(os.Environ(), agent.prompts.env()...)
+	env = append(env,
 		"SSH_AUTH_SOCK="+agent.socket,
 		fmt.Sprintf("SSH_AGENT_PID=%d", agent.pid),
 	)
+	command.Env = withPathDirs(env, filepath.Dir(agent.sshAdd), filepath.Dir(agent.agent))
 	var output bytes.Buffer
 	command.Stdout = &output
 	command.Stderr = &output
@@ -279,9 +284,22 @@ func findSSHAgent() (string, error) {
 				candidates = append(candidates, filepath.Join(root, "Git", "usr", "bin", "ssh-agent.exe"))
 			}
 		}
-		if scoop := os.Getenv("USERPROFILE"); scoop != "" {
-			candidates = append(candidates, filepath.Join(scoop, "scoop", "apps", "git", "current", "usr", "bin", "ssh-agent.exe"))
+		for _, scoop := range []string{
+			os.Getenv("SCOOP"),
+			filepath.Join(os.Getenv("USERPROFILE"), "scoop"),
+			filepath.Join(os.Getenv("ProgramData"), "scoop"),
+		} {
+			if scoop != "" {
+				candidates = append(candidates, filepath.Join(scoop, "apps", "git", "current", "usr", "bin", "ssh-agent.exe"))
+			}
 		}
+		if gitPath, err := exec.LookPath("git"); err == nil {
+			candidates = append(candidates, gitAgentCandidates(gitPath)...)
+		}
+		candidates = append(candidates,
+			`C:\msys64\usr\bin\ssh-agent.exe`,
+			`C:\cygwin64\bin\ssh-agent.exe`,
+		)
 	}
 	if path, err := exec.LookPath("ssh-agent"); err == nil {
 		candidates = append(candidates, path)
@@ -295,6 +313,20 @@ func findSSHAgent() (string, error) {
 		return "", errors.New("ssh-agent is not installed; install OpenSSH Client or Git for Windows")
 	}
 	return "", errors.New("ssh-agent is not installed; install OpenSSH (macOS: brew install openssh libfido2)")
+}
+
+// gitAgentCandidates derives Git for Windows's MSYS2 ssh-agent path from a
+// git executable found on PATH, so installs outside %ProgramFiles% are found
+// before Windows's service-only OpenSSH ssh-agent.
+func gitAgentCandidates(gitPath string) []string {
+	dir := filepath.Dir(gitPath)
+	parent := filepath.Dir(dir)
+	grandparent := filepath.Dir(parent)
+	return []string{
+		filepath.Join(dir, "ssh-agent.exe"),
+		filepath.Join(parent, "usr", "bin", "ssh-agent.exe"),
+		filepath.Join(grandparent, "usr", "bin", "ssh-agent.exe"),
+	}
 }
 
 // findSSHAdd finds the ssh-add that belongs to the agent, so a Git agent on
@@ -327,7 +359,8 @@ func runSSHAgent(agentPath, socket string, env []string) ([]byte, error) {
 		args = append(args, "-a", socket)
 	}
 	command := exec.CommandContext(ctx, agentPath, args...)
-	command.Env = append(os.Environ(), env...)
+	hideSecurityKeyCommand(command)
+	command.Env = withPathDirs(append(os.Environ(), env...), filepath.Dir(agentPath))
 	output, err := command.Output()
 	if err != nil {
 		var exit *exec.ExitError
@@ -362,16 +395,82 @@ func killAgent(agentPath, socket string, pid int) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	command := exec.CommandContext(ctx, agentPath, "-k")
-	command.Env = []string{
+	hideSecurityKeyCommand(command)
+	command.Env = withPathDirs([]string{
 		"PATH=" + os.Getenv("PATH"),
 		"SSH_AUTH_SOCK=" + socket,
 		fmt.Sprintf("SSH_AGENT_PID=%d", pid),
-	}
-	if err := command.Run(); err != nil {
+	}, filepath.Dir(agentPath))
+	if err := command.Run(); err != nil && runtime.GOOS != "windows" {
 		if process, err := os.FindProcess(pid); err == nil {
 			_ = process.Kill()
 		}
 	}
+}
+
+// withPathDirs ensures every directory in dirs appears on PATH (at the front)
+// without duplicating entries. MSYS2 ssh-agent spawns ssh-sk-helper from
+// ../lib/ssh, which needs Git\usr\bin on PATH to find its runtime DLLs.
+func withPathDirs(env []string, dirs ...string) []string {
+	out := make([]string, len(env))
+	copy(out, env)
+
+	pathIdx := -1
+	pathKey := "PATH"
+	pathVal := ""
+	for i, entry := range out {
+		key, val, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		isPath := key == "PATH" || (runtime.GOOS == "windows" && strings.EqualFold(key, "PATH"))
+		if isPath {
+			pathIdx = i
+			pathKey = key
+			pathVal = val
+		}
+	}
+
+	existing := filepath.SplitList(pathVal)
+	var prepend []string
+	for _, dir := range dirs {
+		if dir == "" || dir == "." {
+			continue
+		}
+		clean := filepath.Clean(dir)
+		if pathListContains(existing, clean) || pathListContains(prepend, clean) {
+			continue
+		}
+		prepend = append(prepend, clean)
+	}
+	if len(prepend) == 0 {
+		return out
+	}
+	combined := append(prepend, existing...)
+	entry := pathKey + "=" + strings.Join(combined, string(os.PathListSeparator))
+	if pathIdx >= 0 {
+		out[pathIdx] = entry
+	} else {
+		out = append(out, entry)
+	}
+	return out
+}
+
+func pathListContains(list []string, target string) bool {
+	for _, item := range list {
+		if item == "" {
+			continue
+		}
+		clean := filepath.Clean(item)
+		if runtime.GOOS == "windows" {
+			if strings.EqualFold(clean, target) {
+				return true
+			}
+		} else if clean == target {
+			return true
+		}
+	}
+	return false
 }
 
 // securityKeyPrompts is the private channel between an ssh-add or

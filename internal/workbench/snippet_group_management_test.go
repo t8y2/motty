@@ -7,6 +7,7 @@ import (
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/text"
+	"github.com/vivaui/viva/ui"
 )
 
 func snippetGroupsManagerState(t *testing.T) *State {
@@ -334,6 +335,147 @@ func TestDeletingANestedSnippetGroupUngroupsItsSubtree(t *testing.T) {
 	}
 	if !state.snippets.filter.all() {
 		t.Fatalf("filter = %+v, want reset to all", state.snippets.filter)
+	}
+}
+
+// Deleting a group with the "delete all commands" choice selected removes the
+// group, its subgroups, and every command beneath it, while leaving other
+// groups intact. Opening the confirmation defaults to keeping commands.
+func TestDeletingASnippetGroupWithSnippetsRemovesAllSubtreeCommands(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "deploy", Command: "kubectl apply -f staging/", Group: "Ops", Run: true},
+		snippet{Name: "web", Command: "nginx -t", Group: "Ops/Web"},
+		snippet{Name: "editor", Command: "code .", Group: "dev"},
+	)
+
+	state.snippets.folderMenu = snippetFolderMenu{open: true, group: "Ops", at: gfx.Point{X: 100, Y: 100}}
+	state.chooseSnippetFolderMenu(hitSnippetFolderMenuDelete)
+	if state.modal != modalSnippetGroupDelete || state.snippetGroups.deleteSnippets {
+		t.Fatalf("delete group opened modal=%d deleteSnippets=%v, want default false", state.modal, state.snippetGroups.deleteSnippets)
+	}
+	state.Click(hitSnippetGroupDeletePurge)
+	if !state.snippetGroups.deleteSnippets {
+		t.Fatal("selecting purge radio did not set deleteSnippets")
+	}
+	state.Click(hitSnippetGroupDeleteConfirm)
+	if state.modal != modalNone {
+		t.Fatalf("confirm left modal %d", state.modal)
+	}
+	if len(state.snippets.list) != 1 || state.snippets.list[0].Name != "editor" {
+		t.Fatalf("remaining snippets = %+v, want only editor", state.snippets.list)
+	}
+	if !slices.Equal(state.snippets.groups, []string{"dev"}) {
+		t.Fatalf("groups after delete with snippets = %v, want [dev]", state.snippets.groups)
+	}
+	restored := newTestState(t, options)
+	if len(restored.snippets.list) != 1 || restored.snippets.list[0].Name != "editor" {
+		t.Fatalf("restored snippets = %+v, want only editor", restored.snippets.list)
+	}
+}
+
+// Dragging a grouped snippet before/after its top-level folder or choosing
+// Ungrouped in the Move to group dialog ungroups it without leaving behind
+// an implicit empty group.
+func TestMovingSnippetToRootViaDropAndContextMenu(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "only", Command: "echo only", Group: "Ops"},
+		snippet{Name: "devcmd", Command: "echo dev", Group: "Dev/Sub"},
+	)
+
+	// Tree rows: Dev(0), Sub(1), devcmd(2), Ops(3), only(4).
+	if state.snippetTreeCanDrop(4, 3, ui.TreeDropInside) {
+		t.Fatal("dropping snippet inside its own group should be rejected")
+	}
+	if !state.snippetTreeCanDrop(4, 3, ui.TreeDropBefore) {
+		t.Fatal("dropping snippet before its top-level folder should ungroup it")
+	}
+	state.dropSnippetTreeRow(ui.TreeMove{From: 4, To: 3, Where: ui.TreeDropBefore})
+	if state.snippets.list[0].Group != "" {
+		t.Fatalf("snippet group after root drop = %q, want empty", state.snippets.list[0].Group)
+	}
+	// Dropping an ungrouped snippet before a top-level folder is a no-op and rejected.
+	devRow := -1
+	onlyRow := -1
+	for i, row := range state.snippets.treeRows {
+		if row.folder && sameSnippetGroup(row.group, "Dev") {
+			devRow = i
+		}
+		if !row.folder && row.snippet == 0 {
+			onlyRow = i
+		}
+	}
+	if devRow < 0 || onlyRow < 0 {
+		t.Fatalf("missing rows dev=%d only=%d in %+v", devRow, onlyRow, state.snippets.treeRows)
+	}
+	if state.snippetTreeCanDrop(onlyRow, devRow, ui.TreeDropBefore) {
+		t.Fatal("dropping an ungrouped snippet before a top-level folder should be rejected")
+	}
+	// Existing empty-group semantics: an implicit group vanishes once its last
+	// command moves away.
+	if slices.Contains(state.snippets.groups, "Ops") {
+		t.Fatalf("implicit emptied group Ops remained: groups=%v", state.snippets.groups)
+	}
+
+	// Move a nested snippet to root through its context menu and dialog.
+	state.snippetMenu = snippetMenu{open: true, index: 1, name: "devcmd", at: gfx.Point{X: 100, Y: 100}}
+	state.chooseSnippetMenu(hitSnippetMenuMoveGroup)
+	if state.modal != modalSnippetMoveGroup {
+		t.Fatalf("move to group opened modal %d", state.modal)
+	}
+	state.snippets.moveModal.targetGroup = ""
+	state.Click(hitSnippetMoveGroupConfirm)
+	if state.snippets.list[1].Group != "" {
+		t.Fatalf("snippet group after remove from group = %q, want empty", state.snippets.list[1].Group)
+	}
+	if len(state.snippets.groups) != 0 {
+		t.Fatalf("groups after ungrouping last snippet = %v, want empty", state.snippets.groups)
+	}
+	restored := newTestState(t, options)
+	if restored.snippets.list[0].Group != "" || restored.snippets.list[1].Group != "" {
+		t.Fatalf("restored groups = %+v, want both ungrouped", restored.snippets.list)
+	}
+}
+
+// Creating a subgroup keeps the parent path in the Parent selector rather than
+// prefilling slashes in the Group name field, and renaming a nested group edits
+// only its leaf name while preserving its parent path.
+func TestSnippetGroupDialogSeparatesParentFromLeafName(t *testing.T) {
+	state := newTestState(t, freshOptions(t))
+	state.activeSection = sectionSnippets
+	addTestSnippets(state, snippet{Name: "cmd", Command: "echo hi", Group: "Ops/Prod/API"})
+
+	// Creating a child under Ops/Prod/API prefills parent, leaves name empty.
+	state.openSnippetGroupCreate("Ops/Prod/API")
+	if state.snippetGroups.parent != "Ops/Prod/API" || state.snippetGroups.editor.String() != "" {
+		t.Fatalf("create child state: parent=%q editor=%q", state.snippetGroups.parent, state.snippetGroups.editor.String())
+	}
+	// Slashes inside the leaf field are rejected while a parent is selected.
+	state.snippetGroups.editor.Insert("bad/leaf")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalSnippetGroupRename || state.snippetGroups.error == "" {
+		t.Fatalf("slash in child leaf was accepted: modal=%d err=%q", state.modal, state.snippetGroups.error)
+	}
+	state.snippetGroups.editor.ReplaceRange(text.Range{Start: 0, End: state.snippetGroups.editor.RuneCount()}, "logs")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalNone || !slices.Contains(state.snippets.groups, "Ops/Prod/API/logs") {
+		t.Fatalf("creating child failed: modal=%d err=%q groups=%v", state.modal, state.snippetGroups.error, state.snippets.groups)
+	}
+
+	// Renaming a nested group prefills only the leaf name and keeps its parent.
+	state.openSnippetGroupRenameDirect("Ops/Prod/API")
+	if state.snippetGroups.parent != "Ops/Prod" || state.snippetGroups.editor.String() != "API" {
+		t.Fatalf("rename nested state: parent=%q editor=%q", state.snippetGroups.parent, state.snippetGroups.editor.String())
+	}
+	state.snippetGroups.editor.ReplaceRange(text.Range{Start: 0, End: state.snippetGroups.editor.RuneCount()}, "Edge")
+	state.Click(hitSnippetGroupRenameSubmit)
+	if state.modal != modalNone || state.snippets.list[0].Group != "Ops/Prod/Edge" {
+		t.Fatalf("rename nested failed: modal=%d err=%q group=%q", state.modal, state.snippetGroups.error, state.snippets.list[0].Group)
 	}
 }
 

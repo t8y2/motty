@@ -344,9 +344,15 @@ func (t *Terminal) eraseDisplay(mode int) {
 		for _, l := range lines {
 			t.eraseLine2(l)
 		}
+		if !t.onAlt && t.screenClearedFn != nil {
+			t.screenClearedFn()
+		}
 	case 3:
 		t.clearHistory()
 		t.version++
+		if t.scrollbackClearedFn != nil {
+			t.scrollbackClearedFn()
+		}
 	}
 }
 

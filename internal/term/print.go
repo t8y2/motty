@@ -226,11 +226,15 @@ func (t *Terminal) print(r rune) {
 }
 
 // wrap moves to the start of the next line, marking the line it leaves as
-// continued.
+// continued. The new row continues the same logical line even when index scrolls
+// the old row into the history and recycles the row it moves to.
 func (t *Terminal) wrap() {
-	t.scr.lines[t.cy].wrapped = true
+	l := t.scr.lines[t.cy]
+	l.wrapped = true
+	logical := l.logical
 	t.cx, t.pend = 0, false
 	t.index()
+	t.scr.lines[t.cy].logical = logical
 }
 
 // clearWideHalf blanks the other half of the double-width character that has a

@@ -207,6 +207,69 @@ func TestDisplayReplacesAContinuationPromptEcho(t *testing.T) {
 	}
 }
 
+// zshEcho replays how zsh's line editor echoes a freshly typed wrapper, as
+// captured from a real zsh 5.9 pty: it toggles bracketed paste, redraws the
+// first brace with a backspace, and prefixes the continuation line with the
+// secondary prompt and cursor/colour reset sequences. Each typed line ends with
+// a carriage-return pair before the line feed.
+func zshEcho(sent []byte) string {
+	lines := splitEcho(sent)
+	var b strings.Builder
+	for i, line := range lines {
+		if i == 0 {
+			b.WriteString("{\b")
+		} else {
+			b.WriteString("\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jcursh> \x1b[K\x1b[?2004h")
+			if i == len(lines)-1 {
+				b.WriteString("}\b")
+			}
+		}
+		b.WriteString(string(line))
+		b.WriteString("\x1b[?2004l\r\r\n")
+	}
+	return b.String()
+}
+
+// A real zsh echo carries ANSI prompt redraws, bracketed-paste toggles and
+// backspace overwrites. The display filter must see through them and replace the
+// whole wrapper with the logical command instead of dumping the raw echo.
+func TestDisplayReplacesAZshRedrawnEcho(t *testing.T) {
+	sent := Wrap("df -h", testNonce)
+	tp := NewTap(testNonce, 1000)
+	tp.SetEcho(sent)
+	tp.SetDisplay("df -h")
+	display, done := tp.Feed([]byte(zshEcho(sent) + "out\r\n\r\n" + marker(0) + "\r\nPROMPT% "))
+	if !done || string(display) != "df -h\r\nout\r\nPROMPT% " {
+		t.Fatalf("display = %q, done %v", display, done)
+	}
+	for _, leak := range []string{"GOPAI_", "printf", "};", "cursh>", "\x1b["} {
+		if strings.Contains(string(display), leak) {
+			t.Fatalf("wrapper leaked %q: %q", leak, display)
+		}
+	}
+	if r := tp.Result(); r.Output != "out" || r.ExitCode != 0 {
+		t.Fatalf("result = %+v", r)
+	}
+}
+
+// On a narrow terminal zsh scrolls a long echoed line horizontally and redraws
+// only its tail. The visible tail is still the end of the wrapper line, so the
+// display filter replaces it rather than falling back to the raw echo.
+func TestDisplayReplacesAHorizontallyScrolledEcho(t *testing.T) {
+	sent := Wrap("df -h", testNonce)
+	tail := "GOPAI_ " + testNonce + " $?"
+	scrolled := "{\b{ df -h" + "\x1b[?2004l\r\r\n" +
+		"\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jcursh> \x1b[K\x1b[?2004h}\b}; printf '\\n%s%s%d\\n' " +
+		"\r\x1b[K" + tail + "\x1b[?2004l\r\r\n"
+	tp := NewTap(testNonce, 1000)
+	tp.SetEcho(sent)
+	tp.SetDisplay("df -h")
+	display, done := tp.Feed([]byte(scrolled + "out\r\n\r\n" + marker(0) + "\r\nPROMPT% "))
+	if !done || string(display) != "df -h\r\nout\r\nPROMPT% " {
+		t.Fatalf("display = %q, done %v", display, done)
+	}
+}
+
 func TestDisplayFlushesHeldEchoOnAbort(t *testing.T) {
 	sent := Wrap("echo hi", testNonce)
 	echo := strings.ReplaceAll(string(sent), "\n", "\r\n")
@@ -622,5 +685,48 @@ func TestTapPageReadsWhileRunningAndReportsDroppedOutput(t *testing.T) {
 	}
 	if got.Len() == 0 {
 		t.Fatal("small pages returned nothing")
+	}
+}
+
+func TestDisplayToleratesPromptOutputBeforeTheWrapperEcho(t *testing.T) {
+	sent := Wrap("df -h", testNonce)
+	tp := NewTap(testNonce, 1000)
+	tp.SetEcho(sent)
+	tp.SetDisplay("df -h")
+	stream := "arch%\r\n" + zshEcho(sent) + "out\r\n\r\n" + marker(0) + "\r\nPROMPT% "
+	display, done := tp.Feed([]byte(stream))
+	if !done {
+		t.Fatal("the command did not finish")
+	}
+	for _, leak := range []string{"GOPAI_", "printf", "};", "cursh>", "\x1b["} {
+		if strings.Contains(string(display), leak) {
+			t.Fatalf("wrapper leaked %q into %q", leak, display)
+		}
+	}
+	if !strings.Contains(string(display), "df -h") {
+		t.Fatalf("logical command missing from %q", display)
+	}
+}
+
+func TestDisplayReplacesASyntaxHighlightedRedraw(t *testing.T) {
+	sent := Wrap("free -h", testNonce)
+	highlight := " \x1b[49D\x1b[33m}\x1b[39m\x1b[2C\x1b[32mp\x1b[32mr\x1b[32mi\x1b[32mn\x1b[32mt\x1b[32mf\x1b[39m \x1b[33m'\x1b[33m\\\x1b[33mn\x1b[33m%\x1b[33ms\x1b[33m%\x1b[33ms\x1b[33m%\x1b[33md\x1b[33m\\\x1b[33mn\x1b[33m'\x1b[39m\x1b[27C"
+	stream := "{\b{ free -h\x1b[?2004l\r\r\n" +
+		"\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jcursh> \x1b[K\x1b[?2004h}\b}; printf '\\n%s%s%d\\n' GOPAI_ " + testNonce + " $?" + highlight + "\x1b[?2004l\r\r\n" +
+		"out\r\n\r\n" + marker(0) + "\r\nPROMPT% "
+	tp := NewTap(testNonce, 1000)
+	tp.SetEcho(sent)
+	tp.SetDisplay("free -h")
+	display, done := tp.Feed([]byte(stream))
+	if !done || !strings.Contains(string(display), "free -h") {
+		t.Fatalf("display = %q, done %v", display, done)
+	}
+	for _, leak := range []string{"GOPAI_", "printf", "};", "cursh>"} {
+		if strings.Contains(string(display), leak) {
+			t.Fatalf("wrapper leaked %q into %q", leak, display)
+		}
+	}
+	if r := tp.Result(); r.Output != "out" || r.ExitCode != 0 {
+		t.Fatalf("result = %+v", r)
 	}
 }

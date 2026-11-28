@@ -317,6 +317,7 @@ func sameSavedHost(left, right savedHost) bool {
 		left.Chromeless == right.Chromeless &&
 		left.ColorDepth == right.ColorDepth && left.DesktopEncoding == right.DesktopEncoding &&
 		left.DesktopWidth == right.DesktopWidth && left.DesktopHeight == right.DesktopHeight &&
+		left.DesktopScale == right.DesktopScale &&
 		sameSavedEffects(left.Effects, right.Effects)
 }
 

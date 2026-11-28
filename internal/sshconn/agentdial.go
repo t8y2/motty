@@ -98,11 +98,7 @@ func dialAgent(address string) (net.Conn, error) {
 	if isAgentPipe(address) {
 		return dialAgentPipe(strings.ReplaceAll(address, "/", `\`))
 	}
-	conn, err := net.DialTimeout("unix", address, agentDialTimeout)
-	if err != nil {
-		return nil, err
-	}
-	return conn, nil
+	return dialAgentSocket(address)
 }
 
 var errNoAgent = errors.New("no ssh-agent is running (SSH_AUTH_SOCK is not set)")

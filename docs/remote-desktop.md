@@ -112,14 +112,26 @@ type Session interface {
   indicator rather than a fabricated measurement.
 * A backend whose server can change its desktop's size while it runs implements
   `desktop.Resizer` (RDP, once the server has opened its display control
-  channel). The workbench then asks for the pane's pixels and the display's
-  scale when it connects (`desktop.Options.Width/Height/Scale`), draws the
-  picture pixel for pixel (`Surface.DrawPixels`) and, in Fit mode, asks the server
-  for a new size when the pane has held one for 250 ms. Scaling the picture to
-  the pane (what VNC and a server without the channel still get) resamples text
-  that the server rasterized for another size, which is what made RDP text look
-  soft at 125% and 150%. The status line reads 100% for such a picture.
-  Actual size stops the following and keeps the size the server has.
+  channel). The workbench then asks for a desktop the size of the pane when it
+  connects (`desktop.Options.Width/Height/Scale`) and, in Fit mode, asks the
+  server for a new size when the pane has held one for 250 ms. Actual size stops
+  the following and keeps the size the server has.
+* The scale an RDP server is asked for (`DesktopScaleFactor`, in the handshake
+  and in every display-control resize) is the remote session's DPI, so it is the
+  host's **Remote scaling** choice, not this display's scale. At **100%** (the
+  default) the desktop is the pane's logical size: on a 1x display it is drawn
+  pixel for pixel, on a scaled display it is scaled up to the pane, and moving
+  the window to another display asks the server for nothing. **Match this
+  display** asks for the pane's device pixels at the display's scale and draws
+  them pixel for pixel (`Surface.DrawPixels`), the sharpest text on a Retina or
+  125%/150% display; it changes the remote session's DPI to that scale, which a
+  Windows session shared with other clients keeps (Explorer's taskbar toolbars
+  rearrange, icons and menus stay large). A fixed resolution is always at 100%.
+  The choice is in the host editor's Quality and bandwidth section and the
+  desktop bar's quality menu, and a change connects again. Scaling a picture to
+  the pane (what VNC and a server without the channel get) resamples text the
+  server rasterized for another size. The status line reads 100% for a picture
+  at its own size.
 * Pointer events with left, middle, right, wheel notches, and the held modifiers.
 * Focus capture: while the picture has the focus, none of Motty's shortcuts run
   and the keys go to the remote. `Ctrl+Alt+G` releases the keyboard (the status
@@ -352,7 +364,7 @@ input is redirected over the `AUDIO_INPUT` dynamic virtual channel (MS-RDPEAI,
 16-bit PCM mono or stereo): it is off by default per host, and the host's
 **Forward local microphone** switch turns it on, opening the computer's default
 input device only when a remote application starts recording. Suppress Output while the tab is hidden. The initial desktop matches
-the pane's device pixels and display scale (1600x900 only when the caller supplies
+the pane at the host's remote scaling (1600x900 only when the caller supplies
 no size). A server with the RDPEDISP display-control channel follows the pane
 in Fit mode, including fullscreen transitions; otherwise the picture is scaled.
 
@@ -376,8 +388,10 @@ smoothness and the picture is not repainted as it moves; the image is made
 again only when the pointer reaches pixels with another picture under them or
 that picture changes, and the picture hit asks for it at each pointer place
 through `gfx.HitOptions.CursorImageAt`. Over the bars the ordinary arrow is
-shown, since the picture is not there to be inverted. One image pixel is one
-device pixel, as for every shape the remote names.
+shown, since the picture is not there to be inverted. The image has the
+picture's own scale in Fit mode on a following server (one image pixel is one
+picture pixel), and one device pixel otherwise, as for every shape the remote
+names.
 
 ### Quality and bandwidth
 

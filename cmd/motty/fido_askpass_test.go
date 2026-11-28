@@ -86,3 +86,16 @@ func TestFidoAskpassFailsWhenTheWindowCancels(t *testing.T) {
 		t.Fatalf("output = %q, want nothing", output.String())
 	}
 }
+
+func TestFidoAskpassIgnoresPassivePresenceNotice(t *testing.T) {
+	t.Setenv("SSH_ASKPASS_PROMPT", "none")
+	t.Setenv("MOTTY_FIDO_ASKPASS_SOCKET", "")
+	t.Setenv("MOTTY_FIDO_ASKPASS_TOKEN", "")
+	var output bytes.Buffer
+	if code := fidoAskpass([]string{"Confirm", "user", "presence", "for", "key"}, &output); code != 0 {
+		t.Fatalf("exit code = %d, want 0", code)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("output = %q, want nothing", output.String())
+	}
+}

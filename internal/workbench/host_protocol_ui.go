@@ -975,9 +975,9 @@ const rdpRowsHeight = vncRowsHeight + 5*(12+20)
 // desktopRowsHeight is the room paintVNCRows takes for the protocol on screen.
 func (state *State) desktopRowsHeight() float32 {
 	if state.editor.protocol == protocolRDP {
-		return rdpRowsHeight + desktopQualityRowsHeight(protocolRDP, state.editor.resolution == customDesktopSize)
+		return rdpRowsHeight + desktopQualityRowsHeight(protocolRDP)
 	}
-	return vncRowsHeight + desktopQualityRowsHeight(protocolVNC, false)
+	return vncRowsHeight + desktopQualityRowsHeight(protocolVNC)
 }
 
 // paintVNCRows paints the switches of a VNC or RDP host in the slots the host

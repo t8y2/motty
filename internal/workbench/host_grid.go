@@ -27,10 +27,11 @@ var (
 )
 
 const (
-	hostCardMinWidth = float32(280)
-	hostCardHeight   = float32(64)
-	hostCardGap      = float32(12)
-	hostGridHeader   = float32(42)
+	hostCardMinWidth      = float32(280)
+	hostCardHeight        = float32(64)
+	hostCardGap           = float32(12)
+	hostGridHeader        = float32(42)
+	hostGridSectionHeader = float32(30)
 )
 
 // hostGridDrag is the card grid's drag of a group header onto another group
@@ -249,16 +250,20 @@ func hostGridColumns(width float32) int {
 	return max(int((width+hostCardGap)/(hostCardMinWidth+hostCardGap)), 1)
 }
 
-// hostGridWidestRun is the number of hosts between group headers in the run
-// that holds the most of them: the columns a row can actually fill. A grid never
-// needs more columns than that, or widening the window past the point where an
-// empty column would fit would shrink every card although no card was added.
+// hostGridWidestRun is the number of hosts in the widest contiguous same-group
+// run between group boundaries: the columns a row can actually fill. A grid
+// never needs more columns than that, or widening the window past the point
+// where an empty column would fit would shrink every card although no card was
+// added.
 func (state *State) hostGridWidestRun() int {
-	widest, run := 1, 0
+	widest, run, runGroup := 1, 0, -1
 	for _, entry := range state.hostTreeRows {
 		if entry.Kind == hostTreeGroup {
-			widest, run = max(widest, run), 0
+			widest, run, runGroup = max(widest, run), 0, -1
 			continue
+		}
+		if entry.GroupIndex != runGroup {
+			widest, run, runGroup = max(widest, run), 0, entry.GroupIndex
 		}
 		run++
 	}
@@ -271,11 +276,12 @@ func (state *State) hostGridColumnCount(width float32) int {
 	return min(hostGridColumns(width), state.hostGridWidestRun())
 }
 
-// hostGridHeight is the height of the whole card layout at width.
-func (state *State) hostGridHeight(width float32) float32 {
+// hostGridMeasure returns the total card layout height at width when
+// targetHostID == 0, or the vertical offset of targetHostID when non-zero.
+func (state *State) hostGridMeasure(width float32, targetHostID uint32) (float32, bool) {
 	columns := state.hostGridColumnCount(width)
 	var height float32
-	run := 0
+	run, lastHeaderGroup, runGroup := 0, -1, -1
 	flush := func() {
 		if run > 0 {
 			height += float32((run+columns-1)/columns) * (hostCardHeight + hostCardGap)
@@ -286,11 +292,32 @@ func (state *State) hostGridHeight(width float32) float32 {
 		if entry.Kind == hostTreeGroup {
 			flush()
 			height += hostGridHeader
-		} else {
-			run++
+			lastHeaderGroup, runGroup = entry.GroupIndex, -1
+			continue
 		}
+		if entry.GroupIndex != runGroup {
+			flush()
+			runGroup = entry.GroupIndex
+			if lastHeaderGroup >= 0 && entry.GroupIndex != lastHeaderGroup {
+				height += hostGridSectionHeader
+				lastHeaderGroup = entry.GroupIndex
+			}
+		}
+		if targetHostID != 0 && state.hosts[entry.HostIndex].ID == targetHostID {
+			return height + float32(run/columns)*(hostCardHeight+hostCardGap), true
+		}
+		run++
 	}
 	flush()
+	if targetHostID != 0 {
+		return 0, false
+	}
+	return height, true
+}
+
+// hostGridHeight is the height of the whole card layout at width.
+func (state *State) hostGridHeight(width float32) float32 {
+	height, _ := state.hostGridMeasure(width, 0)
 	return height
 }
 
@@ -348,14 +375,16 @@ func (state *State) drawHostGrid(d *ui.DrawContext) {
 	state.beginHostSortPaint(canvas, viewport)
 	y := viewport.Y - state.hostsScroll
 	bottom := viewport.Y + viewport.Height
+	lastHeaderGroup := -1
 	for index := 0; index < len(rows) && y < bottom; {
 		if rows[index].Kind == hostTreeGroup {
 			// Its text sits on the same line as a group row's in the list view.
+			groupIndex := rows[index].GroupIndex
+			lastHeaderGroup = groupIndex
 			if y+hostGridHeader > viewport.Y {
 				// The header's cell is the drag source; its middle joins the group
 				// and the strips at its edges order the group beside it. Its name
 				// toggles the group on a click, as the list's group row does.
-				groupIndex := rows[index].GroupIndex
 				group := state.hostGroups[groupIndex]
 				id := hitHostGroupOpenList.At(groupIndex)
 				cell := gfx.Rect{X: viewport.X, Y: y + 4, Width: viewport.Width, Height: hostGridHeader - 8}
@@ -382,8 +411,20 @@ func (state *State) drawHostGrid(d *ui.DrawContext) {
 			index++
 			continue
 		}
+		groupIndex := rows[index].GroupIndex
+		if lastHeaderGroup >= 0 && groupIndex != lastHeaderGroup {
+			if y+hostGridSectionHeader > viewport.Y {
+				cell := gfx.Rect{X: viewport.X, Y: y, Width: viewport.Width, Height: hostGridSectionHeader}
+				state.paintHostGridSectionDivider(canvas, cell, groupIndex, rows[index].Depth)
+			}
+			y += hostGridSectionHeader
+			lastHeaderGroup = groupIndex
+			if y >= bottom {
+				break
+			}
+		}
 		end := index
-		for end < len(rows) && end-index < columns && rows[end].Kind == hostTreeHost {
+		for end < len(rows) && end-index < columns && rows[end].Kind == hostTreeHost && rows[end].GroupIndex == groupIndex {
 			end++
 		}
 		if y+hostCardHeight >= viewport.Y {
@@ -402,6 +443,33 @@ func (state *State) drawHostGrid(d *ui.DrawContext) {
 		index = end
 	}
 	state.endHostSortPaint()
+}
+
+// paintHostGridSectionDivider separates a parent group's direct host cards from
+// the preceding subgroup's cards so they do not visually merge into the subgroup.
+func (state *State) paintHostGridSectionDivider(canvas *gfx.Canvas, cell gfx.Rect, groupIndex int, depth uint8) {
+	if groupIndex < 0 || groupIndex >= len(state.hostGroups) {
+		return
+	}
+	pal, group := state.pal, state.hostGroups[groupIndex]
+	label := group.Label
+	if group.Name == "" {
+		label = state.messages.HostGroupDefault
+	}
+	indent := float32(max(0, int(depth)-1)) * 22
+	x := cell.X + indent
+	right := cell.X + cell.Width - 2
+	maxLabel := max(0, right-x)
+	style := gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: pal.muted}
+	labelWidth := min(canvas.TextWidthWeight(label, style.Size, style.Weight), maxLabel)
+	if labelWidth > 0 {
+		paintHostGridLine(canvas, label, gfx.Rect{X: x, Y: cell.Y, Width: labelWidth, Height: cell.Height}, 20, style)
+	}
+	lineX := x + labelWidth + 8
+	if lineX < right {
+		lineY := cell.Y + cell.Height/2
+		canvas.Fill(gfx.Rect{X: lineX, Y: lineY, Width: right - lineX, Height: 1}, withAlpha(pal.line, 0.7))
+	}
 }
 
 // paintHostGridHeader draws the row that opens or closes a group of cards. The

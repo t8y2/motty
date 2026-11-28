@@ -142,3 +142,57 @@ func TestSecurityKeyIdentityIsMarkedInTheKeyList(t *testing.T) {
 		t.Fatalf("protection = %q, want %q", got, want)
 	}
 }
+
+func TestWithPathDirsPrependsMissingEntriesOnce(t *testing.T) {
+	sep := string(os.PathListSeparator)
+	root := t.TempDir()
+	dirA := filepath.Join(root, "git", "usr", "bin")
+	dirB := filepath.Join(root, "other", "bin")
+	dirSys := filepath.Join(root, "sys")
+	pathKey := "PATH"
+	if runtime.GOOS == "windows" {
+		pathKey = "Path"
+	}
+	base := []string{"FOO=bar", pathKey + "=" + dirB + sep + dirSys}
+
+	got := withPathDirs(base, dirA, dirB, dirA, ".", "")
+	var pathValue string
+	for _, entry := range got {
+		key, val, ok := strings.Cut(entry, "=")
+		if ok && key == pathKey {
+			pathValue = val
+		}
+	}
+	want := dirA + sep + dirB + sep + dirSys
+	if pathValue != want {
+		t.Fatalf("PATH = %q, want %q", pathValue, want)
+	}
+	// Caller's slice was not mutated.
+	if strings.Contains(base[1], dirA) {
+		t.Fatalf("base env was mutated: %v", base)
+	}
+}
+
+func TestWithPathDirsAddsPathWhenMissing(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "bin")
+	got := withPathDirs([]string{"FOO=bar"}, dir)
+	if len(got) != 2 || got[1] != "PATH="+dir {
+		t.Fatalf("got = %v, want PATH=%s appended", got, dir)
+	}
+}
+
+func TestGitAgentCandidates(t *testing.T) {
+	base := filepath.Join(t.TempDir(), "Git")
+	candidates := gitAgentCandidates(filepath.Join(base, "cmd", "git.exe"))
+	want := filepath.Join(base, "usr", "bin", "ssh-agent.exe")
+	found := false
+	for _, candidate := range candidates {
+		if candidate == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("candidates = %v, want %q", candidates, want)
+	}
+}
