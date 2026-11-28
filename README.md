@@ -1,5 +1,5 @@
 <div align="center">
-  <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a></p>
+  <p>English | <a href="README.zh-CN.md">简体中文</a> | <a href="README.ja.md">日本語</a> | <a href="README.tr.md">Türkçe</a></p>
 
   <p>
     <a href="assets/readme-hero.svg"><img src="assets/readme-hero.svg" width="100%" alt="Motty — a desktop SSH client: shell, files, tunnels, screens and an assistant in one window" /></a>
