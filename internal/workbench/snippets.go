@@ -86,6 +86,10 @@ var (
 	hitSnippetBlankMenuDismiss   = tree.ID(snippetsHits, "snippet-blank-menu-dismiss")
 	hitSnippetBlankNewGroup      = tree.ID(snippetsHits, "snippet-blank-new-group")
 	hitSnippetBlankNewSnippet    = tree.ID(snippetsHits, "snippet-blank-new-snippet")
+	hitSnippetMoveGroupClose     = tree.ID(snippetsHits, "snippet-move-group-close")
+	hitSnippetMoveGroupCancel    = tree.ID(snippetsHits, "snippet-move-group-cancel")
+	hitSnippetMoveGroupConfirm   = tree.ID(snippetsHits, "snippet-move-group-confirm")
+	hitSnippetMoveGroupDismiss   = tree.ID(snippetsHits, "snippet-move-group-dismiss")
 
 	// Inline editor controls on the Snippets page.
 	hitSnippetInlineName         = tree.ID(snippetsHits, "snippet-inline-name")
@@ -129,7 +133,8 @@ type snippetsUI struct {
 	sendAt gfx.Point
 	// deleting is the snippet index plus one the delete confirmation asks about;
 	// zero means no confirmation is open.
-	deleting int
+	deleting  int
+	moveModal snippetMoveGroupModal
 
 	// Directory-tree browser state on the Snippets page.
 	tree                ui.TreeState

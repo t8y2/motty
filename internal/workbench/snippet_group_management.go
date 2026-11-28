@@ -46,6 +46,13 @@ type snippetGroupsUI struct {
 	bounds gfx.Rect
 }
 
+type snippetMoveGroupModal struct {
+	index       int
+	targetGroup string
+	targetField ui.FormFieldState
+	choices     []string
+}
+
 func (state *State) openSnippetGroupsManager() {
 	state.snippetGroups = snippetGroupsUI{}
 	state.modal = modalSnippetGroups
@@ -454,6 +461,93 @@ func (state *State) declareSnippetGroupDeleteDialog(c ui.C) {
 		state.dialogActionFooter(c,
 			components.ButtonAction{ID: hitSnippetGroupDeleteCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
 			components.ButtonAction{ID: hitSnippetGroupDeleteConfirm, Label: m.SnippetGroupDeleteConfirm, Variant: components.ButtonDestructive},
+		)
+	})
+}
+
+func (state *State) openSnippetMoveGroup(index int) {
+	state.flushInlineSnippetSave()
+	form := &state.snippets
+	if index < 0 || index >= len(form.list) {
+		return
+	}
+	form.moveModal = snippetMoveGroupModal{
+		index:       index,
+		targetGroup: form.list[index].Group,
+	}
+	state.modal = modalSnippetMoveGroup
+}
+
+func (state *State) moveSnippetToGroup(index int, targetGroup string) bool {
+	form, m := &state.snippets, state.messages.Tools
+	if index < 0 || index >= len(form.list) {
+		return false
+	}
+	target := cleanSnippetGroup(targetGroup)
+	if sameSnippetGroup(form.list[index].Group, target) && form.list[index].Group == target {
+		return false
+	}
+	name := form.list[index].Name
+	form.list[index].Group = target
+	form.selected = index
+	form.selectedFolder = target
+	state.snippetTreeExpandAncestors(target)
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	state.save()
+	state.status = fmt.Sprintf(m.StatusSnippetMovedFmt, name)
+	return true
+}
+
+func (state *State) clickSnippetMoveGroupDialog(id gfx.ID) {
+	modal := &state.snippets.moveModal
+	switch id {
+	case hitSnippetMoveGroupClose, hitSnippetMoveGroupCancel, hitSnippetMoveGroupDismiss:
+		state.closeModal()
+	case hitSnippetMoveGroupConfirm:
+		index := modal.index
+		target := modal.targetGroup
+		state.closeModal()
+		state.moveSnippetToGroup(index, target)
+	}
+}
+
+func (state *State) snippetMoveGroupLabel(path string) string {
+	if path == "" {
+		return state.messages.Tools.SnippetMoveGroupRoot
+	}
+	return strings.ReplaceAll(path, "/", "  ›  ")
+}
+
+// declareSnippetMoveGroupDialog lets the user move a snippet to another group
+// or to root (ungrouped) using a native Select control with keyboard navigation.
+func (state *State) declareSnippetMoveGroupDialog(c ui.C) {
+	form, m := &state.snippets, state.messages.Tools
+	modal := &form.moveModal
+	viewport := dialogViewport(c)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 460, "", 76)
+	dialog := ui.Dialog(c, ui.DialogSpec{
+		Title: m.SnippetMoveGroupTitle,
+		Width: 460, Height: height, Layer: dialogLayer,
+		Scope: dialogScope, DismissID: hitSnippetMoveGroupDismiss, CloseID: hitSnippetMoveGroupClose,
+		InitialFocusID: hitSnippetMoveGroupConfirm,
+	})
+	dialog.Body(func() {
+		choices := modal.choices[:0]
+		choices = append(choices, "")
+		choices = append(choices, form.groups...)
+		modal.choices = choices
+		ui.Column(c).Fill().Children(func() {
+			ui.FormField(c, &modal.targetField, m.SnippetMoveGroupField).FillWidth().Height(66).Children(func() {
+				ui.Select(c, &modal.targetGroup, modal.choices, state.snippetMoveGroupLabel).
+					Label(m.SnippetMoveGroupField).FillWidth().Height(36)
+			})
+		})
+	})
+	dialog.Footer(func() {
+		state.dialogActionFooter(c,
+			components.ButtonAction{ID: hitSnippetMoveGroupCancel, Label: state.messages.Cancel, Variant: components.ButtonSecondary},
+			components.ButtonAction{ID: hitSnippetMoveGroupConfirm, Label: m.SnippetMoveGroupConfirm, Variant: components.ButtonDefault},
 		)
 	})
 }

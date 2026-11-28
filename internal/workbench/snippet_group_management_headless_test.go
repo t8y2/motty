@@ -118,3 +118,84 @@ func TestSnippetGroupsManagerNativeRenameAndDelete(t *testing.T) {
 		t.Fatalf("the page does not show the renamed and ungrouped commands: %v", view.Texts())
 	}
 }
+
+// Right-clicking a command opens the Move to group dialog with a native Select
+// control and clean layout.
+func TestSnippetMoveToGroupDialogHeadless(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.setLanguage(i18n.Chinese)
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "deploy", Command: "kubectl apply -f staging/", Group: "Ops"},
+		snippet{Name: "editor", Command: "code .", Group: "dev"},
+	)
+
+	view, err := headless.Open(app.Config{
+		Width: 1200, Height: 800, Tree: Tree(), Paint: state.Paint,
+		OnKey: state.Key, OnPointer: state.Pointer, OnScroll: state.Scroll,
+		TextInput: func(c app.TextInputContext) *app.TextInput {
+			if editor := state.EditorFor(c.ID); editor != nil {
+				return &app.TextInput{Editor: editor}
+			}
+			return nil
+		},
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	clean := func(where string) {
+		t.Helper()
+		if problems := headless.CheckLayout(view.Snapshot()); len(problems) > 0 {
+			t.Fatalf("%s: %v", where, problems)
+		}
+	}
+
+	deployRow := -1
+	for i, row := range state.snippets.treeRows {
+		if !row.folder && row.snippet == 0 {
+			deployRow = i
+			break
+		}
+	}
+	if deployRow < 0 {
+		t.Fatalf("deploy row not found in %+v", state.snippets.treeRows)
+	}
+	rowID := state.snippets.tree.RowID(deployRow)
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == rowID {
+			if err := view.RightClick(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	clean("snippet context menu")
+	for _, hit := range view.Snapshot().Hits {
+		if hit.Label == state.messages.Tools.SnippetMoveToGroup {
+			if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if state.modal != modalSnippetMoveGroup {
+		t.Fatalf("move dialog opened modal %d", state.modal)
+	}
+	clean("move to group dialog")
+	for _, hit := range view.Snapshot().Hits {
+		if hit.ID == hitSnippetMoveGroupCancel {
+			if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			break
+		}
+	}
+	if state.modal != modalNone {
+		t.Fatalf("cancel left modal %d", state.modal)
+	}
+}
