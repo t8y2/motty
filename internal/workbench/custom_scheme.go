@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"errors"
-	"fmt"
 	"motty/internal/configstore"
 	"strings"
 
@@ -61,14 +60,14 @@ func cloneSchemeOpacity(value *int) *int {
 func (state *State) saveCustomScheme(s colorScheme) (string, error) {
 	s.name = strings.TrimSpace(s.name)
 	if s.name == "" {
-		return "", fmt.Errorf("theme name is required")
+		return "", errors.New(state.messages.Themes.NameRequired)
 	}
 	if len([]rune(s.name)) > 80 {
-		return "", fmt.Errorf("theme name must be at most 80 characters")
+		return "", errors.New(state.messages.Themes.NameTooLong)
 	}
 	for _, other := range state.managedSchemes {
 		if other.id != s.id && strings.EqualFold(other.name, s.name) {
-			return "", fmt.Errorf("theme name already exists")
+			return "", errors.New(state.messages.Themes.NameExists)
 		}
 	}
 	if !strings.HasPrefix(s.id, customSchemePrefix) {

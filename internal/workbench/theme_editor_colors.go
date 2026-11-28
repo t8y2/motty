@@ -13,7 +13,6 @@ func (e *themeEditorState) loadDraft() {
 	for i := range e.pickers {
 		e.pickers[i].ClosePanel()
 	}
-	e.openPicker = false
 	s := &e.draft
 	e.name.SetText(s.name)
 	e.colors[0], e.colors[1], e.colors[2] = schemeRGB(s.background), schemeRGB(s.foreground), schemeRGB(s.cursor)
@@ -59,9 +58,9 @@ func (e *themeEditorState) collectDraft() colorScheme {
 
 func (state *State) themeColorLabel(index int) string {
 	labels := []string{
-		state.themeText("Background", "背景", "背景"), state.themeText("Text", "文字", "文字"),
-		state.themeText("Cursor", "光标", "游標"), state.themeText("Selection", "选区背景", "選取背景"),
-		state.themeText("Selection text", "选区文字", "選取文字"),
+		state.messages.Themes.Background, state.messages.Themes.Text,
+		state.messages.Themes.Cursor, state.messages.Themes.Selection,
+		state.messages.Themes.SelectionText,
 	}
 	if index < len(labels) {
 		return labels[index]
@@ -75,18 +74,8 @@ func (state *State) declareThemeColors(c ui.C) {
 		for i := range e.colors {
 			label := state.themeColorLabel(i)
 			ui.Column(c).Gap(3).Items(ui.Center).Children(func() {
-				swatch := ui.ColorSwatch(c, e.colors[i], e.colorIndex == i, label).
-					Hit(hitThemeColors.At(i), label).Size(32, 32).DrawOver(func(d *ui.DrawContext) { e.colorAnchors[i] = d.Rect })
+				state.declareThemeColorPicker(c, i, label)
 				ui.Text(c, label).FontSize(10).Color(state.pal.muted).LineHeight(16)
-				if swatch.Clicked() {
-					e.pickers[e.colorIndex].ClosePanel()
-					e.colorIndex = i
-					e.syncColorFields()
-					e.openPicker = true
-				}
-				if e.colorIndex == i {
-					state.declareThemeColorPicker(c, swatch)
-				}
 			})
 		}
 	})

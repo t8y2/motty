@@ -1,7 +1,6 @@
 package workbench
 
 import (
-
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
@@ -20,24 +19,23 @@ type applicationThemeControls struct {
 }
 
 func (state *State) paintApplicationThemeSettings(page *settingsPage) {
-	label := state.themeText
 	if state.appearanceMode != appearanceCustom {
 		return
 	}
-	page.group(label("Interface colors", "界面颜色", "介面色彩"), func() {
+	page.group(state.messages.Themes.InterfaceColors, func() {
 		for index := range applicationPrimaryColors {
 			state.paintApplicationColor(page, index)
 		}
-		page.lineWith(label("Theme actions", "主题操作", "主題操作"), "", 260, func() {
+		page.lineWith(state.messages.Themes.ThemeActions, "", 260, func() {
 			ui.Row(page.c).Gap(8).Children(func() {
-				advanced := label("Advanced colors", "高级颜色", "進階色彩")
+				advanced := state.messages.Themes.AdvancedColors
 				if state.applicationThemeUI.advanced {
-					advanced = label("Hide advanced colors", "收起高级颜色", "收合進階色彩")
+					advanced = state.messages.Themes.HideAdvancedColors
 				}
 				if ui.Button(page.c, advanced).Secondary().Shrink(0).Clicked() {
 					state.applicationThemeUI.advanced = !state.applicationThemeUI.advanced
 				}
-				if ui.Button(page.c, label("Reset", "重置", "重設")).Secondary().Shrink(0).Clicked() {
+				if ui.Button(page.c, state.messages.Themes.Reset).Secondary().Shrink(0).Clicked() {
 					page.c.After(state.resetApplicationColors)
 				}
 			})
@@ -52,7 +50,7 @@ func (state *State) paintApplicationThemeSettings(page *settingsPage) {
 
 func (state *State) paintApplicationColor(page *settingsPage, index int) {
 	token := applicationColors[index]
-	label, m := state.themeText(token.en, token.zh, token.tw), state.messages
+	label, m := token.label(state.messages.Themes), state.messages
 	id := tree.ID(applicationThemeHits, token.key)
 	picker, target := &state.applicationThemeUI.pickers[index], &state.applicationThemeUI.values[index]
 	if picker.Applied() {

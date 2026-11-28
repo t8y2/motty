@@ -15,7 +15,9 @@ func TestCustomThemeFollowBackgroundThroughEditor(t *testing.T) {
 	state := newTestState(t, freshOptions(t))
 	state.setLanguage(i18n.Chinese)
 	state.setTerminalScheme("dracula")
-	state.chooseAppearanceMode(appearanceFollowTerminal)
+	state.chooseAppearanceMode(appearancePinnedDark)
+	state.appearanceFollowTerminal = true
+	state.rebuildTerminalLook()
 	state.openThemeEditor(true, false)
 	state.clickThemeEditor(hitThemeSave)
 	state.openThemeEditorFor(state.managedSchemes[0].id, false, false)
@@ -54,7 +56,7 @@ func TestCustomThemeFollowBackgroundThroughEditor(t *testing.T) {
 	if err := view.Frame(); err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []appearanceMode{appearanceCustom, appearanceFollowTerminal} {
+	for _, mode := range []appearanceMode{appearanceCustom} {
 		if err := view.ClickLabel(state.settingsAppearanceLabel(mode)); err != nil {
 			t.Fatal(err)
 		}

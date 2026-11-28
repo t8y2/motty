@@ -6,7 +6,7 @@ import (
 )
 
 func TestCustomApplicationSeedsCurrentTerminalFromEveryMode(t *testing.T) {
-	for _, mode := range []appearanceMode{appearancePinnedDark, appearancePinnedLight, appearanceFollowTerminal} {
+	for _, mode := range []appearanceMode{appearancePinnedDark, appearancePinnedLight} {
 		t.Run(mode.saved(), func(t *testing.T) {
 			state := newTestState(t, freshOptions(t))
 			state.chooseAppearanceMode(mode)
@@ -15,7 +15,7 @@ func TestCustomApplicationSeedsCurrentTerminalFromEveryMode(t *testing.T) {
 			state.applicationTheme.Base = "dark"
 			state.chooseAppearanceMode(appearanceCustom)
 			source, _ := state.schemeByID("dracula")
-			want := applicationPaletteForScheme(*source)
+			want := paletteFromScheme(state.appearance.palette(), source)
 			if rgb8(state.pal.workspace) != rgb8(want.workspace) || rgb8(state.pal.shell) != rgb8(want.shell) {
 				t.Fatalf("custom palette %v/%v, want terminal %v/%v", state.pal.workspace, state.pal.shell, want.workspace, want.shell)
 			}
@@ -50,7 +50,9 @@ func TestCustomApplicationOverridesStayIndependentOfTerminal(t *testing.T) {
 	if state.pal.workspace != background {
 		t.Fatal("editing terminal overwrote custom interface")
 	}
-	state.chooseAppearanceMode(appearanceFollowTerminal)
+	state.chooseAppearanceMode(appearancePinnedDark)
+	state.appearanceFollowTerminal = true
+	state.rebuildTerminalLook()
 	if state.pal.workspace != gfx.RGB(80, 40, 60) || state.applicationOpacity() != 80 {
 		t.Fatal("follow did not use edited terminal theme")
 	}

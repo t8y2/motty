@@ -4,26 +4,28 @@ import (
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"maps"
+	"motty/internal/i18n"
 )
 
 type applicationColorToken struct {
-	key, en, zh, tw string
-	color           func(*palette) *gfx.Color
+	key   string
+	label func(i18n.ThemeMessages) string
+	color func(*palette) *gfx.Color
 }
 
 var applicationColors = [...]applicationColorToken{
-	{"shell", "Title bar and sidebar", "标题栏和侧栏", "標題列和側欄", func(p *palette) *gfx.Color { return &p.shell }},
-	{"workspace", "Workspace", "工作区", "工作區", func(p *palette) *gfx.Color { return &p.workspace }},
-	{"surface", "Panels and controls", "面板和控件", "面板和控制項", func(p *palette) *gfx.Color { return &p.surface }},
-	{"text", "Text", "正文", "正文", func(p *palette) *gfx.Color { return &p.text }},
-	{"muted", "Secondary text", "次要文字", "次要文字", func(p *palette) *gfx.Color { return &p.muted }},
-	{"accent", "Accent", "强调色", "強調色", func(p *palette) *gfx.Color { return &p.accent }},
-	{"border", "Border", "边框", "邊框", func(p *palette) *gfx.Color { return &p.line }},
-	{"hover", "Hover", "悬停", "懸停", func(p *palette) *gfx.Color { return &p.surfaceSoft }},
-	{"pressed", "Pressed", "按下", "按下", func(p *palette) *gfx.Color { return &p.surfaceHot }},
-	{"tab", "Tab", "标签页", "分頁", func(p *palette) *gfx.Color { return &p.tab }},
-	{"tabHover", "Hovered tab", "悬停标签页", "懸停分頁", func(p *palette) *gfx.Color { return &p.tabHover }},
-	{"tabActive", "Active tab", "活动标签页", "使用中分頁", func(p *palette) *gfx.Color { return &p.tabActive }},
+	{"shell", func(m i18n.ThemeMessages) string { return m.ColorShell }, func(p *palette) *gfx.Color { return &p.shell }},
+	{"workspace", func(m i18n.ThemeMessages) string { return m.ColorWorkspace }, func(p *palette) *gfx.Color { return &p.workspace }},
+	{"surface", func(m i18n.ThemeMessages) string { return m.ColorSurface }, func(p *palette) *gfx.Color { return &p.surface }},
+	{"text", func(m i18n.ThemeMessages) string { return m.ColorText }, func(p *palette) *gfx.Color { return &p.text }},
+	{"muted", func(m i18n.ThemeMessages) string { return m.ColorMuted }, func(p *palette) *gfx.Color { return &p.muted }},
+	{"accent", func(m i18n.ThemeMessages) string { return m.ColorAccent }, func(p *palette) *gfx.Color { return &p.accent }},
+	{"border", func(m i18n.ThemeMessages) string { return m.ColorBorder }, func(p *palette) *gfx.Color { return &p.line }},
+	{"hover", func(m i18n.ThemeMessages) string { return m.ColorHover }, func(p *palette) *gfx.Color { return &p.surfaceSoft }},
+	{"pressed", func(m i18n.ThemeMessages) string { return m.ColorPressed }, func(p *palette) *gfx.Color { return &p.surfaceHot }},
+	{"tab", func(m i18n.ThemeMessages) string { return m.ColorTab }, func(p *palette) *gfx.Color { return &p.tab }},
+	{"tabHover", func(m i18n.ThemeMessages) string { return m.ColorTabHover }, func(p *palette) *gfx.Color { return &p.tabHover }},
+	{"tabActive", func(m i18n.ThemeMessages) string { return m.ColorTabActive }, func(p *palette) *gfx.Color { return &p.tabActive }},
 }
 
 const applicationPrimaryColors = 7
@@ -41,16 +43,6 @@ func applicationTextAgainst(background [3]uint8) gfx.Color {
 		return applicationRGB(white)
 	}
 	return applicationRGB(black)
-}
-
-func readableApplicationColor(background, color, fallback gfx.Color, ratio float32) gfx.Color {
-	for _, fraction := range [...]float32{0, 0.25, 0.5, 0.75} {
-		candidate := blendApplicationColor(color, fallback, fraction)
-		if contrastRatio(rgb8(background), rgb8(candidate)) >= ratio {
-			return candidate
-		}
-	}
-	return fallback
 }
 
 func (config applicationTheme) palette() *palette {

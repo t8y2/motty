@@ -9,8 +9,8 @@ import (
 
 func (state *State) paintApplicationOpacity(page *settingsPage) {
 	c, slider := page.c, &state.applicationThemeUI.opacity
-	label := state.themeText("Interface background opacity", "界面背景不透明度", "介面背景不透明度")
-	description := state.themeText("Applies over a background image or on supported transparent windows.", "在背景图片上或支持透明的窗口中生效。", "在背景圖片上或支援透明的視窗中生效。")
+	label := state.messages.Themes.InterfaceBackgroundOpacity
+	description := state.messages.Themes.InterfaceOpacityDescription
 	page.lineFor(hitApplicationOpacity, label, description, 182, func() {
 		ui.Row(c).Grow(1).Gap(8).Items(ui.Center).Children(func() {
 			wasDragging := slider.Dragging()

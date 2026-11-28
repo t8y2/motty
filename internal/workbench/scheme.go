@@ -250,7 +250,8 @@ func (state *State) rebuildTerminalLook() {
 		}
 		state.theme = state.pal.theme()
 		look := *state.pal
-		look.termFG = look.text
+		look.dark, look.terminal = basePal.dark, basePal.terminal
+		look.termFG, look.cursor, look.ansi = basePal.text, basePal.cursor, basePal.ansi
 		look.highlight = state.highlights
 		look.intense = state.terminalIntense
 		state.termEpoch++
@@ -464,7 +465,7 @@ func (state *State) paintSchemePicks(page *settingsPage) {
 			ui.Text(c, look).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
 			ui.Row(c).Items(ui.Center).Gap(10).MarginSides(0, 0, 10, 0).Children(func() {
 				ui.Text(c, m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
-				page.button(hitThemeNew, state.themeText("New theme", "新建主题", "新增主題"), aiButtonOutline, false)
+				page.button(hitThemeNew, state.messages.Themes.NewTheme, aiButtonOutline, false)
 				page.button(hitSchemeBrowseAll, fmt.Sprintf(m.SchemeMoreFmt, state.schemeTotal()), aiButtonOutline, false)
 			})
 			state.paintSchemeCards(page, state.schemeQuickPicks())

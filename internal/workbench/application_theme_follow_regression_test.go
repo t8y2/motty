@@ -17,7 +17,9 @@ func TestApplicationThemeFollowsEditedCopyWhenEnabled(t *testing.T) {
 			state.chooseAppearanceMode(appearancePinnedDark)
 			state.setTerminalScheme("dracula")
 			if previouslyFollowed {
-				state.chooseAppearanceMode(appearanceFollowTerminal)
+				state.chooseAppearanceMode(appearancePinnedDark)
+				state.appearanceFollowTerminal = true
+				state.rebuildTerminalLook()
 				state.chooseAppearanceMode(appearancePinnedDark)
 			}
 			state.openThemeEditor(true, false)
@@ -30,7 +32,9 @@ func TestApplicationThemeFollowsEditedCopyWhenEnabled(t *testing.T) {
 			if state.modal != modalNone || state.activeScheme() != id {
 				t.Fatalf("save and apply: modal=%v scheme=%q", state.modal, state.activeScheme())
 			}
-			state.chooseAppearanceMode(appearanceFollowTerminal)
+			state.chooseAppearanceMode(appearancePinnedDark)
+			state.appearanceFollowTerminal = true
+			state.rebuildTerminalLook()
 			if state.activeScheme() != id || state.pal.workspace != background {
 				t.Fatalf("followed %q background=%v; want %q background=%v", state.activeScheme(), state.pal.workspace, id, background)
 			}

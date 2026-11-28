@@ -32,16 +32,18 @@ func TestCustomThemeFollowKeepsSourceWhenBrightnessChanges(t *testing.T) {
 	state.openThemeEditor(true, false)
 	state.clickThemeEditor(hitThemeApply)
 	id := state.activeScheme()
-	state.chooseAppearanceMode(appearanceFollowTerminal)
+	state.chooseAppearanceMode(appearancePinnedDark)
+	state.appearanceFollowTerminal = true
+	state.rebuildTerminalLook()
 	state.openThemeEditor(false, false)
 	state.themeEditor.colors[0] = gfx.RGB(240, 245, 250)
 	state.themeEditor.colors[1] = gfx.RGB(25, 30, 40)
 	state.clickThemeEditor(hitThemeSave)
-	if state.activeScheme() != id || state.appearance != appearanceLight || state.pal.workspace != gfx.RGB(240, 245, 250) {
+	if state.activeScheme() != id || state.pal.dark || state.pal.workspace != gfx.RGB(240, 245, 250) {
 		t.Fatal("follow lost its source after changing brightness")
 	}
 	again := newTestState(t, state.options)
-	if again.activeScheme() != id || again.appearance != appearanceLight {
+	if again.activeScheme() != id || again.pal.dark {
 		t.Fatal("follow source was not restored")
 	}
 }

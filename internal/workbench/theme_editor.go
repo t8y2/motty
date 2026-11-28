@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/ui"
-	"motty/internal/i18n"
 )
 
 var themeEditorHits = tree.Feature("theme-editor")
@@ -32,30 +30,15 @@ type themeEditorState struct {
 	name                            ui.Field
 	colors                          [21]gfx.Color
 	pickers                         [21]ui.ColorPickerState
-	colorAnchors                    [21]gfx.Rect
-	liveColorHex                    ui.Field
-	liveColorInput                  ui.Handlers
-	liveColorLayout                 components.ColorPickerLayout
 	colorIndex                      int
 	hex, red, green, blue           ui.Field
 	opacity                         ui.SliderState
 	expanded, previewOnly, deleting bool
-	maximized, openPicker           bool
+	maximized                       bool
 	error                           string
 	colorInvalid                    bool
 	preview                         *terminal
 	previewVersion                  uint16
-}
-
-func (state *State) themeText(en, zh, tw string) string {
-	switch state.language {
-	case i18n.Chinese:
-		return zh
-	case i18n.TraditionalChinese:
-		return tw
-	default:
-		return en
-	}
 }
 
 func (state *State) resolvedScheme(id string) colorScheme {
@@ -80,9 +63,9 @@ func (state *State) openThemeEditorFor(id string, copyTheme, newTheme bool) {
 	}
 	if copyTheme || newTheme || !strings.HasPrefix(s.id, customSchemePrefix) {
 		s.id = ""
-		base := s.name + state.themeText(" copy", " 副本", " 副本")
+		base := s.name + state.messages.Themes.Copy
 		if newTheme {
-			base = state.themeText("My theme", "我的主题", "我的主題")
+			base = state.messages.Themes.MyTheme
 		}
 		s.name = state.uniqueThemeName(base)
 	}

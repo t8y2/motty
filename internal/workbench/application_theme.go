@@ -8,8 +8,9 @@ import (
 )
 
 type applicationTheme struct {
-	BaseColors   map[string]string `json:"baseColors,omitempty"`
-	Base         string            `json:"base,omitempty"`
+	BaseColors map[string]string `json:"baseColors,omitempty"`
+	Base       string            `json:"base,omitempty"`
+	// 仅用于读取早期 PR 的旧设置，恢复时迁移并清除。
 	FollowBase   string            `json:"followBase,omitempty"`
 	FollowScheme string            `json:"followScheme,omitempty"`
 	Colors       map[string]string `json:"colors,omitempty"`

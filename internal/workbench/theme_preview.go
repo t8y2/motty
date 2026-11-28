@@ -27,14 +27,14 @@ func (state *State) declareThemePreview(c ui.C) {
 	p := paletteFromScheme(state.appearance.palette(), &preview)
 	ui.Column(c).FillWidth().Gap(12).Children(func() {
 		ui.Row(c).Items(ui.Center).Children(func() {
-			ui.Text(c, state.themeText("Live preview", "实时预览", "即時預覽")).Grow(1).Color(state.pal.text).FontSize(15)
-			label := state.themeText("Expand", "展开", "展開")
+			ui.Text(c, state.messages.Themes.LivePreview).Grow(1).Color(state.pal.text).FontSize(15)
+			label := state.messages.Themes.Expand
 			if e.expanded {
-				label = state.themeText("Back to editor", "返回编辑", "返回編輯")
+				label = state.messages.Themes.BackToEditor
 			}
 			ui.Button(c, label).Outline().Hit(hitThemePreview, label)
 		})
-		ui.Text(c, state.themeText("Interface following this theme", "界面跟随此主题的效果", "介面跟隨此主題的效果")).Color(state.pal.muted).FontSize(12)
+		ui.Text(c, state.messages.Themes.FollowPreview).Color(state.pal.muted).FontSize(12)
 		ui.Column(c).FillWidth().Background(p.shell).Border(1, p.line).Children(func() {
 			ui.Row(c).FillWidth().Height(36).PadX(6).Gap(5).Items(ui.Center).Children(func() {
 				for i, name := range []string{"project", "live", "deploy"} {
@@ -55,7 +55,7 @@ func (state *State) declareThemePreview(c ui.C) {
 			})
 			ui.Row(c).FillWidth().Height(30).PadX(10).Items(ui.Center).Children(func() {
 				ui.Text(c, "●  project").Grow(1).FontSize(11).Color(p.text)
-				ui.Text(c, state.themeText("Connected", "已连接", "已連線")).FontSize(10).Color(p.muted)
+				ui.Text(c, state.messages.Themes.Connected).FontSize(10).Color(p.muted)
 			})
 			ui.Slot(c).FillWidth().Height(340).Clip().Draw(func(d *ui.DrawContext) { state.paintThemePreviewTerminal(d) })
 			ui.Row(c).FillWidth().Height(30).Gap(4).PadX(5).Items(ui.Center).Children(func() {

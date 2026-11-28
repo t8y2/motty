@@ -4,40 +4,33 @@ import (
 	"math"
 	"testing"
 
-	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/components"
 	"github.com/vivaui/viva/gfx"
 )
 
-func TestApplicationThemeFollowsPinnedTerminalSource(t *testing.T) {
-	var native app.Appearance
+func TestApplicationThemeFollowsPersistedTerminalChoice(t *testing.T) {
 	options := freshOptions(t)
-	options.SetNativeAppearance = func(look app.Appearance) { native = look }
 	state := newTestState(t, options)
+	state.appearanceFollowTerminal = true
 	state.setTerminalScheme("dracula")
-	state.chooseAppearanceMode(appearancePinnedLight)
-	state.setTerminalScheme("github-light")
-	state.chooseAppearanceMode(appearancePinnedDark)
-	state.chooseAppearanceMode(appearanceFollowTerminal)
-
-	if state.activeScheme() != "dracula" || state.appearance != appearanceDark || native != app.AppearanceDark {
-		t.Fatalf("followed scheme %q, appearance %v, native appearance %v", state.activeScheme(), state.appearance, native)
-	}
-	scheme, _ := state.schemeByID("dracula")
-	if rgb8(state.pal.success) != scheme.ansi[2] || contrastRatio(rgb8(state.pal.muted), rgb8(state.pal.surface)) < 4.5 {
-		t.Fatalf("linked success color %v and muted text %v", state.pal.success, state.pal.muted)
-	}
-	state.setTerminalScheme("solarized-light")
 	state.save()
 	restored := newTestState(t, options)
-	if restored.appearanceMode != appearanceFollowTerminal || restored.activeScheme() != "solarized-light" ||
-		restored.appearance != appearanceLight || native != app.AppearanceLight {
-		t.Fatalf("restored mode %v, scheme %q, appearance %v, native appearance %v",
-			restored.appearanceMode, restored.activeScheme(), restored.appearance, native)
+	if !restored.appearanceFollowTerminal || restored.terminalSchemes[appearanceDark] != "dracula" {
+		t.Fatal("follow choice did not persist in terminal settings")
+	}
+	restored.appearanceFollowTerminal = false
+	restored.chooseAppearanceMode(appearancePinnedDark)
+	if restored.activeScheme() != "dracula" {
+		t.Fatal("disabling follow lost the terminal choice")
 	}
 	restored.chooseAppearanceMode(appearancePinnedLight)
-	if restored.activeScheme() != "github-light" {
-		t.Fatalf("independent light scheme was changed to %q", restored.activeScheme())
+	restored.setTerminalScheme("github-light")
+	restored.appearanceFollowTerminal = true
+	restored.setTerminalScheme("solarized-light")
+	restored.save()
+	again := newTestState(t, options)
+	if again.terminalSchemes != [2]string{"dracula", "solarized-light"} {
+		t.Fatalf("terminal settings = %v", again.terminalSchemes)
 	}
 }
 
@@ -46,7 +39,7 @@ func TestApplicationThemeColorPickerAndPersistence(t *testing.T) {
 	state.Click(hitSettings)
 	state.selectSettingsCategory(settingsAppearance)
 	driver := paneDriver(t, state, gfx.Size{Width: MinimumWindowWidth, Height: 2100})
-	for _, mode := range []appearanceMode{appearancePinnedLight, appearanceFollowSystem, appearancePinnedDark, appearanceFollowTerminal, appearanceCustom} {
+	for _, mode := range []appearanceMode{appearancePinnedLight, appearanceFollowSystem, appearancePinnedDark, appearanceCustom} {
 		label := state.settingsAppearanceLabel(mode)
 		hit, ok := settingsChoiceInHits(driver.Snapshot().Hits, label, true)
 		if !ok {
@@ -126,7 +119,9 @@ func TestCustomApplicationThemeDoesNotChangeTerminalTheme(t *testing.T) {
 	if state.appearance != appearanceLight || state.activeScheme() != "dracula" || !state.termPal.dark {
 		t.Fatalf("custom appearance %v, terminal scheme %q, dark %v", state.appearance, state.activeScheme(), state.termPal.dark)
 	}
-	state.chooseAppearanceMode(appearanceFollowTerminal)
+	state.chooseAppearanceMode(appearancePinnedDark)
+	state.appearanceFollowTerminal = true
+	state.rebuildTerminalLook()
 	if state.activeScheme() != "dracula" || state.appearance != appearanceDark {
 		t.Fatalf("followed scheme %q and appearance %v", state.activeScheme(), state.appearance)
 	}

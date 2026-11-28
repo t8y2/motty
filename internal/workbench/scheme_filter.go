@@ -21,15 +21,15 @@ type schemeDrawerGroup struct {
 func (state *State) schemeCategoryLabel(category schemeCategory) string {
 	switch category {
 	case schemeFilterBuiltin:
-		return state.themeText("Built-in", "内置", "內建")
+		return state.messages.Themes.BuiltIn
 	case schemeFilterCommunityDark:
-		return state.themeText("Community dark", "社区深色", "社群深色")
+		return state.messages.Themes.CommunityDark
 	case schemeFilterCommunityLight:
-		return state.themeText("Community light", "社区浅色", "社群淺色")
+		return state.messages.Themes.CommunityLight
 	case schemeFilterMine:
-		return state.themeText("Mine", "我的", "我的")
+		return state.messages.Themes.Mine
 	default:
-		return state.themeText("All", "全部", "全部")
+		return state.messages.Themes.All
 	}
 }
 

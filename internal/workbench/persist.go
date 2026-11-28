@@ -1097,7 +1097,7 @@ func (state *State) restore(saved savedState) {
 	state.rebuildTabOptions()
 	state.restoreWorkspace(saved.Workspace)
 	state.restoreNoteSidebars(saved.NoteSidebars, saved.NoteView.Panel)
-	if state.mergedHosts || staleDefaults {
+	if state.mergedHosts || staleDefaults || saved.Theme == "terminal" {
 		// What was folded into another host is still in the store, and so is the
 		// generation this table was reconciled against: record both so the next
 		// start, and every other device, need not do it again.

@@ -24,7 +24,7 @@ func (state *State) declareThemeColorFields(c ui.C) {
 				e.colorInvalid = false
 			} else {
 				e.colorInvalid = true
-				e.error = state.themeText("Enter #RRGGBB", "请输入 #RRGGBB", "請輸入 #RRGGBB")
+				e.error = state.messages.Themes.HexHint
 			}
 		}
 		changed := false
@@ -48,7 +48,7 @@ func (state *State) declareThemeColorFields(c ui.C) {
 				e.syncColorFields()
 			} else {
 				e.colorInvalid = true
-				e.error = state.themeText("RGB values must be 0–255", "RGB 值须为 0–255", "RGB 值須為 0–255")
+				e.error = state.messages.Themes.RGBRange
 			}
 		}
 	})

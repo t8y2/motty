@@ -17,10 +17,12 @@ func TestApplicationThemeWindowsFollowSharedSchemeChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first.chooseAppearanceMode(appearanceFollowTerminal)
+	first.chooseAppearanceMode(appearancePinnedDark)
+	first.appearanceFollowTerminal = true
+	first.rebuildTerminalLook()
 	first.setTerminalScheme(id)
 	first.save()
-	if second.appearanceMode != appearanceFollowTerminal || second.activeScheme() != id || second.pal.workspace != gfx.RGB(24, 12, 40) {
+	if !second.appearanceFollowTerminal || second.activeScheme() != id || second.pal.workspace != gfx.RGB(24, 12, 40) {
 		t.Fatalf("second window: mode %v, scheme %q, workspace %v", second.appearanceMode, second.activeScheme(), second.pal.workspace)
 	}
 
@@ -31,7 +33,7 @@ func TestApplicationThemeWindowsFollowSharedSchemeChanges(t *testing.T) {
 	}
 	first.refreshApplicationTheme()
 	first.save()
-	if second.activeScheme() != id || second.appearance != appearanceLight || second.pal.workspace != gfx.RGB(238, 216, 254) {
+	if second.activeScheme() != id || second.pal.dark || second.pal.workspace != gfx.RGB(238, 216, 254) {
 		t.Fatalf("second window after edit: scheme %q, appearance %v, workspace %v", second.activeScheme(), second.appearance, second.pal.workspace)
 	}
 }

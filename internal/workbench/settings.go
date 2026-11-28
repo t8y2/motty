@@ -833,7 +833,7 @@ func (state *State) settingsAppearanceLabel(mode appearanceMode) string {
 	case appearancePinnedLight:
 		return state.messages.SettingsAppearanceLight
 	case appearanceCustom:
-		return state.themeText("Custom", "自定义", "自訂")
+		return state.messages.Themes.Custom
 	}
 	return state.messages.SettingsAppearanceSystem
 }
