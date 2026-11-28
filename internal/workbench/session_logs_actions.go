@@ -93,30 +93,20 @@ func (state *State) locateSessionLogHost(id string) {
 }
 
 func (state *State) sessionLogHostOffset(id uint32, width float32) float32 {
+	if state.hostView == hostViewGrid {
+		offset, _ := state.hostGridMeasure(width, id)
+		return offset
+	}
 	var offset float32
-	run := 0
-	columns := state.hostGridColumnCount(width)
 	for _, entry := range state.hostTreeRows {
 		if entry.Kind == hostTreeGroup {
-			if state.hostView == hostViewGrid {
-				offset += float32((run+columns-1)/columns)*(hostCardHeight+hostCardGap) + hostGridHeader
-				run = 0
-			} else {
-				offset += hostGroupRowHeight
-			}
+			offset += hostGroupRowHeight
 			continue
 		}
 		if state.hosts[entry.HostIndex].ID == id {
-			if state.hostView == hostViewGrid {
-				offset += float32(run/columns) * (hostCardHeight + hostCardGap)
-			}
 			return offset
 		}
-		if state.hostView == hostViewGrid {
-			run++
-		} else {
-			offset += hostRowHeight
-		}
+		offset += hostRowHeight
 	}
 	return 0
 }

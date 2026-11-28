@@ -235,3 +235,69 @@ func TestSessionLogRevealUsesTheGridColumnCount(t *testing.T) {
 		t.Fatalf("the reveal offset is %.2f, but the card is painted %.2f below the list top", offset, want)
 	}
 }
+
+func TestHostGridSeparatesParentDirectHostsFromSubgroup(t *testing.T) {
+	for _, filtered := range []bool{false, true} {
+		name := "all"
+		if filtered {
+			name = "filtered"
+		}
+		t.Run(name, func(t *testing.T) {
+			state := manyHostsState(t, 4)
+			state.hostView = hostViewGrid
+			state.hosts[0].Label, state.hosts[0].Group = "Prod-1", "Team/Prod"
+			state.hosts[1].Label, state.hosts[1].Group = "Prod-2", "Team/Prod"
+			state.hosts[2].Label, state.hosts[2].Group = "Team-Root-1", "Team"
+			state.hosts[3].Label, state.hosts[3].Group = "Team-Root-2", "Team"
+			state.hostDataChanged()
+			if filtered {
+				state.setHostFilter(true, "Team")
+			}
+			var canvas gfx.Canvas
+			view, err := headless.Open(app.Config{
+				Width: 1400, Height: 700, Tree: Tree(),
+				Paint: func(c *gfx.Canvas, size gfx.Size) {
+					state.Paint(c, size)
+				},
+			}, &canvas, headless.Options{Scale: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer view.Close()
+			if dir := os.Getenv("MOTTY_HOST_GRID_SCREENSHOTS"); dir != "" {
+				if err := view.Screenshot(filepath.Join(dir, name+".png")); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			prodCard, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[0].ID)))
+			if !ok {
+				t.Fatal("missing subgroup card")
+			}
+			rootCard, ok := hitByID(&canvas, hitHostList.At(int(state.hosts[2].ID)))
+			if !ok {
+				t.Fatal("missing parent direct card")
+			}
+			if math.Abs(float64(prodCard.Bounds.Y-rootCard.Bounds.Y)) < 1 {
+				t.Fatalf("parent direct card shares row with subgroup card: prodY=%.2f rootY=%.2f", prodCard.Bounds.Y, rootCard.Bounds.Y)
+			}
+			if rootCard.Bounds.Y <= prodCard.Bounds.Y+prodCard.Bounds.Height {
+				t.Fatalf("parent direct card is not below subgroup card: prodBottom=%.2f rootY=%.2f", prodCard.Bounds.Y+prodCard.Bounds.Height, rootCard.Bounds.Y)
+			}
+			dividerFound := false
+			for _, txt := range canvas.Texts() {
+				if txt.Value == "Team" && txt.Bounds.Y >= prodCard.Bounds.Y+prodCard.Bounds.Height && txt.Bounds.Y+txt.Bounds.Height <= rootCard.Bounds.Y {
+					dividerFound = true
+					break
+				}
+			}
+			if !dividerFound {
+				t.Fatalf("expected parent group section divider between subgroup (y=%.2f) and direct host (y=%.2f)", prodCard.Bounds.Y, rootCard.Bounds.Y)
+			}
+			offset := state.sessionLogHostOffset(state.hosts[2].ID, state.hostsGridViewport.Width)
+			if want := rootCard.Bounds.Y - state.hostsGridViewport.Y; math.Abs(float64(offset-want)) > 0.01 {
+				t.Fatalf("sessionLogHostOffset = %.2f, want %.2f", offset, want)
+			}
+		})
+	}
+}
