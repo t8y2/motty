@@ -24,30 +24,19 @@ type displayEntry struct {
 	hidden uint64
 }
 
-// blockFoldLines is how many output lines a finished block can fold. Every
-// output line is folded, including a single one: the summary replaces the first
-// output row, and the line where the next prompt begins belongs to that prompt.
+// blockFoldLines counts the physical output rows a finished block owns. The
+// summary replaces the first output row; D's next-prompt row belongs to the
+// next command unless no-newline output shares its last row.
 func blockFoldLines(block *commandBlock) uint64 {
-	if block.status == blockRunning || !block.exec.ok {
+	if block.status == blockRunning || !block.exec.ok || !block.end.ok {
 		return 0
 	}
-	if block.span.ok {
-		if block.span.endLogical > block.span.execLogical {
-			return block.span.endLogical - block.span.execLogical
+	lines := uint64(0)
+	if block.end.line >= block.exec.line {
+		lines = block.end.line - block.exec.line
+		if block.end.column > 0 {
+			lines++
 		}
-		if block.span.endLogical == block.span.execLogical && block.end.ok && block.end.column > block.span.execCell {
-			return 1
-		}
-		return 0
-	}
-	end := block.endLine()
-	if end < block.exec.line {
-		return 0
-	}
-	lines := end - block.exec.line
-	if block.end.ok && block.end.column > 0 {
-		// Output without a trailing newline ends on the line D's cursor is on.
-		lines++
 	}
 	return lines
 }
@@ -94,10 +83,14 @@ func (t *terminal) markFoldsDirty() {
 	t.foldRows = 0
 }
 
-// ensureFolds rebuilds the collapsed range index only after a block or fold
-// change. Blocks are in line order, so the index is already sorted.
+// ensureFolds rebuilds collapsed ranges from the same physical row ranges used
+// by painting, copying and selection. Blocks are in line order, so the index is
+// already sorted.
 func (t *terminal) ensureFolds() {
-	base, _ := t.screen.RetainedFrom()
+	base, ok := t.screen.RetainedFrom()
+	if !ok {
+		return
+	}
 	epoch := t.screen.ReflowEpoch()
 	if t.foldsValid && t.foldsBase == base && t.foldsEpoch == epoch {
 		return
@@ -114,37 +107,29 @@ func (t *terminal) ensureFolds() {
 		if lines == 0 {
 			continue
 		}
-		var fold foldRange
-		if block.span.ok {
-			summaryIndex, endIndex := t.blockFoldBounds(block, base, count)
-			if endIndex < summaryIndex+1 {
-				endIndex = min(summaryIndex+1, count)
-			}
-			summary := base + uint64(summaryIndex)
-			fold = foldRange{
-				block: index, summary: summary, end: base + uint64(endIndex), lines: lines,
-				startIndex: summaryIndex + 1,
-				endIndex:   endIndex,
-			}
-		} else {
-			end := t.blockFoldEnd(index)
-			if end > block.exec.line {
-				lines = min(lines, end-block.exec.line)
-			}
-			if lines == 0 {
-				continue
-			}
-			summary := blockFoldSummaryLine(block, base)
-			fold = foldRange{
-				block: index, summary: summary, end: end, lines: lines,
-				startIndex: int(summary+1) - int(base),
-				endIndex:   int(end) - int(base),
-			}
-			fold.startIndex = max(fold.startIndex, 0)
-			fold.endIndex = min(fold.endIndex, count)
-			if fold.endIndex < fold.startIndex {
-				fold.endIndex = fold.startIndex
-			}
+		summary := t.blockFoldSummaryLine(block, base)
+		end := block.end.line
+		if block.end.column > 0 {
+			end++
+		}
+		if end <= summary {
+			continue
+		}
+		summaryIndex := 0
+		if summary >= base {
+			summaryIndex = int(summary - base)
+		}
+		endIndex := count
+		if end < base+uint64(count) {
+			endIndex = int(end - base)
+		}
+		if endIndex < summaryIndex+1 {
+			endIndex = min(summaryIndex+1, count)
+		}
+		fold := foldRange{
+			block: index, summary: summary, end: end, lines: lines,
+			startIndex: summaryIndex + 1,
+			endIndex:   endIndex,
 		}
 		t.folds = append(t.folds, fold)
 		t.foldRows += fold.endIndex - fold.startIndex
@@ -154,82 +139,13 @@ func (t *terminal) ensureFolds() {
 	t.foldsValid = true
 }
 
-// blockFoldBounds maps a span to the current retained rows. summaryIndex is the
-// first row of execLogical (or the oldest retained row when the head was
-// trimmed); endIndex is the first row at or after endLogical.
-func (t *terminal) blockFoldBounds(block *commandBlock, base uint64, count int) (summaryIndex, endIndex int) {
-	summaryIndex = 0
-	if line, ok := t.screen.FirstLineOfLogical(block.span.execLogical); ok && line >= base {
-		summaryIndex = int(line - base)
-	}
-	endIndex = count
-	if line, ok := t.screen.FirstLineAtOrAfterLogical(block.span.endLogical); ok && line >= base {
-		endIndex = int(line - base)
-	}
-	endIndex = min(max(endIndex, summaryIndex), count)
-	return summaryIndex, endIndex
-}
-
-// blockFoldEnd is the retained line where a fold stops. For a logical span this
-// is the first row at or after endLogical; the legacy physical fallback exists
-// only for hand-built tests and old fixtures.
-func (t *terminal) blockFoldEnd(index int) uint64 {
-	block := &t.blocks[index]
-	if block.span.ok {
-		if line, ok := t.screen.FirstLineAtOrAfterLogical(block.span.endLogical); ok {
-			return line
-		}
-		if base, ok := t.screen.RetainedFrom(); ok {
-			return base + uint64(t.screen.RetainedLines())
-		}
-		return block.endLine()
-	}
-	return t.legacyBlockFoldEnd(index)
-}
-
-func (t *terminal) legacyBlockFoldEnd(index int) uint64 {
-	block := &t.blocks[index]
-	end := block.endLine()
-	if index+1 < len(t.blocks) {
-		if next := t.blocks[index+1].startLine(); next > block.exec.line {
-			end = next
-		}
-	} else if block.status != blockRunning {
-		if !block.endApprox && !block.stale && t.blockPendingCommand && t.blockCommand.ok && t.blockCommand.line > block.exec.line {
-			end = t.blockCommand.line
-		} else if point, ok := t.screen.CursorPoint(); ok && point.Line > block.exec.line {
-			end = point.Line
-		}
-	}
-	if !block.endApprox && !block.stale {
-		end = max(end, block.endLine())
-	}
-	return end
-}
-
-// blockFoldSummaryLine is where the fold summary is painted. When the command
-// or output head left the scrollback, the summary takes the oldest retained
-// line so an unrelated newer history line is not left where the command was.
-func blockFoldSummaryLine(block *commandBlock, base uint64) uint64 {
-	if block.headTrimmed || !block.command.ok || block.command.line < base || block.exec.line < base {
+// blockFoldSummaryLine is the physical first output row. When the command or
+// output head left the scrollback, the summary takes the oldest retained line.
+func (t *terminal) blockFoldSummaryLine(block *commandBlock, base uint64) uint64 {
+	if block.headTrimmed || !block.exec.ok || block.exec.line < base {
 		return base
 	}
 	return block.exec.line
-}
-
-// blockFoldSummaryLine maps a logical span's first output row, falling back to
-// the retained base when the head was trimmed.
-func (t *terminal) blockFoldSummaryLine(block *commandBlock, base uint64) uint64 {
-	if !block.span.ok {
-		return blockFoldSummaryLine(block, base)
-	}
-	if block.headTrimmed {
-		return base
-	}
-	if line, ok := t.screen.FirstLineOfLogical(block.span.execLogical); ok && line >= base {
-		return line
-	}
-	return base
 }
 
 func (t *terminal) foldAt(line uint64) (int, uint64) {
@@ -247,20 +163,9 @@ func (t *terminal) foldAt(line uint64) (int, uint64) {
 	return -1, 0
 }
 
-// blockDisplayStart is where the block's chrome starts on screen. A span's
-// logical start wins; physical anchors are only for hand-built tests and
-// legacy blocks. A trimmed head falls back to the oldest retained row.
+// blockDisplayStart is the first physical chrome row. A trimmed head clamps to
+// the oldest retained line.
 func (t *terminal) blockDisplayStart(block *commandBlock) uint64 {
-	if block.span.ok {
-		if base, ok := t.screen.RetainedFrom(); ok {
-			if line, found := t.screen.FirstLineOfLogical(block.span.startLogical); found && line >= base {
-				return line
-			}
-			if block.headTrimmed {
-				return base
-			}
-		}
-	}
 	start := block.startLine()
 	if base, ok := t.screen.RetainedFrom(); ok && (block.headTrimmed || !block.command.ok) && base < start {
 		return base
@@ -268,24 +173,28 @@ func (t *terminal) blockDisplayStart(block *commandBlock) uint64 {
 	return start
 }
 
-// blockDisplayStartAt uses the same effective start as selection, including the
-// previous block's boundary.
+// blockDisplayStartAt uses the same effective start as selection, never claiming
+// a row owned by the previous block.
 func (t *terminal) blockDisplayStartAt(index int) uint64 {
 	if index < 0 || index >= len(t.blocks) {
 		return 0
 	}
 	block := &t.blocks[index]
-	if block.span.ok {
-		if base, ok := t.screen.RetainedFrom(); ok {
-			if line, found := t.screen.FirstLineOfLogical(t.blockSpanStart(index, block)); found && line >= base {
-				return line
-			}
-			if block.headTrimmed {
-				return base
-			}
+	start := t.blockDisplayStart(block)
+	if index > 0 {
+		previous := &t.blocks[index-1]
+		_, previousStop, ok := t.blockRange(index-1, previous)
+		if ok && previousStop > start {
+			start = previousStop
 		}
 	}
-	return t.blockDisplayStart(block)
+	return start
+}
+
+// blockFoldEnd is the exclusive physical row where a fold stops.
+func (t *terminal) blockFoldEnd(index int) uint64 {
+	_, end, _ := t.blockRange(index, &t.blocks[index])
+	return end
 }
 
 func (t *terminal) hasFolds() bool {

@@ -542,6 +542,46 @@ func TestCollapsingABlockHidesItsOutputAndShowsASummary(t *testing.T) {
 	}
 }
 
+func TestARedrawnCommandRowStaysInTheBlock(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	startBlockPrompt(state, shell, session)
+	shell.say("echo many\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "C"))
+	shell.say("one\r\ntwo\r\nthree\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
+
+	block := &session.term.blocks[0]
+	commandLine := block.startLine()
+	if got := session.term.blockAtLine(commandLine); got != 0 {
+		t.Fatalf("command line %d belongs to block %d, want 0", commandLine, got)
+	}
+	if got := session.term.blockDisplayStartAt(0); got != commandLine {
+		t.Fatalf("display start = %d, want command line %d", got, commandLine)
+	}
+
+	if output, ok := session.term.blockText(block, blockCopyOutput); !ok || output != "one\ntwo\nthree" {
+		t.Fatalf("output copy = %q, %v; want all output", output, ok)
+	}
+	if all, ok := session.term.blockText(block, blockCopyAll); !ok || all != "echo many\none\ntwo\nthree" {
+		t.Fatalf("block copy = %q, %v; want command and output", all, ok)
+	}
+
+	setBlockCollapsedForTest(block, session.term, true)
+	_, texts := paintedTexts(state)
+	if contains(texts, "one") || contains(texts, "two") || contains(texts, "three") {
+		t.Fatalf("collapsed output is still painted:\n%v", texts)
+	}
+	if !contains(texts, "echo many") {
+		t.Fatalf("the command row disappeared:\n%v", texts)
+	}
+	if !contains(texts, fmt.Sprintf(state.messages.Blocks.HiddenLinesFmt, blockFoldLines(block))) {
+		t.Fatalf("the fold summary is missing:\n%v", texts)
+	}
+}
+
 func TestTheToolbarTogglesABlockFold(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	session := &state.sessions[0]
@@ -658,6 +698,63 @@ func TestFindTemporarilyExpandsFoldedBlocks(t *testing.T) {
 	_, texts = paintedTexts(state)
 	if contains(texts, "two") || contains(texts, "three") {
 		t.Fatalf("the block did not fold again after find closed:\n%v", texts)
+	}
+}
+
+func TestABlockSurvivesResizeClearAnEmptyEnterAndTheNextCommand(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	startBlockPrompt(state, shell, session)
+	shell.say("echo first\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "C"))
+	shell.say(strings.Repeat(strings.Repeat("abcdefghij", 12)+"\r\n", 20))
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
+
+	state.Resize(gfx.Size{Width: 700, Height: 600})
+	state.Wake()
+	state.Resize(gfx.Size{Width: 1000, Height: 600})
+	state.Wake()
+
+	// Run the shell's clear command, then an empty Enter, then a real command.
+	startBlockPrompt(state, shell, session)
+	shell.say("clear\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "C"))
+	shell.say("\x1b[H\x1b[2J\x1b[3J")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
+	startBlockPrompt(state, shell, session)
+	shell.say("\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
+	startBlockPrompt(state, shell, session)
+	shell.say("echo last\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "C"))
+	shell.say("last\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
+
+	if len(session.term.blocks) != 1 {
+		t.Fatalf("blocks = %d, want the post-clear command block only", len(session.term.blocks))
+	}
+	block := &session.term.blocks[0]
+	if got := session.term.blockAtLine(block.exec.line); got != 0 {
+		t.Fatalf("first output line %d belongs to block %d, want 0", block.exec.line, got)
+	}
+	if got := session.term.blockAtLine(block.visualEndLine()); got != 0 {
+		t.Fatalf("last output line %d belongs to block %d, want 0", block.visualEndLine(), got)
+	}
+	if got := session.term.blockAtLine(block.endLine()); got != -1 {
+		t.Fatalf("D prompt line %d belongs to block %d, want -1", block.endLine(), got)
+	}
+	if output, ok := session.term.blockText(block, blockCopyOutput); !ok || output != "last" {
+		t.Fatalf("output copy = %q, %v; want the next command's output", output, ok)
+	}
+	if blockFoldLines(block) == 0 {
+		t.Fatal("the post-clear output cannot fold")
 	}
 }
 
@@ -1487,7 +1584,7 @@ func TestACollapsedBlockWhoseHeadLeftTheScrollbackStaysVisible(t *testing.T) {
 	}
 	_, rows := terminal.screen.Size()
 	terminal.buildDisplayMap(rows)
-	summary := blockFoldSummaryLine(block, first)
+	summary := terminal.blockFoldSummaryLine(block, first)
 	if _, ok := terminal.displayRowOfLine(summary); !ok {
 		t.Fatalf("the trimmed block's summary line %d is not visible", summary)
 	}
@@ -1535,7 +1632,7 @@ func TestResizingAFoldedBlockNeverShowsItsHiddenOutput(t *testing.T) {
 		terminal.buildDisplayMap(rows)
 
 		first, _ := terminal.screen.RetainedFrom()
-		summary := blockFoldSummaryLine(block, first)
+		summary := terminal.blockFoldSummaryLine(block, first)
 		for _, entry := range terminal.display {
 			if entry.index >= 0 && entry.line > summary && entry.line < block.endLine() {
 				t.Fatalf("resize %+v displayed hidden line %d above/inside the block", size, entry.line)
@@ -1597,7 +1694,7 @@ func TestResizingWhileScrolledKeepsFoldedRowsHidden(t *testing.T) {
 		_, rows = terminal.screen.Size()
 		terminal.buildDisplayMap(rows)
 		first, _ := terminal.screen.RetainedFrom()
-		summary := blockFoldSummaryLine(block, first)
+		summary := terminal.blockFoldSummaryLine(block, first)
 		for _, entry := range terminal.display {
 			if entry.index >= 0 && entry.line > summary && entry.line < block.endLine() {
 				t.Fatalf("resize %+v displayed hidden row %d", size, entry.line)
@@ -1641,7 +1738,7 @@ func TestFoldingFollowsTheRetainedBufferAfterHistoryTrim(t *testing.T) {
 		return // the block left the buffer with the trimmed history
 	}
 	terminal.buildDisplayMap(rows)
-	summary := blockFoldSummaryLine(block, first)
+	summary := terminal.blockFoldSummaryLine(block, first)
 	for _, entry := range terminal.display {
 		if entry.index >= 0 && entry.line > summary && entry.line < block.endLine() {
 			t.Fatalf("history trim displayed hidden line %d", entry.line)
@@ -1680,7 +1777,7 @@ func TestALargeFoldedBlockSurvivesAResize(t *testing.T) {
 	if !ok {
 		t.Fatal("the test terminal has no retained lines")
 	}
-	summary := blockFoldSummaryLine(block, first)
+	summary := terminal.blockFoldSummaryLine(block, first)
 	terminal.buildDisplayMap(rows)
 	if _, ok := terminal.displayRowOfLine(summary); !ok {
 		t.Fatal("the folded summary is not visible after resize")
@@ -1950,7 +2047,7 @@ func TestLargeFoldSurvivesARealWindowResize(t *testing.T) {
 		_, rows := terminal.screen.Size()
 		terminal.buildDisplayMap(rows)
 		first, _ := terminal.screen.RetainedFrom()
-		summary := blockFoldSummaryLine(block, first)
+		summary := terminal.blockFoldSummaryLine(block, first)
 		if _, ok := terminal.displayRowOfLine(summary); !ok {
 			t.Fatalf("resize %+v lost the folded summary", size)
 		}
@@ -1991,7 +2088,7 @@ func TestCrossingTheScrollbackLimitDuringARealResizeKeepsTheFoldOperable(t *test
 	_, rows := terminal.screen.Size()
 	terminal.buildDisplayMap(rows)
 	first, _ := terminal.screen.RetainedFrom()
-	summary := blockFoldSummaryLine(block, first)
+	summary := terminal.blockFoldSummaryLine(block, first)
 	if _, ok := terminal.displayRowOfLine(summary); !ok {
 		t.Fatal("the folded summary disappeared after the resize")
 	}
@@ -2049,7 +2146,7 @@ func TestRepeatedResizesKeepALargeFoldOperable(t *testing.T) {
 			_, rows := terminal.screen.Size()
 			terminal.buildDisplayMap(rows)
 			first, _ := terminal.screen.RetainedFrom()
-			summary := blockFoldSummaryLine(block, first)
+			summary := terminal.blockFoldSummaryLine(block, first)
 			if _, ok := terminal.displayRowOfLine(summary); !ok {
 				t.Fatalf("round %d resize %+v lost the summary: lines=%d head=%v stale=%v exec=%d end=%d first=%d", round, size, blockFoldLines(block), block.headTrimmed, block.stale, block.exec.line, block.end.line, first)
 			}
@@ -2102,7 +2199,7 @@ func TestAFoldedBlockSurvivesAnEndAnchorOutsideTheRetainedBuffer(t *testing.T) {
 	}
 	_, rows := terminal.screen.Size()
 	terminal.buildDisplayMap(rows)
-	summary := blockFoldSummaryLine(block, first)
+	summary := terminal.blockFoldSummaryLine(block, first)
 	if _, ok := terminal.displayRowOfLine(summary); !ok {
 		t.Fatal("the folded summary disappeared")
 	}
@@ -2152,7 +2249,7 @@ func TestScrollingToTheTopAfterNewOutputKeepsThePreviousFoldHidden(t *testing.T)
 	terminal.scrollDisplay(maxOffset + rows)
 	terminal.buildDisplayMap(rows)
 	firstVisible, _ := terminal.screen.RetainedFrom()
-	summary := blockFoldSummaryLine(first, firstVisible)
+	summary := terminal.blockFoldSummaryLine(first, firstVisible)
 	end := terminal.blockFoldEnd(0)
 	sawSummary := false
 	for _, entry := range terminal.display {
@@ -2213,7 +2310,7 @@ func TestScrollingToTheTopWithWrappedFoldedRows(t *testing.T) {
 	terminal.scrollDisplay(maxOffset + rows)
 	terminal.buildDisplayMap(rows)
 	firstVisible, _ := terminal.screen.RetainedFrom()
-	summary := blockFoldSummaryLine(first, firstVisible)
+	summary := terminal.blockFoldSummaryLine(first, firstVisible)
 	end := terminal.blockFoldEnd(0)
 	sawSummary := false
 	for _, entry := range terminal.display {
@@ -2277,7 +2374,7 @@ func TestRepeatedHorizontalResizesThenANewCommandDoNotLeakTheFold(t *testing.T) 
 	_, rows := terminal.screen.Size()
 	terminal.buildDisplayMap(rows)
 	firstVisible, _ := terminal.screen.RetainedFrom()
-	summary := blockFoldSummaryLine(first, firstVisible)
+	summary := terminal.blockFoldSummaryLine(first, firstVisible)
 	end := terminal.blockFoldEnd(0)
 	if !first.endApprox && !first.stale && end < first.endLine() {
 		t.Fatalf("fold end %d is before the recorded end %d", end, first.endLine())
@@ -2340,7 +2437,7 @@ func TestScrolledToTopWhileTypingTheNextCommandDoesNotLeakTheFold(t *testing.T) 
 	_, rows = terminal.screen.Size()
 	terminal.buildDisplayMap(rows)
 	firstVisible, _ := terminal.screen.RetainedFrom()
-	summary := blockFoldSummaryLine(first, firstVisible)
+	summary := terminal.blockFoldSummaryLine(first, firstVisible)
 	end := terminal.blockFoldEnd(0)
 	for _, entry := range terminal.display {
 		if entry.index >= 0 && entry.line > summary && entry.line < end {
@@ -2470,10 +2567,10 @@ func TestAResizeDoesNotDropAFoldBeforeTheNextPendingPromptIsUsed(t *testing.T) {
 				t.Fatalf("round %d resize %+v expanded the block", round, size)
 			}
 			if len(terminal.folds) == 0 {
-				t.Fatalf("round %d resize %+v dropped the fold: lines=%d summary=%d end=%d pendingPrompt=%v prompt=%+v endAnchor=%+v approx=%v stale=%v", round, size, blockFoldLines(block), blockFoldSummaryLine(block, mustBase(t, terminal)), terminal.blockFoldEnd(0), terminal.blockPendingPrompt, terminal.blockPrompt, block.end, block.endApprox, block.stale)
+				t.Fatalf("round %d resize %+v dropped the fold: lines=%d summary=%d end=%d pendingPrompt=%v prompt=%+v endAnchor=%+v approx=%v stale=%v", round, size, blockFoldLines(block), terminal.blockFoldSummaryLine(block, mustBase(t, terminal)), terminal.blockFoldEnd(0), terminal.blockPendingPrompt, terminal.blockPrompt, block.end, block.endApprox, block.stale)
 			}
 			first, _ := terminal.screen.RetainedFrom()
-			summary := blockFoldSummaryLine(block, first)
+			summary := terminal.blockFoldSummaryLine(block, first)
 			if _, ok := terminal.displayRowOfLine(summary); !ok {
 				t.Fatalf("round %d resize %+v lost the summary: lines=%d fold=%+v", round, size, blockFoldLines(block), terminal.folds[0])
 			}
@@ -2661,73 +2758,6 @@ func TestAPromptRedrawKeepsTheInputAnchorForTheNextCommand(t *testing.T) {
 	}
 }
 
-func TestTheSpanKeepsAFoldCorrectWhenPhysicalAnchorsDrift(t *testing.T) {
-	state, _, _, shell := liveSession(t)
-	session := &state.sessions[0]
-	terminal := session.term
-	terminal.screen.SetScrollbackLimit(5000)
-	startBlockPrompt(state, shell, session)
-	shell.say("cat history | tail -4883\r\n")
-	state.Wake()
-	sayMarkers(state, shell, session, blockMarker(session, "C"))
-	shell.say(strings.Repeat("history row\r\n", 5200))
-	for i := 0; i < 50; i++ {
-		state.Wake()
-	}
-	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
-	for i := 0; i < 10; i++ {
-		state.Wake()
-	}
-	block := &terminal.blocks[0]
-	if !state.toggleBlock(session, block) {
-		t.Fatalf("initial fold failed: %d lines", blockFoldLines(block))
-	}
-	wantSpan := block.span
-	if !wantSpan.ok {
-		t.Fatal("the block has no logical span")
-	}
-	for round := 0; round < 5; round++ {
-		for _, width := range []float32{700, 1000, 600, 1200, 800, 500} {
-			state.Resize(gfx.Size{Width: width, Height: 600})
-		}
-	}
-	if !block.collapsed || block.span != wantSpan {
-		t.Fatalf("resize changed the block: collapsed=%v span=%+v want %+v", block.collapsed, block.span, wantSpan)
-	}
-	// The old physical anchors are deliberately broken: the fold must not use
-	// them any more.
-	block.end.line = mustBase(t, terminal)
-	block.endApprox = true
-	block.stale = true
-	terminal.markFoldsDirty()
-	_, rows := terminal.screen.Size()
-	terminal.buildDisplayMap(rows)
-	if len(terminal.folds) != 1 {
-		t.Fatalf("folds = %d, want 1", len(terminal.folds))
-	}
-	fold := terminal.folds[0]
-	if fold.summary != terminal.blockFoldSummaryLine(block, mustBase(t, terminal)) {
-		t.Fatalf("summary = %d, want the logical summary", fold.summary)
-	}
-	if fold.end != terminal.blockFoldEnd(0) {
-		t.Fatalf("fold end = %d, want logical end %d", fold.end, terminal.blockFoldEnd(0))
-	}
-	base := mustBase(t, terminal)
-	for _, entry := range terminal.display {
-		if entry.index < 0 || entry.line == fold.summary {
-			continue
-		}
-		logical, ok := terminal.screen.LogicalAt(entry.line)
-		if ok && logical >= block.span.execLogical && logical < block.span.endLogical {
-			t.Fatalf("row %d (line %d, logical %d) leaked from the folded span", entry.index, entry.line, logical)
-		}
-		_ = base
-	}
-	if !terminal.blockOutputAvailable(block) {
-		t.Fatal("copy stopped working after the physical anchors drifted")
-	}
-}
-
 func TestAnARedrawAndResizeStillStartTheNextBlock(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	session := &state.sessions[0]
@@ -2766,8 +2796,8 @@ func TestAnARedrawAndResizeStillStartTheNextBlock(t *testing.T) {
 	if len(terminal.blocks) != 2 {
 		t.Fatalf("blocks = %d, want the redrawn prompt to start a second block", len(terminal.blocks))
 	}
-	if !terminal.blocks[0].collapsed || !terminal.blocks[1].span.ok {
-		t.Fatalf("first collapsed=%v second span=%+v", terminal.blocks[0].collapsed, terminal.blocks[1].span)
+	if !terminal.blocks[0].collapsed {
+		t.Fatal("the first block did not stay collapsed")
 	}
 	_, rows := terminal.screen.Size()
 	terminal.buildDisplayMap(rows)
@@ -2780,9 +2810,9 @@ func TestAnARedrawAndResizeStillStartTheNextBlock(t *testing.T) {
 		if entry.index < 0 || entry.line == summary {
 			continue
 		}
-		logical, ok := terminal.screen.LogicalAt(entry.line)
-		if ok && logical >= first.span.execLogical && logical < first.span.endLogical {
-			t.Fatalf("the first block leaked line %d (logical %d)", entry.line, logical)
+		start, end, ok := terminal.blockRange(0, first)
+		if ok && entry.line >= start && entry.line < end {
+			t.Fatalf("the first block leaked line %d", entry.line)
 		}
 	}
 }
@@ -2828,12 +2858,8 @@ func TestSelectingANewBlockAfterExpandingThePreviousOneUsesTheNewRow(t *testing.
 		t.Fatalf("blocks = %d, want 2", len(terminal.blocks))
 	}
 	second := &terminal.blocks[1]
-	if second.span.startLogical < first.span.endLogical {
-		t.Fatalf("new block start %d is inside the previous block ending at %d", second.span.startLogical, first.span.endLogical)
-	}
-	// A resize/redraw can leave the new block's prompt anchor inside the
-	// previous span. Selection and toolbar must still start after it.
-	second.span.startLogical = first.span.execLogical
+	// A stale prompt anchor after a redraw must not move the new block into
+	// the previous block's physical range.
 	_, rows := terminal.screen.Size()
 	terminal.scrollToBottomView()
 	terminal.buildDisplayMap(rows)
@@ -2846,15 +2872,11 @@ func TestSelectingANewBlockAfterExpandingThePreviousOneUsesTheNewRow(t *testing.
 	if terminal.blockSelected != 1 {
 		t.Fatalf("selected block = %d, want the new block 1 (clicked row %d, previous visual end %d)", terminal.blockSelected, row, first.visualEndLine())
 	}
-	if oldStart, ok := terminal.screen.FirstLineOfLogical(first.span.startLogical); ok {
-		oldEnd := terminal.screen.RetainedLines()
-		if line, ok := terminal.screen.FirstLineAtOrAfterLogical(first.span.endLogical); ok {
-			oldEnd = int(line - terminal.screen.RetainedLine(0))
-		}
-		for index := int(oldStart - terminal.screen.RetainedLine(0)); index < oldEnd; index++ {
-			line := terminal.screen.RetainedLine(index)
+	prevStart, prevEnd, ok := terminal.blockRange(0, first)
+	if ok {
+		for line := prevStart; line < prevEnd; line++ {
 			if got := terminal.blockAtLine(line); got == 1 {
-				t.Fatalf("previous block content line %d (logical %d) is classified as the new block (span start=%d exec=%d end=%d)", line, terminal.screen.RetainedLogical(index), second.span.startLogical, second.span.execLogical, second.span.endLogical)
+				t.Fatalf("previous block content line %d is classified as the new block", line)
 			}
 		}
 	}
@@ -2867,7 +2889,7 @@ func TestSelectingANewBlockAfterExpandingThePreviousOneUsesTheNewRow(t *testing.
 	}
 	wantTop := geometry.top + float32(row)*state.cellHeight
 	if hit.Bounds.Y < wantTop || hit.Bounds.Y >= wantTop+state.cellHeight {
-		t.Logf("selected=%d start=%d topLine=%d row=%d display=%v first=%d exec=%d startLogical=%d", terminal.blockSelected, start, terminal.screen.LineNumber(0), row, terminal.display, second.startLine(), second.exec.line, second.span.startLogical)
+		t.Logf("selected=%d start=%d topLine=%d row=%d display=%v first=%d exec=%d start=%d", terminal.blockSelected, start, terminal.screen.LineNumber(0), row, terminal.display, second.startLine(), second.exec.line, start)
 		t.Fatalf("toolbar y = %.1f, want inside the new block row [%.1f, %.1f)", hit.Bounds.Y, wantTop, wantTop+state.cellHeight)
 	}
 }

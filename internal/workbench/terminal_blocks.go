@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -51,16 +50,6 @@ type blockAnchor struct {
 	ok     bool
 }
 
-// blockSpan is the reflow-invariant range a command owns. execLogical/execCell
-// are recorded at OSC 133 C, endLogical (exclusive) at D. It never changes.
-type blockSpan struct {
-	ok           bool
-	startLogical uint64 // OSC 133 A/B: the prompt/input logical line
-	execLogical  uint64
-	execCell     int
-	endLogical   uint64
-}
-
 type commandBlock struct {
 	id          uint64
 	prompt      blockAnchor // OSC 133 A: the prompt's first cell
@@ -72,11 +61,10 @@ type commandBlock struct {
 	finished    time.Duration
 	exitCode    int
 	status      blockStatus
-	span        blockSpan // logical range recorded at C/D; see blockSpan
-	collapsed   bool      // the output is folded to its summary row
-	headTrimmed bool      // the command/output head left the scrollback
-	endApprox   bool      // the end anchor was approximated after a reflow
-	stale       bool      // an anchor was lost to a reflow; metadata stays, ranges may not
+	collapsed   bool // the output is folded to its summary row
+	headTrimmed bool // the command/output head left the scrollback
+	endApprox   bool // the end anchor was approximated after a reflow
+	stale       bool // an anchor was lost to a reflow; metadata stays, ranges may not
 }
 
 // endLine is the last line the block covers. A running block reaches the live
@@ -213,25 +201,6 @@ func (state *State) blockCommandStart(session *Session) {
 	if t.blockActive >= 0 {
 		state.finishOpenBlock(t, blockUnknown, 0)
 	}
-	span := blockSpan{}
-	if logical, ok := t.screen.LogicalAt(exec.line); ok {
-		span = blockSpan{ok: true, execLogical: logical, execCell: exec.column, startLogical: logical}
-		// The command/prompt row is the row just before the first output row. It
-		// is safe to include only when it belongs after the previous block; the
-		// shell's A/B anchors are not used because a resize redraw can leave them
-		// in the previous block.
-		if exec.column == 0 && exec.line > 0 {
-			if prev, ok := t.screen.LogicalAt(exec.line - 1); ok && prev < logical {
-				last := len(t.blocks) - 1
-				if last < 0 || !t.blocks[last].span.ok || prev >= t.blocks[last].span.endLogical {
-					span.startLogical = prev
-				}
-			}
-		}
-		if last := len(t.blocks) - 1; last >= 0 && t.blocks[last].span.ok && span.startLogical < t.blocks[last].span.endLogical {
-			span.startLogical = span.execLogical
-		}
-	}
 	block := commandBlock{
 		id:      t.nextBlockID + 1,
 		prompt:  prompt,
@@ -239,7 +208,6 @@ func (state *State) blockCommandStart(session *Session) {
 		exec:    exec,
 		started: state.now(),
 		status:  blockRunning,
-		span:    span,
 	}
 	block.text = captureBlockCommand(t.screen, command, exec)
 	t.nextBlockID++
@@ -282,13 +250,6 @@ func (state *State) finishOpenBlock(t *terminal, status blockStatus, code int) {
 		block.end = end
 	} else if block.exec.ok {
 		block.end = block.exec
-	}
-	if block.span.ok {
-		if logical, ok := t.screen.LogicalAt(end.line); ok && logical >= block.span.execLogical {
-			block.span.endLogical = logical
-		} else {
-			block.span.endLogical = block.span.execLogical
-		}
 	}
 	block.status = status
 	block.exitCode = code
@@ -429,18 +390,6 @@ func (t *terminal) pruneBlocks() {
 		cut := 0
 		for cut < len(t.blocks) {
 			block := &t.blocks[cut]
-			if block.span.ok && block.status != blockRunning {
-				baseLogical := t.screen.RetainedLogical(0)
-				if block.span.endLogical < baseLogical {
-					cut++
-					continue
-				}
-				if _, ok := t.screen.FirstLineAtOrAfterLogical(block.span.endLogical); !ok {
-					cut++
-					continue
-				}
-				break
-			}
 			if block.endLine() >= first {
 				break
 			}
@@ -473,106 +422,46 @@ func (t *terminal) pruneBlocks() {
 	}
 }
 
-// blockSpanRange maps a block span to current buffer points. A trimmed head
-// starts at the oldest retained row; the end is the first row at/after
-// endLogical, so the prompt row itself stays outside the copied range.
-func (t *terminal) blockSpanRange(block *commandBlock) (start, end term.Point, ok bool) {
-	if !block.span.ok || !block.exec.ok {
-		return term.Point{}, term.Point{}, false
+// blockRange is the block's owned physical row range. start includes the
+// prompt/command; stop is exclusive and leaves D's next-prompt row to the next
+// block. A running block owns the live screen below its start.
+func (t *terminal) blockRange(index int, block *commandBlock) (rangeStart, rangeStop uint64, rangeOK bool) {
+	if block == nil || !block.exec.ok {
+		return 0, 0, false
 	}
-	base, hasBase := t.screen.RetainedFrom()
-	if block.status != blockRunning && block.span.endLogical < t.screen.RetainedLogical(0) {
-		return term.Point{}, term.Point{}, false
-	}
-	startLine, found := t.screen.FirstLineOfLogical(block.span.execLogical)
-	if found {
-		start = term.Point{Line: startLine, Column: block.span.execCell}
-	} else if hasBase {
-		start = term.Point{Line: base}
-	} else {
-		return term.Point{}, term.Point{}, false
-	}
+	rangeStart = t.blockDisplayStartAt(index)
 	if block.status == blockRunning {
-		point, ok := t.screen.CursorPoint()
-		return start, point, ok
+		return rangeStart, ^uint64(0), true
 	}
-	endLine, found := t.screen.FirstLineAtOrAfterLogical(block.span.endLogical)
-	if !found {
-		return term.Point{}, term.Point{}, false
+	if !block.end.ok {
+		return 0, 0, false
 	}
-	end = term.Point{Line: endLine}
-	if block.span.endLogical == block.span.execLogical {
-		end.Column = block.end.column
+	rangeStop = block.end.line
+	if block.end.column > 0 {
+		rangeStop++
 	}
-	return start, end, true
+	return rangeStart, rangeStop, rangeStop >= rangeStart
 }
 
-// blockCommandBounds is the command/prompt part of a block: from its logical
-// start to the row before the first output row. Physical anchors are only a
-// fallback for hand-built blocks.
-func (t *terminal) blockCommandBounds(block *commandBlock) (start, end uint64) {
-	start = t.blockDisplayStart(block)
-	if !block.span.ok {
-		end = block.exec.line
-		if end > block.startLine() {
-			end--
-		}
-		return start, end
+// blockCommandBounds is the prompt/command part of a block: from its physical
+// start to the row before the first output row.
+func (t *terminal) blockCommandBounds(index int, block *commandBlock) (start, end uint64) {
+	start, _, _ = t.blockRange(index, block)
+	output := block.exec.line
+	if output > start {
+		output--
 	}
-	if exec, ok := t.screen.FirstLineOfLogical(block.span.execLogical); ok {
-		end = exec
-		if end > start {
-			end--
-		}
-		return start, end
-	}
-	return start, start
+	return start, output
 }
 
-// blockSpanStart is the first logical line the block may claim. A stale prompt
-// anchor can point into the previous block; the previous end is still the
-// boundary, so never start before it.
-func (t *terminal) blockSpanStart(index int, block *commandBlock) uint64 {
-	start := block.span.startLogical
-	if start == 0 {
-		start = block.span.execLogical
-	}
-	if index > 0 && t.blocks[index-1].span.ok && start < t.blocks[index-1].span.endLogical {
-		start = block.span.execLogical
-	}
-	return start
-}
-
-// blockAtLine finds the block covering an absolute line. The logical span is
-// the source of truth; the physical range is only a fallback for hand-built
-// fixtures and chrome rows.
+// blockAtLine finds the block covering an absolute physical line. Anchors are
+// remapped by line ID on reflow; there is no second logical range to disagree.
 func (t *terminal) blockAtLine(line uint64) int {
-	if logical, ok := t.screen.LogicalAt(line); ok {
-		for index := len(t.blocks) - 1; index >= 0; index-- {
-			block := &t.blocks[index]
-			if !block.span.ok {
-				continue
-			}
-			end := block.span.endLogical
-			if block.status == blockRunning {
-				end = ^uint64(0)
-			}
-			start := t.blockSpanStart(index, block)
-			if logical >= start && logical < end {
-				return index
-			}
+	for index := len(t.blocks) - 1; index >= 0; index-- {
+		start, stop, ok := t.blockRange(index, &t.blocks[index])
+		if ok && line >= start && line < stop {
+			return index
 		}
-	}
-	index := sort.Search(len(t.blocks), func(index int) bool {
-		return t.blockDisplayStart(&t.blocks[index]) > line
-	}) - 1
-	if index >= 0 && line >= t.blockDisplayStart(&t.blocks[index]) && line <= t.blocks[index].visualEndLine() {
-		// A span block is authoritative: an old physical anchor must never make
-		// its chrome or selection claim a row outside the logical range.
-		if t.blocks[index].span.ok {
-			return -1
-		}
-		return index
 	}
 	return -1
 }
@@ -591,10 +480,6 @@ const (
 // without building the text. The context menu uses it so an open menu over a
 // long block does not copy the whole output every frame.
 func (t *terminal) blockOutputAvailable(block *commandBlock) bool {
-	if block.span.ok {
-		start, end, ok := t.blockSpanRange(block)
-		return ok && (end.Line > start.Line || end.Line == start.Line && end.Column > start.Column)
-	}
 	if block.stale || !block.exec.ok {
 		return false
 	}
@@ -662,16 +547,6 @@ func (t *terminal) blockText(block *commandBlock, action blockAction) (string, b
 }
 
 func (t *terminal) blockOutputText(block *commandBlock) (string, bool) {
-	if block.span.ok {
-		start, end, ok := t.blockSpanRange(block)
-		if !ok {
-			return "", false
-		}
-		if end.Line < start.Line || end.Line == start.Line && end.Column <= start.Column {
-			return "", true
-		}
-		return strings.TrimRight(selectedRangeBefore(t.screen, start, end), " \t\r\n"), true
-	}
 	if block.stale || !block.exec.ok {
 		return "", false
 	}
