@@ -1106,7 +1106,7 @@ func (state *State) completionCandidates(session *Session, line string) ([]compl
 	if catalog := state.completionCatalog(); catalog != nil {
 		if result := completion.Complete(catalog, line); !result.Suppressed {
 			for _, candidate := range result.Candidates {
-				add(candidate)
+				add(state.localizeCompletionCandidate(candidate))
 			}
 		}
 	}
