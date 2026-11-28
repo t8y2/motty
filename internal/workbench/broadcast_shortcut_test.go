@@ -2,8 +2,11 @@ package workbench
 
 import (
 	"testing"
+	"time"
 
+	"github.com/vivaui/viva/app"
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/headless"
 	"github.com/vivaui/viva/keymap"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -214,6 +217,12 @@ func TestBroadcastReachesOnlyTheTickedTabs(t *testing.T) {
 	if web.typed() != "ls" || db.typed() != "ls" || cache.typed() != "" {
 		t.Fatalf("web %q, db %q, cache %q; want the unticked tab left alone", web.typed(), db.typed(), cache.typed())
 	}
+	// Typing into an unticked tab must not broadcast to the ticked tabs either.
+	cacheSession, _ := state.deck.Panes(ids[2], nil)[0], true
+	insertText(state, uint32(cacheSession.SessionID), "id")
+	if web.typed() != "ls" || db.typed() != "ls" || cache.typed() != "id" {
+		t.Fatalf("typing into unticked tab leaked: web %q, db %q, cache %q", web.typed(), db.typed(), cache.typed())
+	}
 
 	// "This tab" ticks only the one in view, "All tabs" every tab.
 	state.Click(hitBroadcast)
@@ -226,5 +235,155 @@ func TestBroadcastReachesOnlyTheTickedTabs(t *testing.T) {
 	state.Click(hitBroadcastMenuAll)
 	if len(state.broadcastMenu.picked) != len(ids) {
 		t.Fatalf("all tabs picked %v", state.broadcastMenu.picked)
+	}
+}
+
+// Clicking radio or checkbox rows in the toolbar's broadcast popover must leave
+// the popover open so the user can change the selection before starting.
+func TestHeadlessBroadcastMenuStaysOpenWhilePickingTabs(t *testing.T) {
+	world, options := newWorld(t)
+	var invalidator app.Invalidator
+	options.Invalidate = invalidator.Invalidate
+	state := newTestState(t, options)
+	var ids []layoutcore.WorkspaceID
+	var sessions [][]Session
+	for _, host := range []Host{
+		testWorkspaceHost("web", "web.example.com"),
+		testWorkspaceHost("db", "db.example.com"),
+		testWorkspaceHost("cache", "cache.example.com"),
+	} {
+		workspaceID, launched, err := state.launchWorkspace(WorkspaceLaunchPlan{Hosts: []Host{host}, Layout: layoutcore.GridSpec(1)}, host.Label)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids, sessions = append(ids, workspaceID), append(sessions, launched)
+	}
+	for index := range world.conns {
+		world.conns[index].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	}
+	state.Wake()
+	for _, launched := range sessions {
+		session, _ := state.sessionByIDPointer(launched[0].ID)
+		session.term.live = true
+	}
+	web, db, cache := world.conns[0].shell(t), world.conns[1].shell(t), world.conns[2].shell(t)
+	state.activateWorkspace(ids[0])
+	state.activeSection = sectionTerminal
+
+	view, err := headless.Open(app.Config{
+		Title: "broadcast menu", Width: 1400, Height: 900, Tree: Tree(),
+		Paint: state.Paint, TextInput: func(context app.TextInputContext) *app.TextInput {
+			if context.Terminal {
+				return state.TerminalInput(context)
+			}
+			return nil
+		},
+		OnPointer: state.Pointer, OnKey: state.Key, OnShortcut: state.Shortcut,
+		OnResize: state.Resize, Invalidator: &invalidator, OnWake: state.Wake,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+
+	clickID := func(id gfx.ID) {
+		t.Helper()
+		hit, ok := hitByIDSnapshot(view.Snapshot().Hits, id)
+		if !ok || hit.Block || hit.Disabled {
+			t.Fatalf("control %d is not clickable: %+v", id, hit)
+		}
+		if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+			t.Fatal(err)
+		}
+		if err := view.Wait(100 * time.Millisecond); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clickMenuItem := func(label string) gfx.Hit {
+		t.Helper()
+		hits := view.Snapshot().Hits
+		for index := len(hits) - 1; index >= 0; index-- {
+			hit := hits[index]
+			if hit.Role != gfx.RoleMenuItem || hit.Label != label || hit.Block || hit.Disabled {
+				continue
+			}
+			if err := view.Click(hit.Bounds.X+hit.Bounds.Width/2, hit.Bounds.Y+hit.Bounds.Height/2); err != nil {
+				t.Fatal(err)
+			}
+			if err := view.Wait(100 * time.Millisecond); err != nil {
+				t.Fatal(err)
+			}
+			return hit
+		}
+		t.Fatalf("no painted menu item named %q", label)
+		return gfx.Hit{}
+	}
+
+	m := state.messages.Tools
+	clickID(hitBroadcast)
+	if !state.broadcastMenu.open || len(state.broadcastMenu.picked) != len(ids) {
+		t.Fatalf("open: open=%v picked=%v", state.broadcastMenu.open, state.broadcastMenu.picked)
+	}
+
+	clickMenuItem(m.BroadcastScopeTab)
+	if !state.broadcastMenu.open {
+		t.Fatal("clicking This tab closed the broadcast menu")
+	}
+	if len(state.broadcastMenu.picked) != 1 || state.broadcastMenu.picked[0] != ids[0] {
+		t.Fatalf("after clicking This tab: picked=%v", state.broadcastMenu.picked)
+	}
+
+	clickMenuItem(m.BroadcastScopeAll)
+	if !state.broadcastMenu.open {
+		t.Fatal("clicking All tabs closed the broadcast menu")
+	}
+	if len(state.broadcastMenu.picked) != len(ids) {
+		t.Fatalf("after clicking All tabs: picked=%v", state.broadcastMenu.picked)
+	}
+
+	clickMenuItem(state.tabLabel(state.workspaceTabs[2]))
+	if !state.broadcastMenu.open {
+		t.Fatal("unticking a tab checkbox closed the broadcast menu")
+	}
+	if len(state.broadcastMenu.picked) != 2 || state.broadcasting(sessions[2][0].ID) {
+		t.Fatalf("after unticking third tab: picked=%v", state.broadcastMenu.picked)
+	}
+
+	clickMenuItem(m.BroadcastGo)
+	if state.broadcastMenu.open || !state.broadcastOn() {
+		t.Fatalf("after Start broadcast: open=%v broadcastOn=%v", state.broadcastMenu.open, state.broadcastOn())
+	}
+
+	insertText(state, sessions[0][0].ID, "ls")
+	if web.typed() != "ls" || db.typed() != "ls" || cache.typed() != "" {
+		t.Fatalf("after starting over picked tabs: web=%q db=%q cache=%q", web.typed(), db.typed(), cache.typed())
+	}
+}
+
+func TestBroadcastMenuReflectsSingleTabBroadcast(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	var ids []layoutcore.WorkspaceID
+	for _, host := range []Host{testWorkspaceHost("web", "web.example.com"), testWorkspaceHost("db", "db.example.com")} {
+		workspaceID, _, err := state.launchWorkspace(WorkspaceLaunchPlan{Hosts: []Host{host}, Layout: layoutcore.GridSpec(1)}, host.Label)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, workspaceID)
+	}
+	for index := range world.conns {
+		world.conns[index].set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	}
+	state.Wake()
+	for index := range state.sessions {
+		state.sessions[index].term.live = true
+	}
+	state.activateWorkspace(ids[0])
+	state.activeSection = sectionTerminal
+	state.broadcast = ids[0]
+
+	state.Click(hitBroadcast)
+	if len(state.broadcastMenu.picked) != 1 || state.broadcastMenu.picked[0] != ids[0] {
+		t.Fatalf("single-tab broadcast menu picked=%v, want [%d]", state.broadcastMenu.picked, ids[0])
 	}
 }

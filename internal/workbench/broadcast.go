@@ -92,6 +92,9 @@ func (state *State) broadcastInput(source uint32, input, logical []byte, typing,
 		return
 	}
 	if state.broadcastAll {
+		if !state.sessionInTab(source) {
+			return
+		}
 		for index := range state.sessions {
 			peer := &state.sessions[index]
 			if peer.ID == source || !state.sessionInTab(peer.ID) || workspaceSessionState(peer) != workspacePaneConnected {
@@ -265,6 +268,10 @@ func (state *State) openBroadcastMenu() {
 	menu.picked = menu.picked[:0]
 	if state.broadcastAll && state.broadcastTabs != nil {
 		menu.picked = append(menu.picked, state.broadcastTabs...)
+		return
+	}
+	if state.broadcast != 0 && !state.broadcastAll {
+		menu.picked = append(menu.picked, state.broadcast)
 		return
 	}
 	for _, tab := range state.workspaceTabs {
