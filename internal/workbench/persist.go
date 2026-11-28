@@ -136,6 +136,7 @@ type savedState struct {
 	TerminalGutter          string              `json:"terminal_gutter,omitempty"`
 	TerminalIntense         string              `json:"terminal_intense,omitempty"`
 	TerminalLineHeight      string              `json:"terminal_line_height,omitempty"`
+	TerminalScrollbarSize   string              `json:"terminal_scrollbar_size,omitempty"`
 	TerminalNotifications   string              `json:"terminal_notifications,omitempty"`
 	TerminalPasteImage      string              `json:"terminal_paste_image,omitempty"`
 	TerminalPasswordHint    string              `json:"terminal_password_hint,omitempty"`
@@ -644,6 +645,7 @@ func (state *State) snapshot() savedState {
 		TerminalGutter:             state.terminalGutter.String(),
 		TerminalIntense:            state.terminalIntense.String(),
 		TerminalLineHeight:         state.terminalLineHeight.String(),
+		TerminalScrollbarSize:      state.terminalScrollbarSize.String(),
 		TerminalNotifications:      notifyString(state.notifyOff),
 		TerminalPasteImage:         notifyString(state.pasteImageOff),
 		TerminalPasswordHint:       notifyString(state.passwordHintOff),
@@ -1323,6 +1325,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)
 	state.terminalLineHeight = lineHeightFromString(saved.TerminalLineHeight)
+	state.terminalScrollbarSize = scrollbarSizeFromString(saved.TerminalScrollbarSize)
 	state.notifyOff = saved.TerminalNotifications == "off"
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
 	state.passwordHintOff = saved.TerminalPasswordHint == "off"

@@ -894,6 +894,7 @@ func (state *State) settingsRelaunchLabel(action relaunchAction) string {
 var (
 	settingsOptionChoices          = [...]terminalOptionMode{terminalOptionText, terminalOptionMeta}
 	settingsLineHeightChoices      = [...]lineHeight{lineHeightCompact, lineHeightNormal, lineHeightRoomy}
+	settingsScrollbarSizeChoices   = [...]scrollbarSize{scrollbarThin, scrollbarMedium, scrollbarWide}
 	settingsPaddingChoices         = [...]terminalPad{padCompact, padNormal, padRoomy}
 	settingsGutterChoices          = [...]terminalGutter{gutterOff, gutterNumbers, gutterTime, gutterBoth}
 	settingsIntenseChoices         = [...]terminalIntense{intenseBoth, intenseBright, intenseBold, intensePlain}
@@ -913,6 +914,17 @@ func (state *State) settingsOptionLabel(mode terminalOptionMode) string {
 		return state.messages.SettingsTerminalOptionMeta
 	}
 	return state.messages.SettingsTerminalOptionText
+}
+
+func (state *State) settingsScrollbarSizeLabel(size scrollbarSize) string {
+	switch size {
+	case scrollbarThin:
+		return state.messages.SettingsTerminalScrollbarThin
+	case scrollbarMedium:
+		return state.messages.SettingsTerminalScrollbarMedium
+	default:
+		return state.messages.SettingsTerminalScrollbarWide
+	}
 }
 
 func (state *State) settingsLineHeightLabel(mode lineHeight) string {

@@ -993,13 +993,14 @@ type State struct {
 	contextDrawerOpen  bool
 	// The panel's Draw callback is a method value made once: a paint that made
 	// it again would allocate.
-	contextPanelDraw func(*ui.DrawContext)
-	shortcuts        shortcutMap
-	shortcutCapture  shortcutAction
-	shortcutError    string
-	reconnectWaiters int
-	pal              *palette
-	theme            gfx.Theme
+	contextPanelDraw      func(*ui.DrawContext)
+	shortcuts             shortcutMap
+	shortcutCapture       shortcutAction
+	shortcutError         string
+	reconnectWaiters      int
+	pal                   *palette
+	theme                 gfx.Theme
+	terminalScrollbarSize scrollbarSize
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
