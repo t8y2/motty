@@ -100,10 +100,14 @@ type ToolsMessages struct {
 	SnippetGroupDelete        string
 	SnippetGroupDeleteTitle   string
 	SnippetGroupDeleteBodyFmt string
+	SnippetGroupDeleteKeep    string
+	SnippetGroupDeletePurge   string
+	SnippetGroupPurgeBodyFmt  string
 	SnippetGroupDeleteConfirm string
 	SnippetGroupsClose        string
 	StatusGroupRenamedFmt     string
 	StatusGroupDeletedFmt     string
+	StatusGroupPurgedFmt      string
 	SnippetCountFilteredFmt   string
 	SnippetColumnCommand      string
 	SnippetSortAction         string
@@ -113,6 +117,7 @@ type ToolsMessages struct {
 	SnippetCollapse           string
 	SnippetMoveUp             string
 	SnippetMoveDown           string
+	StatusSnippetUngroupedFmt string
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
 	SnippetEdit               string

@@ -283,8 +283,11 @@ func (state *State) snippetTreeCanDrop(from, to int, where ui.TreeDrop) bool {
 	if !src.folder {
 		switch where {
 		case ui.TreeDropInside:
-			return dst.folder
+			return dst.folder && !sameSnippetGroup(src.group, dst.group)
 		case ui.TreeDropBefore, ui.TreeDropAfter:
+			if dst.folder {
+				return !sameSnippetGroup(src.group, snippetGroupParent(dst.group))
+			}
 			return true
 		}
 		return false

@@ -410,6 +410,24 @@ func (state *State) moveSnippet(index, direction int) bool {
 	return true
 }
 
+// removeSnippetFromGroup clears the snippet's group so it becomes ungrouped.
+func (state *State) removeSnippetFromGroup(index int) bool {
+	state.flushInlineSnippetSave()
+	form := &state.snippets
+	if index < 0 || index >= len(form.list) || form.list[index].Group == "" {
+		return false
+	}
+	name := form.list[index].Name
+	form.list[index].Group = ""
+	form.selected = index
+	form.selectedFolder = ""
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	state.save()
+	state.status = fmt.Sprintf(state.messages.Tools.StatusSnippetUngroupedFmt, name)
+	return true
+}
+
 // sendSnippet types a snippet into the active terminal, and into the other panes
 // of its tab while the tab is broadcasting.
 func (state *State) sendSnippet(index int) bool {

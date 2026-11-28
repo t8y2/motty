@@ -26,6 +26,8 @@ var (
 	hitSnippetGroupRenameSubmit  = tree.ID(snippetsHits, "snippet-group-rename-submit")
 	hitSnippetGroupRenameCancel  = tree.ID(snippetsHits, "snippet-group-rename-cancel")
 	hitSnippetGroupRenameClose   = tree.ID(snippetsHits, "snippet-group-rename-close")
+	hitSnippetGroupDeleteKeep    = tree.ID(snippetsHits, "snippet-group-delete-keep")
+	hitSnippetGroupDeletePurge   = tree.ID(snippetsHits, "snippet-group-delete-purge")
 	hitSnippetGroupDeleteConfirm = tree.ID(snippetsHits, "snippet-group-delete-confirm")
 	hitSnippetGroupDeleteCancel  = tree.ID(snippetsHits, "snippet-group-delete-cancel")
 	hitSnippetGroupDeleteClose   = tree.ID(snippetsHits, "snippet-group-delete-close")
@@ -37,9 +39,12 @@ type snippetGroupsUI struct {
 	target string
 	// creating switches modalSnippetGroupRename into a create-group dialog.
 	creating bool
-	editor   text.Editor
-	field    dialogField
-	error    string
+	// deleteSnippets makes modalSnippetGroupDelete also delete every snippet
+	// under target instead of ungrouping them.
+	deleteSnippets bool
+	editor         text.Editor
+	field          dialogField
+	error          string
 	// returning reopens the manager after the rename or delete dialog closes.
 	returning bool
 	// bounds is the manager's scroll area, for the wheel.
@@ -107,7 +112,7 @@ func (state *State) openSnippetGroupDeleteDirect(group string) {
 
 func (state *State) openSnippetGroupDeleteMode(group string, returning bool) {
 	form := &state.snippetGroups
-	form.target, form.error, form.returning = group, "", returning
+	form.target, form.deleteSnippets, form.error, form.returning = group, false, "", returning
 	state.modal = modalSnippetGroupDelete
 }
 
@@ -124,10 +129,19 @@ func (state *State) clickSnippetGroupDialog(id gfx.ID) {
 		return
 	}
 	switch id {
+	case hitSnippetGroupDeleteKeep:
+		form.deleteSnippets = false
+	case hitSnippetGroupDeletePurge:
+		form.deleteSnippets = true
 	case hitSnippetGroupDeleteCancel, hitSnippetGroupDeleteClose, hitSnippetGroupDeleteDismiss:
 		state.closeModal()
 	case hitSnippetGroupDeleteConfirm:
-		state.deleteSnippetGroup(form.target)
+		if form.deleteSnippets {
+			state.flushInlineSnippetSave()
+			state.deleteSnippetGroupWithSnippets(form.target)
+		} else {
+			state.deleteSnippetGroup(form.target)
+		}
 		state.closeModal()
 	}
 }
@@ -301,6 +315,55 @@ func (state *State) deleteSnippetGroup(group string) {
 	state.status = fmt.Sprintf(m.StatusGroupDeletedFmt, group, count)
 }
 
+// deleteSnippetGroupWithSnippets removes group, its descendant groups, and
+// every snippet contained within that subtree.
+func (state *State) deleteSnippetGroupWithSnippets(group string) {
+	form, m := &state.snippets, state.messages.Tools
+	count := 0
+	keptList := form.list[:0]
+	for _, entry := range form.list {
+		if snippetGroupWithin(entry.Group, group) {
+			count++
+			continue
+		}
+		keptList = append(keptList, entry)
+	}
+	form.list = keptList
+	removedCustom := false
+	keptGroups := form.customGroups[:0]
+	for _, custom := range form.customGroups {
+		if snippetGroupWithin(custom, group) {
+			removedCustom = true
+			continue
+		}
+		keptGroups = append(keptGroups, custom)
+	}
+	form.customGroups = keptGroups
+	if count == 0 && !removedCustom {
+		return
+	}
+	if form.filter.group != "" && snippetGroupWithin(form.filter.group, group) {
+		form.filter = snippetFilter{}
+	}
+	deleteCommandGroupMap(state.commands.hiddenGroups, group)
+	deleteCommandGroupMap(state.commands.collapsedGroups, group)
+	deleteCommandGroupMap(state.snippets.treeCollapsedGroups, group)
+	if state.snippets.selectedFolder != "" && snippetGroupWithin(state.snippets.selectedFolder, group) {
+		state.snippets.selectedFolder = ""
+	}
+	if form.inline.draft && snippetGroupWithin(form.inline.loadedSnap.Group, group) {
+		form.inline.loadedSnap.Group = ""
+	}
+	form.resetSnippetPreview()
+	state.refreshSnippets()
+	if form.inline.draft {
+		state.refreshInlineGroupOptions(form.inline.loadedSnap.Group)
+		state.refreshInlineMeta(form.inline.loadedSnap)
+	}
+	state.save()
+	state.status = fmt.Sprintf(m.StatusGroupPurgedFmt, group, count)
+}
+
 func remapCommandGroupMap(entries map[string]bool, from, to string) {
 	if len(entries) == 0 {
 		return
@@ -437,18 +500,31 @@ func (state *State) declareSnippetGroupRenameDialog(c ui.C) {
 	})
 }
 
-// declareSnippetGroupDeleteDialog asks before the group stops naming the
-// commands in it.
+// declareSnippetGroupDeleteDialog asks before deleting a group, letting the
+// user choose whether to keep its commands ungrouped (default) or delete them
+// together with the group.
 func (state *State) declareSnippetGroupDeleteDialog(c ui.C) {
 	manager, m := &state.snippetGroups, state.messages.Tools
-	description := fmt.Sprintf(m.SnippetGroupDeleteBodyFmt, manager.target, state.snippetGroupCount(manager.target))
+	count := state.snippetGroupCount(manager.target)
+	description := fmt.Sprintf(m.SnippetGroupDeleteBodyFmt, manager.target, count)
+	if manager.deleteSnippets {
+		description = fmt.Sprintf(m.SnippetGroupPurgeBodyFmt, manager.target, count)
+	}
 	viewport := dialogViewport(c)
-	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, 0)
+	height := dialogContentHeight(c.Canvas(), *c.Theme(), viewport, 480, description, groupDeleteChoiceRows)
 	dialog := ui.Dialog(c, ui.DialogSpec{
 		Title: m.SnippetGroupDeleteTitle, Description: description,
 		Width: 480, Height: height, Layer: dialogLayer,
 		Scope: dialogScope, DismissID: hitSnippetGroupDeleteDismiss, CloseID: hitSnippetGroupDeleteClose,
-		InitialFocusID: hitSnippetGroupDeleteCancel,
+		InitialFocusID: hitSnippetGroupDeleteKeep,
+	})
+	dialog.Body(func() {
+		ui.Column(c).Fill().Children(func() {
+			ui.RadioGroup(c).Fill().Children(func() {
+				ui.Radio(c, &manager.deleteSnippets, false, m.SnippetGroupDeleteKeep, ui.WithID(hitSnippetGroupDeleteKeep)).Grow(1)
+				ui.Radio(c, &manager.deleteSnippets, true, m.SnippetGroupDeletePurge, ui.WithID(hitSnippetGroupDeletePurge)).Grow(1)
+			})
+		})
 	})
 	dialog.Footer(func() {
 		state.dialogActionFooter(c,
