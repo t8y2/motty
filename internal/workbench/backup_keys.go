@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,13 +39,12 @@ func sameBackupKeys(a, b []backup.Key) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	held := make(map[string][]byte, len(a))
+	held := make(map[string]bool, len(a))
 	for _, key := range a {
-		held[key.Fingerprint] = key.Data
+		held[key.Fingerprint] = true
 	}
 	for _, key := range b {
-		data, ok := held[key.Fingerprint]
-		if !ok || !bytes.Equal(data, key.Data) {
+		if !held[key.Fingerprint] {
 			return false
 		}
 	}
@@ -91,7 +89,14 @@ func (state *State) clearKeyFileTombstone(fingerprint string) {
 func (state *State) backupKeyFiles() (keys []backup.Key, skipped int) {
 	seen := make(map[string]bool, len(state.identities))
 	for _, identity := range state.identities {
-		if identity.Error != "" || identity.Fingerprint == "" || identity.Stored || identity.SecurityKey || seen[identity.Fingerprint] {
+		if identity.Error != "" || identity.Stored || identity.SecurityKey {
+			continue
+		}
+		if identity.Fingerprint == "" {
+			skipped++
+			continue
+		}
+		if seen[identity.Fingerprint] {
 			continue
 		}
 		if len(keys) >= backup.MaxKeys {
@@ -121,7 +126,7 @@ func (state *State) backupKeyFiles() (keys []backup.Key, skipped int) {
 // key follows it to its new path, which is where the keys page looks for it.
 //
 // It returns how many files were written and how many keys could not be placed.
-func (state *State) applyBackupKeys(keys []backup.Key, opened *vault.Vault) (written, failed int) {
+func (state *State) applyBackupKeys(keys []backup.Key, opened *vault.Vault, explicit bool) (written, failed int) {
 	if len(keys) == 0 || state.options.StatePath == "" {
 		return 0, 0
 	}
@@ -132,6 +137,9 @@ func (state *State) applyBackupKeys(keys []backup.Key, opened *vault.Vault) (wri
 	paths := make([]string, 0, len(state.identities)+len(keys))
 	known := make(map[string]bool, len(state.identities)+len(keys))
 	for _, identity := range state.identities {
+		if identity.Stored {
+			continue
+		}
 		paths = append(paths, identity.Path)
 		known[identity.Path] = true
 	}
@@ -143,9 +151,15 @@ func (state *State) applyBackupKeys(keys []backup.Key, opened *vault.Vault) (wri
 		if _, exists := state.identityForFingerprint(key.Fingerprint); exists {
 			continue
 		}
-		// A key removed here is not pulled back from the cloud. The cloud copy
-		// is deliberately left alone: this switch is add-only.
-		if state.keyFileTombstoned(key.Fingerprint) {
+		// A key removed here is not pulled back from the cloud. An explicit
+		// restore is different: the user chose this backup file, so it may bring
+		// the key back.
+		if !explicit && state.keyFileTombstoned(key.Fingerprint) {
+			continue
+		}
+		info, err := keyidentity.InspectData(key.Name, key.Data)
+		if err != nil || info.Fingerprint != key.Fingerprint {
+			failed++
 			continue
 		}
 		target := filepath.Join(directory, key.Name)

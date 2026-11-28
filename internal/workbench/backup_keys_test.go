@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/vivaui/viva/app"
@@ -26,6 +27,10 @@ func TestABackupCarriesPrivateKeyFilesOnlyWhenAsked(t *testing.T) {
 	}
 
 	state.Click(hitBackupKeys)
+	if state.backupKeys || state.modal != modalForm {
+		t.Fatalf("the row did not ask before carrying keys: backupKeys=%v modal=%v", state.backupKeys, state.modal)
+	}
+	state.Click(hitFormSubmit)
 	if !state.backupKeys {
 		t.Fatal("the row did not turn carrying keys on")
 	}
@@ -153,6 +158,17 @@ func TestASyncedComputerWithTheKeyToggleWritesTheServerKeys(t *testing.T) {
 	}
 }
 
+func TestBackupKeysAreTheSameWhenTheirFingerprintsMatch(t *testing.T) {
+	a := []backup.Key{{Fingerprint: "SHA256:one", Name: "id_one", Data: []byte("one\n")}}
+	b := []backup.Key{{Fingerprint: "SHA256:one", Name: "renamed", Path: "/other/path", Data: []byte("one with a different comment\n")}}
+	if !sameBackupKeys(a, b) {
+		t.Fatal("the same key was treated as changed because its bytes differ")
+	}
+	if sameBackupKeys(a, []backup.Key{{Fingerprint: "SHA256:two", Name: "id_one", Data: a[0].Data}}) {
+		t.Fatal("different fingerprints were treated as the same key")
+	}
+}
+
 func TestARestoredKeyAlreadyOnThisComputerIsNotDuplicated(t *testing.T) {
 	state, _, _ := backupTestState(t)
 	path := writeWorkbenchIdentity(t, "id_ed25519", "")
@@ -167,7 +183,7 @@ func TestARestoredKeyAlreadyOnThisComputerIsNotDuplicated(t *testing.T) {
 		Fingerprint: fingerprint,
 		Name:        "id_ed25519",
 		Data:        data,
-	}}, state.secrets.vault)
+	}}, state.secrets.vault, false)
 	if written != 0 || failed != 0 {
 		t.Fatalf("written=%d failed=%d", written, failed)
 	}
@@ -198,9 +214,73 @@ func TestARemovedFileKeyIsNotBroughtBackBySync(t *testing.T) {
 		Fingerprint: fingerprint,
 		Name:        "id_ed25519",
 		Data:        data,
-	}}, state.secrets.vault)
+	}}, state.secrets.vault, false)
 	if written != 0 || failed != 0 || len(state.identities) != 0 {
 		t.Fatalf("the removed key came back: written=%d failed=%d identities=%d", written, failed, len(state.identities))
+	}
+}
+
+func TestExplicitRestoreCanBringBackARemovedKey(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	state.selectedIdentityID = state.identities[0].ID
+	fingerprint := state.identities[0].Fingerprint
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.removeSelectedIdentity()
+
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault, true)
+	if written != 1 || failed != 0 || len(state.identities) != 1 {
+		t.Fatalf("explicit restore did not bring the key back: written=%d failed=%d identities=%d", written, failed, len(state.identities))
+	}
+}
+
+func TestRestoringFilesKeepsKeysStoredInTheVault(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	if message := state.addStoredKey("Vault key", []byte(identityPEM(t, "")), func(identityRecord) {}); message != "" {
+		t.Fatalf("the vault key was not stored: %s", message)
+	}
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := keyidentity.InspectData("id_ed25519", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: info.Fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault, true)
+	if written != 1 || failed != 0 {
+		t.Fatalf("written=%d failed=%d", written, failed)
+	}
+	foundStored := false
+	for _, identity := range state.identities {
+		if identity.Stored {
+			foundStored = true
+		}
+	}
+	if !foundStored {
+		t.Fatal("restoring file keys dropped the key kept in the vault")
+	}
+}
+
+func TestSyncDoneReportsPrivateKeyFilesLeftOut(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	state.sync.keysLeftOut = 2
+	state.syncDone("tag", "")
+	if !strings.Contains(state.status, "2") {
+		t.Fatalf("sync completion did not report the keys left out: %q", state.status)
 	}
 }
 

@@ -98,6 +98,7 @@ func (state *State) syncRound(store cloudsync.Store, password string, attempt in
 // syncMerge takes the server's data in and, if the server lacks anything, sends
 // the union back.
 func (state *State) syncMerge(store cloudsync.Store, password string, attempt int, remote backup.Document, tag string, missing bool, err error) {
+	state.sync.keysFailed, state.sync.keysLeftOut = 0, 0
 	if err != nil {
 		state.syncFailed(err)
 		return
@@ -158,8 +159,11 @@ func (state *State) syncDone(tag, created string) {
 	state.status = state.messages.Tools.SyncDone
 	if state.sync.keysFailed > 0 {
 		state.status = fmt.Sprintf(state.messages.Tools.SyncDoneKeysFailedFmt, state.sync.keysFailed)
-		state.sync.keysFailed = 0
 	}
+	if state.sync.keysLeftOut > 0 {
+		state.status += " " + fmt.Sprintf(state.messages.Tools.SyncDoneKeysLeftOutFmt, state.sync.keysLeftOut)
+	}
+	state.sync.keysFailed, state.sync.keysLeftOut = 0, 0
 	if state.sync.again {
 		state.sync.again = false
 		state.scheduleSync()
@@ -317,10 +321,12 @@ func (state *State) mergeRemote(remote backup.Document, missing bool) (*backup.D
 	// holds: otherwise a computer that never turned it on would erase the keys
 	// another one synced.
 	if state.backupKeys {
-		_, state.sync.keysFailed = state.applyBackupKeys(remote.Keys, opened)
-		mine, _ := state.backupKeyFiles()
+		_, state.sync.keysFailed = state.applyBackupKeys(remote.Keys, opened, false)
+		mine, leftOut := state.backupKeyFiles()
+		state.sync.keysLeftOut = leftOut
 		local.Keys = unionBackupKeys(mine, remote.Keys)
 	} else {
+		state.sync.keysLeftOut = 0
 		local.Keys = remote.Keys
 	}
 

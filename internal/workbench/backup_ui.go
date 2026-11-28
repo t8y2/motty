@@ -103,6 +103,9 @@ type syncState struct {
 	// keysFailed counts private key files the last sync received but could not
 	// write, which is said out loud instead of leaving a host that cannot log in.
 	keysFailed int
+	// keysLeftOut counts this computer's key files the last sync could not read
+	// or include, so the same omission is not silent only for sync.
+	keysLeftOut int
 	// timer is the one pending start of a sync, after a change or a failure.
 	timer *time.Timer
 	// holdBack is set while a restore from the server settles: the changes it
@@ -455,7 +458,7 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope, 
 		}
 	}
 	if restoreKeys && len(document.Keys) > 0 {
-		if _, failed := state.applyBackupKeys(document.Keys, opened); failed > 0 && incomplete == nil {
+		if _, failed := state.applyBackupKeys(document.Keys, opened, true); failed > 0 && incomplete == nil {
 			incomplete = &partialRestoreError{fmt.Sprintf(m.BackupKeysFailedFmt, failed)}
 		}
 	}
@@ -983,7 +986,11 @@ func (state *State) clickBackupSettings(id gfx.ID) bool {
 			}
 		}
 	case hitBackupKeys:
-		state.setBackupKeys(!state.backupKeys)
+		if state.backupKeys {
+			state.setBackupKeys(false)
+		} else {
+			state.askEnableBackupKeys()
+		}
 	default:
 		if index, ok := id.In(hitSyncCategories); ok && index >= 0 && index < len(syncCategories) {
 			state.toggleSyncCategory(syncCategories[index])
@@ -1047,6 +1054,19 @@ func (state *State) setBackupKeys(on bool) {
 	if on && state.sync.configured() && !state.sync.manual {
 		state.scheduleSync()
 	}
+}
+
+// askEnableBackupKeys makes the trust decision explicit before the first key
+// file leaves this computer. Canceling leaves the switch off.
+func (state *State) askEnableBackupKeys() {
+	m := state.messages.Tools
+	state.openForm(formDialog{
+		title: m.BackupKeysEnableTitle, description: m.BackupKeysEnableDescription, submit: m.BackupKeysEnableConfirm,
+		run: func(state *State, _ *formDialog) string {
+			state.setBackupKeys(true)
+			return ""
+		},
+	})
 }
 
 // syncSelectionEmpty reports that no sync content is selected at all, so the
