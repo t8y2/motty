@@ -210,6 +210,7 @@ func TestProcessMenuIsThePageControlMenuInTheNativeToolsWindow(t *testing.T) {
 		fake.runCommand = server.run
 		fake.mu.Unlock()
 		state.options.OpenContentWindow = application.OpenContentWindow
+		state.remote.tab = remoteProcesses
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })

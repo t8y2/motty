@@ -30,7 +30,11 @@ var (
 )
 
 type remoteProcessDetails struct {
-	open               bool
+	open bool
+	// fromMonitor marks details the resource monitor opened: no tools surface
+	// is behind them, so the page that declared them owns their keys and the
+	// actions they offer run against the monitor's session.
+	fromMonitor        bool
 	process            remotetools.Process
 	tab                gfx.ID
 	collectedAt        time.Time
@@ -396,7 +400,7 @@ func processStateText(state *State, value string) string {
 }
 
 func (state *State) remoteProcessDetailsKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if !state.remoteToolsVisible() {
+	if !state.remoteToolsVisible() && !state.remote.processDetails.fromMonitor {
 		return gfx.EventResult{}, false
 	}
 	if state.remote.processDetails.open {

@@ -87,6 +87,12 @@ func (state *State) monitorPointer(e gfx.PointerEvent) (gfx.EventResult, bool) {
 	if state.modal != modalNone || state.activeSection != sectionTerminal || !state.monitorShown(state.deck.ActiveWorkspace()) {
 		return gfx.EventResult{}, false
 	}
+	// A secondary press on a process row opens that process's actions, as the
+	// tools tab's table did.
+	if e.Kind == gfx.PointerDown && e.Button == gfx.PointerButtonSecondary &&
+		state.openMonitorProcessMenu(e.Target, gfx.Point{X: e.X, Y: e.Y}) {
+		return gfx.EventResult{Handled: true, Repaint: true}, true
+	}
 	if e.Kind == gfx.PointerDown && e.Target == hitMonitorDivider && e.Button == gfx.PointerButtonPrimary {
 		state.monitorResizing = true
 		state.monitorResizeWorkspace = state.deck.ActiveWorkspace()
@@ -159,7 +165,7 @@ func (state *State) monitorKey(e gfx.KeyEvent) (gfx.EventResult, bool) {
 		state.monitorMenuSession = state.activeSessionID
 		return gfx.EventResult{Handled: true, Repaint: true, Focus: hitMonitorEvery1, FocusVisible: true}, true
 	}
-	if e.Target == hitMonitorOverview || e.Target == hitMonitorDiskPage || e.Target == hitMonitorNetworkPage {
+	if e.Target == hitMonitorOverview || e.Target == hitMonitorDiskPage || e.Target == hitMonitorNetworkPage || e.Target == hitMonitorProcessPage {
 		opts := state.monitorPageOptions()
 		next, ok := components.TabsKeyDown(e.Target, opts[:], components.TabsHorizontal, components.DirectionLTR, e.Key)
 		if ok {

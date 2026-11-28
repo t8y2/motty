@@ -18,6 +18,10 @@ const monitorClockSteps = 12
 // paint: the scroll area, and the interval control the menu hangs from.
 type monitorPageUI struct {
 	scroll ui.Box
+	// contentTop is the y the scrolled content starts at with no offset: the
+	// split slots of the process tab each need it to cull against the same
+	// viewport.
+	contentTop float32
 }
 
 // monitorBaseBounds is the docked monitor's rectangle. Drawer mode uses the
@@ -184,16 +188,32 @@ func (state *State) declareMonitorContent(c ui.C, width, height float32) {
 			state.declareMonitorNavigation(c, p, width-24)
 		})
 		state.declareMonitorBody(c, session, p, width, height)
+		state.declareMonitorProcessMenu(c, p)
+		state.declareMonitorProcessRowMenu(c, p)
+		state.declareMonitorProcessDetails(c)
 		if monitorShowsBody(session) {
 			state.declareMonitorFooter(c, session, p)
 		}
 	})
 }
 
-// declareMonitorNavigation declares the overview/disks/network strip.
+// declareMonitorProcessSearch declares the search box the process tab carries.
+// The rows it narrows are the reading already in hand: typing filters them and
+// clearing the query brings them all back without asking the host again.
+func (state *State) declareMonitorProcessSearch(c ui.C, p *monitorView) {
+	m := state.messages.Monitor
+	ui.Row(c).Height(monitorProcessSearchRow).PadSides(0, 10, 0, 10).Items(ui.Center).Children(func() {
+		ui.TextField(c, &p.procSearch, m.ProcessSearch, m.ProcessSearchPlaceholder, ui.WithID(hitMonitorProcSearch)).
+			Height(28).FillWidth()
+	})
+}
+
+// declareMonitorNavigation declares the overview/processes/disks/network strip.
+// Its labels come from monitorPageOptions, the same list the keyboard moves
+// through, so the strip and the keys cannot disagree about the order.
 func (state *State) declareMonitorNavigation(c ui.C, p *monitorView, width float32) {
-	labels := [3]string{state.messages.Monitor.Overview, state.messages.Monitor.Disks, state.messages.Monitor.Network}
-	ui.Tabs(c, &p.page, []int{0, 1, 2}, func(index int) string { return labels[index] }).Size(max(width, 120), 32)
+	options := state.monitorPageOptions()
+	ui.Tabs(c, &p.page, []int{0, 1, 2, 3}, func(index int) string { return options[index].Label }).Size(max(width, 120), 32)
 }
 
 // declareMonitorInterval declares the refresh interval as a page button with
@@ -279,6 +299,31 @@ func (state *State) declareMonitorMenu(c ui.C, anchor ui.Box) {
 	}
 }
 
+// declareMonitorProcessMenu declares the process list's sort popup, hanging it
+// off the control that list painted last: choosing a sort re-orders the rows the
+// panel already holds, so nothing is asked of the host.
+func (state *State) declareMonitorProcessMenu(c ui.C, p *monitorView) {
+	if !p.sortMenu || p.sortAnchor.Width <= 0 {
+		return
+	}
+	m := state.messages.Monitor
+	ids := [...]gfx.ID{hitMonitorSortCPU, hitMonitorSortMemory, hitMonitorSortPID, hitMonitorSortName}
+	labels := [...]string{m.SortCPU, m.SortMemory, m.SortPID, m.SortName}
+	open := true
+	ui.MenuAt(c, &open, p.sortAnchor, func(menu *ui.MenuItems) {
+		for index, label := range labels {
+			item := menu.Item(label).Chosen(p.procSort == index)
+			if item.Clicked() {
+				id := ids[index]
+				c.After(func() { state.click(id, true) })
+			}
+		}
+	})
+	if !open {
+		p.sortMenu = false
+	}
+}
+
 // declareMonitorBody declares the scrollable sections, or the loading, empty
 // and unsupported states in their place.
 func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView, width, height float32) {
@@ -310,6 +355,13 @@ func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView,
 		})
 		return
 	}
+	// The rows the list draws are the reading narrowed by the search box; it is
+	// rebuilt here, once per frame, so a reading or a query that changed since
+	// the last paint can never leave the card at the wrong height.
+	// The box owns its text; the rows narrow from it before the page is measured,
+	// so the card is never a frame too tall or too short for what it shows.
+	p.procQuery = p.procSearch.Text()
+	p.refilterProcesses()
 	p.contentHeight = monitorContentHeight(p, state.monitorCurrentSSHUser(session))
 	scroll := ui.Scroll(c).Grow(1).Basis(0).MinHeight(0).Scrollbars().ScrollbarSize(catalogBarGutter).
 		HitWith(hitMonitorScroll, m.Title, gfx.HitOptions{Role: gfx.RoleGroup})
@@ -322,14 +374,12 @@ func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView,
 	}
 	state.monitorUI.scroll = scroll
 	scroll.Children(func() {
+		if p.page == 1 {
+			state.declareMonitorProcessPage(c, session, p)
+			return
+		}
 		ui.Slot(c).FillWidth().Height(p.contentHeight).Draw(func(d *ui.DrawContext) {
-			viewport := d.Rect
-			if state.monitorUI.scroll.Valid() {
-				if area := state.monitorUI.scroll.ScrollState(); area != nil {
-					viewport = gfx.Rect{X: d.Rect.X, Y: d.Rect.Y + area.Offset, Width: d.Rect.Width, Height: area.Viewport}
-				}
-			}
-			state.paintMonitorSections(d.Canvas, session, session.stats, d.Rect, viewport)
+			state.paintMonitorSections(d.Canvas, session, session.stats, d.Rect, state.monitorDrawViewport(d, d.Rect.Y))
 		})
 	})
 	scroll.DrawOver(func(d *ui.DrawContext) {
@@ -337,6 +387,64 @@ func (state *State) declareMonitorBody(c ui.C, session *Session, p *monitorView,
 			p.scroll = area.Offset
 			p.scrollSynced = area.Offset
 		}
+	})
+}
+
+// monitorDrawViewport is the part of the scrolled content the window shows, in
+// the coordinates the sections are painted in: contentTop is the y the content
+// starts at when the offset is zero, which only the first slot of a split page
+// knows and the page records as it paints.
+func (state *State) monitorDrawViewport(d *ui.DrawContext, contentTop float32) gfx.Rect {
+	viewport := gfx.Rect{X: d.Rect.X, Y: contentTop, Width: d.Rect.Width, Height: d.Rect.Height}
+	if state.monitorUI.scroll.Valid() {
+		if area := state.monitorUI.scroll.ScrollState(); area != nil {
+			viewport.Y = contentTop + area.Offset
+			viewport.Height = area.Viewport
+		}
+	}
+	return viewport
+}
+
+// declareMonitorProcessPage declares the process tab in the pieces it scrolls
+// as: the meters, the process card, and the line that points at the tools
+// window. The card is a page control — its header, its search box and its rows
+// are declared together — because a text field cannot live in a painted slot.
+func (state *State) declareMonitorProcessPage(c ui.C, session *Session, p *monitorView) {
+	ui.Slot(c).FillWidth().Height(monitorProcessTopHeight(p)).Draw(func(d *ui.DrawContext) {
+		// The first slot of the page is where the content begins: the split
+		// slots below are painted at their own y, so the shared viewport has to
+		// be taken from here, not from each slot's own rectangle.
+		state.monitorUI.contentTop = d.Rect.Y
+		state.paintMonitorProcessTop(d.Canvas, p, d.Rect, state.monitorDrawViewport(d, d.Rect.Y))
+	})
+	state.declareMonitorProcessCard(c, p)
+	ui.Slot(c).FillWidth().Height(monitorProcessHintHeight()).Draw(func(d *ui.DrawContext) {
+		state.paintMonitorProcessHint(d.Canvas, d.Rect, state.monitorDrawViewport(d, state.monitorUI.contentTop))
+	})
+}
+
+// declareMonitorProcessCard declares the process card as one control: its
+// surface and border, the header that opens and closes it, and — while open —
+// the search box and the painted rows.
+func (state *State) declareMonitorProcessCard(c ui.C, p *monitorView) {
+	colors := state.monitorColors()
+	// The painted cards around this one sit monitorInset in from the content
+	// edge; a declared card has to ask for the same margin, or it is the widest
+	// thing on the page.
+	card := ui.Column(c).FillWidth().Height(monitorProcessHeight(p)).
+		MarginSides(0, monitorInset, 0, monitorInset).
+		Background(colors.surface).Radius(cornerPx(10)).Border(1, colors.border)
+	card.Children(func() {
+		ui.Slot(c).FillWidth().Height(32).Draw(func(d *ui.DrawContext) {
+			state.paintMonitorProcessHeader(d.Canvas, p, d.Rect)
+		})
+		if !p.procsOpen {
+			return
+		}
+		state.declareMonitorProcessSearch(c, p)
+		ui.Slot(c).FillWidth().Height(monitorProcessRowsHeight(p)).Draw(func(d *ui.DrawContext) {
+			state.paintMonitorProcessRows(d.Canvas, p, d.Rect, state.monitorDrawViewport(d, state.monitorUI.contentTop))
+		})
 	})
 }
 
@@ -352,8 +460,18 @@ func (state *State) declareMonitorFooter(c ui.C, session *Session, p *monitorVie
 	if (p.detailsFailed || p.sample.CPUUnavailable || p.sample.NetworkUnavailable) && !p.paused {
 		footer = m.DetailsUnavailable
 	}
+	// What an action did is newer than any reading: it leads the line until its
+	// notice expires, then the freshness line has the footer back.
+	glyph := icons.Clock3
+	if p.actionStatus != "" && time.Since(p.actionAt) < monitorActionNotice {
+		footer = p.actionStatus
+		fc = colors.muted
+		if p.actionFailed {
+			fc, glyph = state.pal.danger, icons.CircleAlert
+		}
+	}
 	ui.Row(c).Height(24).PadSides(0, 12, 0, 12).Gap(6).Items(ui.Center).Children(func() {
-		ui.Icon(c, icons.Clock3).Size(12, 12).Color(fc).Shrink(0)
+		ui.Icon(c, glyph).Size(12, 12).Color(fc).Shrink(0)
 		ui.Text(c, footer).FontSize(10).Color(fc).Ellipsis()
 	})
 }

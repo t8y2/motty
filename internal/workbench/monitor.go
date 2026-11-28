@@ -3,11 +3,13 @@ package workbench
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/vivaui/viva/gfx"
+	"github.com/vivaui/viva/ui"
 	"motty/internal/remotestats"
 	"motty/internal/sshconn"
 	layoutcore "motty/internal/workspace"
@@ -31,12 +33,22 @@ var (
 	hitMonitorOverview      = tree.ID(monitorHits, "overview")
 	hitMonitorDiskPage      = tree.ID(monitorHits, "disk-page")
 	hitMonitorNetworkPage   = tree.ID(monitorHits, "network-page")
+	hitMonitorProcessPage   = tree.ID(monitorHits, "process-page")
+	hitMonitorMemory        = tree.ID(monitorHits, "memory-collapse")
+	hitMonitorProcesses     = tree.ID(monitorHits, "processes-collapse")
+	hitMonitorProcSearch    = tree.ID(monitorHits, "processes-search")
+	hitMonitorProcSort      = tree.ID(monitorHits, "processes-sort")
+	hitMonitorSortCPU       = tree.ID(monitorHits, "sort-cpu")
+	hitMonitorSortMemory    = tree.ID(monitorHits, "sort-memory")
+	hitMonitorSortPID       = tree.ID(monitorHits, "sort-pid")
+	hitMonitorSortName      = tree.ID(monitorHits, "sort-name")
 	hitMonitorHostName      = tree.ID(monitorHits, "host-name")
 	hitMonitorHostAddress   = tree.ID(monitorHits, "host-address")
 	hitMonitorHostUser      = tree.ID(monitorHits, "host-user")
 	hitMonitorCores         = tree.ID(monitorHits, "cores")
 	hitMonitorCoresMore     = tree.ID(monitorHits, "cores-more")
 	hitMonitorDisksCollapse = tree.ID(monitorHits, "disks-collapse")
+	hitMonitorListens       = tree.ID(monitorHits, "listens-collapse")
 	hitMonitorRetry         = tree.ID(monitorHits, "retry")
 	hitMonitorScroll        = tree.ID(monitorHits, "scroll")
 	hitMonitorThumb         = tree.ID(monitorHits, "scroll-thumb")
@@ -49,6 +61,11 @@ const monitorWidth = layoutcore.DefaultMonitorWidth
 func (state *State) syncMonitorTarget() {
 	if state.monitorMenuSession != state.activeSessionID {
 		state.monitorMenu = false
+	}
+	// Details the monitor opened belong to the session whose rows they came
+	// from; another session's panel must not show them.
+	if state.remote.processDetails.fromMonitor && state.remote.session != state.activeSessionID {
+		state.closeRemoteProcessDetails()
 	}
 	if state.monitorResizeWorkspace != state.deck.ActiveWorkspace() || state.monitorResizeSession != state.activeSessionID {
 		state.monitorResizing = false
@@ -63,7 +80,37 @@ type monitorDiskText struct {
 	value                   float64
 	virtual                 bool
 }
-type monitorNetworkText struct{ name, rates string }
+type monitorNetworkText struct{ name, addr, rates string }
+
+// monitorListenText is one listening socket's row: the address it binds, what
+// it speaks, and who owns it where the host says.
+type monitorListenText struct {
+	proto, address, process string
+	port, pid               int
+}
+
+// monitorProcessText is one process row: what it is called with the pid it runs
+// under, and the two shares the host gave it. The values stay beside the text so
+// the sort control can order the rows it already has.
+type monitorProcessText struct {
+	name, cpu, memory, rss string
+	pid                    int
+	cpuValue, memoryValue  float64
+}
+
+// monitorMemoryText is one line of the memory breakdown: the pool it names, and
+// how much of the host's memory is in it.
+type monitorMemoryText struct{ label, value string }
+
+// The process list's sort orders: the collected rows are re-ordered in place, so
+// changing one never asks the host for another reading.
+const (
+	monitorSortCPU = iota
+	monitorSortMemory
+	monitorSortPID
+	monitorSortName
+)
+
 type monitorCoreText struct {
 	label, percent string
 	value          float64
@@ -129,7 +176,36 @@ type monitorView struct {
 	moreDisks                                                string
 	disks                                                    []monitorDiskText
 	networks                                                 []monitorNetworkText
-	language                                                 string
+	listens                                                  []monitorListenText
+	listensOpen                                              bool
+	procs                                                    []monitorProcessText
+	// procShown is the rows the list draws: procs narrowed by the search box,
+	// so clearing the query brings the whole reading back without another one.
+	procShown []monitorProcessText
+	procQuery string
+	// procSearch is the box itself; its editor owns the caret and the input
+	// method, so it survives a repaint and the page keeps no copy of the text.
+	procSearch                      ui.Field
+	memoryRows                      []monitorMemoryText
+	procsOpen, memoryOpen, sortMenu bool
+	// procMenu is the process row a secondary press opened the actions of:
+	// its pid and name are kept beside the point, so a reading that reorders
+	// the list cannot retarget the menu.
+	procMenu     bool
+	procMenuPID  int
+	procMenuName string
+	procMenuAt   gfx.Point
+	actionStatus string
+	actionFailed bool
+	actionAt     time.Time
+	procSort     int
+	// procSortDir reverses the order procSort chose: asking again for the
+	// order already in force flips it.
+	procSortDir int
+	// sortAnchor is where the process list's sort control was last painted: the
+	// card is part of the hand-painted page, so the menu hangs off its rectangle.
+	sortAnchor gfx.Rect
+	language   string
 }
 
 // Panel width is workspace state. Narrow windows use a drawer without
@@ -215,6 +291,11 @@ func (state *State) ensureMonitor(session *Session) {
 	if session.stats == nil {
 		session.stats = &remoteStatsView{state: remoteStatsMeasuring}
 		session.stats.panel.interval = 2
+		// The memory breakdown and the process list are the page's inventory:
+		// they open with it rather than making the user find the chevrons first
+		// — the list's search box lives inside it and would be hidden too.
+		session.stats.panel.memoryOpen = true
+		session.stats.panel.procsOpen = true
 		session.stats.panel.hardwareOpen = !session.isLocal()
 	}
 	v := session.stats
@@ -267,6 +348,9 @@ func (state *State) closeMonitor() {
 	_ = state.deck.SetContext(id, c)
 	state.stopRemoteStats(state.contextSession())
 	state.monitorMenu = false
+	if state.remote.processDetails.fromMonitor {
+		state.closeRemoteProcessDetails()
+	}
 	state.monitorRect = gfx.Rect{}
 	state.fitWorkspaceTerminals(id)
 	state.fitSFTP(state.viewport)
@@ -345,19 +429,53 @@ func (state *State) clickMonitor(id gfx.ID) bool {
 		v.panel.hardwareOpen = !v.panel.hardwareOpen
 	case hitMonitorLogins:
 		v.panel.loginsClosed = !v.panel.loginsClosed
-	case hitMonitorOverview, hitMonitorDiskPage, hitMonitorNetworkPage:
+	case hitMonitorOverview, hitMonitorDiskPage, hitMonitorNetworkPage, hitMonitorProcessPage:
 		v.panel.page = 0
-		if id == hitMonitorDiskPage {
+		if id == hitMonitorProcessPage {
 			v.panel.page = 1
 		}
-		if id == hitMonitorNetworkPage {
+		if id == hitMonitorDiskPage {
 			v.panel.page = 2
+		}
+		if id == hitMonitorNetworkPage {
+			v.panel.page = 3
 		}
 		v.panel.scroll = 0
 	case hitMonitorCores:
 		v.panel.coresCollapsed = !v.panel.coresCollapsed
 	case hitMonitorCoresMore:
 		v.panel.coresMore = !v.panel.coresMore
+	case hitMonitorListens:
+		v.panel.listensOpen = !v.panel.listensOpen
+	case hitMonitorMemory:
+		v.panel.memoryOpen = !v.panel.memoryOpen
+	case hitMonitorProcesses:
+		v.panel.procsOpen = !v.panel.procsOpen
+	case hitMonitorProcSort:
+		v.panel.sortMenu = !v.panel.sortMenu
+	case hitMonitorSortCPU, hitMonitorSortMemory, hitMonitorSortPID, hitMonitorSortName:
+		chosen := monitorSortCPU
+		if id == hitMonitorSortMemory {
+			chosen = monitorSortMemory
+		}
+		if id == hitMonitorSortPID {
+			chosen = monitorSortPID
+		}
+		if id == hitMonitorSortName {
+			chosen = monitorSortName
+		}
+		if v.panel.procSort == chosen {
+			// The order in force was asked for again: reverse it.
+			v.panel.procSortDir = -v.panel.procSortDir
+		} else {
+			v.panel.procSort, v.panel.procSortDir = chosen, 1
+		}
+		if v.panel.procSortDir == 0 {
+			v.panel.procSortDir = -1
+		}
+		v.panel.sortMenu = false
+		// The host already sent these rows: the order is the panel's to change.
+		sortMonitorProcesses(&v.panel)
 	case hitMonitorDisksCollapse:
 		v.panel.disksCollapsed = !v.panel.disksCollapsed
 	case hitMonitorRetry:
@@ -569,8 +687,45 @@ func (state *State) formatMonitor(v *remoteStatsView) {
 		if n.HasRate {
 			down, up = monitorBytes(n.ReceivePerSecond)+"/s", monitorBytes(n.SendPerSecond)+"/s"
 		}
-		p.networks = append(p.networks, monitorNetworkText{name: n.Name, rates: down + " / " + up})
+		p.networks = append(p.networks, monitorNetworkText{name: n.Name, addr: monitorNetworkAddress(n.Addresses), rates: down + " / " + up})
 	}
+	p.listens = p.listens[:0]
+	for _, l := range p.data.Listens {
+		p.listens = append(p.listens, monitorListenText{proto: l.Proto, address: l.Address, process: l.Process, port: l.Port, pid: l.PID})
+	}
+	p.procs = p.procs[:0]
+	for _, process := range p.data.Processes {
+		p.procs = append(p.procs, monitorProcessText{
+			name: monitorProcessName(process.Name), pid: process.PID,
+			cpu:      fmt.Sprintf("%.1f%%", process.CPUPercent),
+			memory:   fmt.Sprintf("%.1f%%", process.MemoryPercent),
+			rss:      monitorBytes(process.MemoryBytes),
+			cpuValue: process.CPUPercent, memoryValue: process.MemoryPercent,
+		})
+	}
+	sortMonitorProcesses(p)
+	memory := p.data.Memory
+	pool := func(bytes uint64) string {
+		if memory.Total == 0 {
+			return "—"
+		}
+		return monitorBytes(bytes)
+	}
+	// Swap reads used over total: a host with none configured says so once.
+	swap := func() string {
+		if memory.SwapTotal == 0 {
+			return "—"
+		}
+		return monitorBytes(memory.SwapTotal-memory.SwapFree) + " / " + monitorBytes(memory.SwapTotal)
+	}
+	p.memoryRows = append(p.memoryRows[:0],
+		monitorMemoryText{label: m.MemoryTotal, value: pool(memory.Total)},
+		monitorMemoryText{label: m.MemoryAvailable, value: pool(memory.Available)},
+		monitorMemoryText{label: m.MemoryFree, value: pool(memory.Free)},
+		monitorMemoryText{label: m.MemoryBuffers, value: pool(memory.Buffers)},
+		monitorMemoryText{label: m.MemoryCached, value: pool(memory.Cached)},
+		monitorMemoryText{label: m.MemorySwap, value: swap()},
+	)
 	p.gpuRows = p.gpuRows[:0]
 	for index := range p.sample.GPUs {
 		gpu := &p.sample.GPUs[index]
@@ -663,4 +818,72 @@ func monitorCapacity(used, total uint64) string {
 		return fmt.Sprintf("%s / %.1f %s", monitorBytes(used), float64(total)/scale, units[i])
 	}
 	return fmt.Sprintf("%.1f / %.1f %s", float64(used)/scale, float64(total)/scale, units[i])
+}
+
+// monitorProcessName is what a row calls the process: macOS reports the path of
+// the executable, whose last part is the name the other systems report.
+// refilterProcesses rebuilds the rows the list shows: everything the host
+// reported, narrowed by the search box. The snapshot itself is kept, so
+// clearing the query needs no new reading.
+func (p *monitorView) refilterProcesses() {
+	query := strings.ToLower(strings.TrimSpace(p.procQuery))
+	p.procShown = p.procShown[:0]
+	for _, process := range p.procs {
+		if query == "" || strings.Contains(strings.ToLower(process.name), query) || strings.Contains(strconv.Itoa(process.pid), query) {
+			p.procShown = append(p.procShown, process)
+		}
+	}
+}
+
+func monitorProcessName(name string) string {
+	if index := strings.LastIndexByte(name, '/'); index >= 0 && index < len(name)-1 {
+		return name[index+1:]
+	}
+	return name
+}
+
+// sortMonitorProcesses orders the rows the panel already has, never the host's
+// list: the CPU and memory orders are largest first, and a tie keeps the rows in
+// pid order so the list does not reshuffle itself on every reading.
+func sortMonitorProcesses(p *monitorView) {
+	reversed := p.procSortDir < 0
+	sort.SliceStable(p.procs, func(i, j int) bool {
+		a, b := p.procs[i], p.procs[j]
+		if reversed {
+			a, b = b, a
+		}
+		switch p.procSort {
+		case monitorSortMemory:
+			if a.memoryValue != b.memoryValue {
+				return a.memoryValue > b.memoryValue
+			}
+		case monitorSortPID:
+			return a.pid < b.pid
+		case monitorSortName:
+			first, second := strings.ToLower(a.name), strings.ToLower(b.name)
+			if first != second {
+				return first < second
+			}
+		default:
+			if a.cpuValue != b.cpuValue {
+				return a.cpuValue > b.cpuValue
+			}
+		}
+		return a.pid < b.pid
+	})
+}
+
+// monitorNetworkAddress is the line under an interface's name: its first two
+// addresses, IPv4 first as the collector orders them.
+func monitorNetworkAddress(addresses []string) string {
+	switch len(addresses) {
+	case 0:
+		return ""
+	case 1:
+		return addresses[0]
+	case 2:
+		return addresses[0] + " · " + addresses[1]
+	default:
+		return addresses[0] + " · " + addresses[1] + fmt.Sprintf(" +%d", len(addresses)-2)
+	}
 }

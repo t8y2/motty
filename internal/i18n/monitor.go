@@ -22,6 +22,12 @@ type MonitorMessages struct {
 	Collapse                                                                          string
 	Logins, LoginsHint, NoLogins, LoginsUnavailable, LoginsTruncated, CurrentSSHLogin string
 	AddressCopied, AddressCopyFailed, AddressCopy                                     string
+	ListenSection, NoListens                                                          string
+	MemorySwap, ProcessEmpty, ProcessNoMatch                                          string
+	ProcessSection, SortBy, SortCPU, SortMemory, SortPID, SortName                    string
+	ProcessSearch, ProcessSearchPlaceholder, ProcessFullListHint                      string
+	MemoryInfoSection                                                                 string
+	MemoryTotal, MemoryFree, MemoryBuffers, MemoryCached, MemoryAvailable             string
 }
 
 var chineseMonitor = MonitorMessages{
@@ -45,7 +51,12 @@ var chineseMonitor = MonitorMessages{
 	GPU: "GPU", GPUMetricsUnavailable: "未获取到显卡指标",
 	Collapse:      "收起",
 	AddressCopied: "地址已复制", AddressCopyFailed: "复制地址失败", AddressCopy: "复制地址",
-	Logins: "当前登录用户", LoginsHint: "当前通过终端或远程连接登录到主机的用户", NoLogins: "当前没有终端登录会话", LoginsUnavailable: "无法读取登录会话", LoginsTruncated: "仅显示前 32 条会话", CurrentSSHLogin: "当前 SSH 连接",
+	Logins: "当前登录用户", LoginsHint: "当前通过终端或远程连接登录到主机的用户", NoLogins: "当前没有终端登录会话", LoginsUnavailable: "无法读取登录会话", LoginsTruncated: "仅显示前 32 条会话", CurrentSSHLogin: "当前 SSH 连接", ListenSection: "监听端口", NoListens: "没有监听端口", MemorySwap: "交换分区", ProcessEmpty: "当前没有进程",
+	ProcessSection: "进程", SortBy: "排序方式", SortCPU: "CPU", SortMemory: "内存", SortPID: "PID", SortName: "名称",
+	ProcessSearch: "搜索进程", ProcessSearchPlaceholder: "按名称或 PID 搜索", ProcessNoMatch: "没有匹配的进程",
+	ProcessFullListHint: "完整进程请打开「容器和进程」查看",
+	MemoryInfoSection:   "内存信息",
+	MemoryTotal:         "总内存", MemoryFree: "空闲", MemoryBuffers: "缓冲区", MemoryCached: "页面缓存", MemoryAvailable: "可用",
 }
 
 var englishMonitor = MonitorMessages{
@@ -69,5 +80,10 @@ var englishMonitor = MonitorMessages{
 	GPU: "GPU", GPUMetricsUnavailable: "No graphics adapter metrics available",
 	Collapse:      "Collapse",
 	AddressCopied: "Address copied", AddressCopyFailed: "Could not copy address", AddressCopy: "Copy address",
-	Logins: "Active login sessions", LoginsHint: "Users currently signed in through a terminal or remote connection", NoLogins: "No active terminal login sessions", LoginsUnavailable: "Login sessions unavailable", LoginsTruncated: "Showing the first 32 sessions", CurrentSSHLogin: "Current SSH connection",
+	Logins: "Active login sessions", LoginsHint: "Users currently signed in through a terminal or remote connection", NoLogins: "No active terminal login sessions", LoginsUnavailable: "Login sessions unavailable", LoginsTruncated: "Showing the first 32 sessions", CurrentSSHLogin: "Current SSH connection", ListenSection: "Listening ports", NoListens: "No listening sockets", MemorySwap: "Swap", ProcessEmpty: "No processes",
+	ProcessSection: "Processes", SortBy: "Sort by", SortCPU: "CPU", SortMemory: "Memory", SortPID: "PID", SortName: "Name",
+	ProcessSearch: "Search processes", ProcessSearchPlaceholder: "Search by name or PID", ProcessNoMatch: "No processes match",
+	ProcessFullListHint: "Open Containers & processes for the full list",
+	MemoryInfoSection:   "Memory",
+	MemoryTotal:         "Total", MemoryFree: "Free", MemoryBuffers: "Buffers", MemoryCached: "Cached", MemoryAvailable: "Available",
 }
