@@ -77,6 +77,7 @@ func TestRemoteAutoRefreshRunsFromAnimationFramesOnCapturedConnection(t *testing
 		fake.runCommand = server.run
 		fake.mu.Unlock()
 		state.options.OpenContentWindow = application.OpenContentWindow
+		state.remote.tab = remoteProcesses
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
@@ -287,6 +288,7 @@ func TestRemoteToolbarAndTableHeadersAcrossScales(t *testing.T) {
 			t.Cleanup(func() { host.Quit(); app.UseApplicationRunner(nil) })
 			if err := app.RunApplication(func(application *app.Application) error {
 				state.options.OpenContentWindow = application.OpenContentWindow
+				state.remote.tab = remoteProcesses
 				state.Click(hitRemoteToolsOpen)
 				return nil
 			}); err != nil {

@@ -405,7 +405,7 @@ func TestRemoteNativeWindowCloseCancelsWorkAndRejectsLateResults(t *testing.T) {
 	})
 }
 
-func TestRemoteProcessButtonOpensProcessTabAndReusesToolsWindow(t *testing.T) {
+func TestRemoteProcessButtonOpensTheContainersTabAndReusesItsWindow(t *testing.T) {
 	withRemoteWindowApplication(t, func(application *app.Application, host *remoteWindowHost) {
 		state, _, fake, _ := liveSession(t)
 		server := &remoteServer{}
@@ -421,16 +421,16 @@ func TestRemoteProcessButtonOpensProcessTabAndReusesToolsWindow(t *testing.T) {
 		}
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
-		if w.ui.remote.tab != remoteProcesses || state.modal != modalNone {
-			t.Fatalf("process button opened tab %v with owner modal %v", w.ui.remote.tab, state.modal)
+		if w.ui.remote.tab != remoteContainers || state.modal != modalNone {
+			t.Fatalf("the tools button opened tab %v with owner modal %v", w.ui.remote.tab, state.modal)
 		}
 
-		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabContainers)
-		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
-		state.Click(hitProcessToolsOpen)
+		clickRemoteTabChoice(t, w, w.owner.messages.Tools.RemoteTabProcesses)
 		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteProcesses })
-		if len(host.windows) != 1 || host.windows[0].shows != 1 || w.ui.remote.tab != remoteProcesses {
-			t.Fatal("process button duplicated the window or failed to return to its tab")
+		state.Click(hitProcessToolsOpen)
+		host.until(t, func() bool { return !w.ui.remote.loading && w.ui.remote.tab == remoteContainers })
+		if len(host.windows) != 1 || host.windows[0].shows != 1 || w.ui.remote.tab != remoteContainers {
+			t.Fatal("the tools button duplicated the window or failed to return to its first tab")
 		}
 	})
 }
@@ -482,6 +482,7 @@ func TestRemoteNativeWindowFollowsItsSessionBetweenWorkbenchWindows(t *testing.T
 		fake.mu.Unlock()
 		pair.first.options.OpenContentWindow = application.OpenContentWindow
 		pair.second.options.OpenContentWindow = application.OpenContentWindow
+		pair.first.remote.tab = remoteProcesses
 		pair.first.Click(hitRemoteToolsOpen)
 		w := pair.first.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
@@ -549,6 +550,7 @@ func TestRemoteNativeWindowResizesWithReachableActionsAndVirtualScroll(t *testin
 		fake.runCommand = (&remoteServer{}).run
 		fake.mu.Unlock()
 		state.options.OpenContentWindow = application.OpenContentWindow
+		state.remote.tab = remoteProcesses
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
@@ -675,6 +677,7 @@ func TestRemoteNativeWindowWheelEndsOutsideTheTable(t *testing.T) {
 		fake.runCommand = (&remoteServer{}).run
 		fake.mu.Unlock()
 		state.options.OpenContentWindow = application.OpenContentWindow
+		state.remote.tab = remoteProcesses
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
@@ -1088,6 +1091,7 @@ func TestRemoteNativeWindowProcessDetailsTakesPointerAndKeys(t *testing.T) {
 		fake.runCommand = (&remoteServer{}).run
 		fake.mu.Unlock()
 		state.options.OpenContentWindow = application.OpenContentWindow
+		state.remote.tab = remoteProcesses
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })
@@ -1206,6 +1210,7 @@ func TestRemoteNativeWindowMenusAndFormsTakePointer(t *testing.T) {
 		fake.runCommand = (&remoteServer{}).run
 		fake.mu.Unlock()
 		state.options.OpenContentWindow = application.OpenContentWindow
+		state.remote.tab = remoteProcesses
 		state.Click(hitRemoteToolsOpen)
 		w := state.remoteWindows[0]
 		host.until(t, func() bool { return !w.ui.remote.loading })

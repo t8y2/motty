@@ -271,6 +271,12 @@ func openRemoteToolsDialog(t *testing.T) (*State, *remoteServer, *fakeShell) {
 	if state.modal != modalRemoteTools {
 		t.Fatalf("the dialog did not open: modal %d", state.modal)
 	}
+	// The window opens on containers, as it is named for; this helper is the
+	// process table's, so it turns to that tab.
+	if state.remote.tab != remoteProcesses {
+		state.remote.tab = remoteProcesses
+		state.applyRemoteTab()
+	}
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	return state, server, shell
 }
@@ -639,6 +645,7 @@ func TestRemoteToolsReadFromOldHostCannotReplaceNewHostRows(t *testing.T) {
 		return []byte(" 9090 bob 9.0 3.0 00:01:00 b-service\n"), nil
 	}
 	state.activeSessionID = a.ID
+	state.remote.tab = remoteProcesses
 	state.openRemoteTools(a)
 	<-startA
 	clickRemoteToolsAction(t, state, hitRemoteClose)
@@ -836,5 +843,17 @@ func TestCreatingAVolumeAndANetworkFromTheirTabs(t *testing.T) {
 		if state.modal != modalRemoteTools {
 			t.Fatalf("after creating, modal %d, want the tools again", state.modal)
 		}
+	}
+}
+
+func TestRemoteToolsOpensOnTheContainersTab(t *testing.T) {
+	state, _, _, _ := liveSession(t)
+	state.remote.tab = remoteContainers
+	state.Click(hitProcessToolsOpen)
+	if state.remote.tab != remoteContainers {
+		t.Fatalf("the tools entry opened tab %d, want the containers it is named for", state.remote.tab)
+	}
+	if remoteTabChoices[0] != remoteContainers || remoteTabChoices[len(remoteTabChoices)-1] != remoteProcesses {
+		t.Fatalf("tab strip order is %v", remoteTabChoices)
 	}
 }

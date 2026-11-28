@@ -409,7 +409,7 @@ func (state *State) chooseTerminalMenu(id gfx.ID) {
 	case hitTerminalMenuTransfer:
 		state.openXYSetup(session)
 	case hitTerminalMenuTools:
-		state.openProcessTools(session)
+		state.openToolsWindow(session)
 	case hitTerminalMenuStats:
 		state.Click(hitRemoteStats)
 	case hitTerminalMenuReconnect:
