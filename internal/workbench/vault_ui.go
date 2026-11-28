@@ -294,10 +294,12 @@ func (state *State) rememberSecret(session *Session) {
 		return
 	}
 	if err := state.secrets.vault.Set(name, value); err != nil {
-		state.status = fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err))
+		// The main window does not paint state.status; a save the user asked
+		// for must be answered where they can see it.
+		state.showActionFailure(state.messages.PasswordSave, err, fmt.Sprintf(state.messages.VaultSaveFailedFmt, state.vaultErrorText(err)))
 		return
 	}
-	state.status = fmt.Sprintf(state.messages.VaultSavedFmt, session.endpoint.User+"@"+session.endpoint.Host)
+	state.showActionInfo(state.messages.PasswordSave, fmt.Sprintf(state.messages.VaultSavedFmt, session.endpoint.User+"@"+session.endpoint.Host))
 }
 
 // vaultErrorText says why the vault refused, in the current language.
