@@ -490,7 +490,9 @@ func TestAnUntouchedExternalEditSchedulesNothing(t *testing.T) {
 	if err := os.WriteFile(edit.local, []byte("written once"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, state, func() bool { return remoteText(remote, "/home/test/notes.txt") == "written once" && !state.edits.list[0].saving })
+	waitFor(t, state, func() bool {
+		return remoteText(remote, "/home/test/notes.txt") == "written once" && !state.edits.list[0].saving
+	})
 }
 
 func TestOversizedExternalEditIsReportedAndCanBeCorrected(t *testing.T) {

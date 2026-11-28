@@ -112,8 +112,8 @@ type externalEdit struct {
 	// lookAt is when the file is next read, zero for not until the folder
 	// reports a write; lookStop cancels the wake asked for it. looking says a
 	// read is on its way, and lookAgain that a write came in meanwhile.
-	lookAt              time.Time
-	lookStop            func()
+	lookAt             time.Time
+	lookStop           func()
 	looking, lookAgain bool
 }
 
