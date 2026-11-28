@@ -30,14 +30,11 @@ func TestCreationButtonsFollowEachPagesNeed(t *testing.T) {
 			_, o := newWorld(t)
 			s := newTestState(t, o)
 			s.hosts = nil
-			sshHosts, desktops := 0, 0
+			sshHosts := 0
 			for i, protocol := range protocols {
 				s.hosts = append(s.hosts, Host{ID: uint32(i + 1), Protocol: protocol})
 				if protocol == protocolSSH {
 					sshHosts++
-				}
-				if (Host{Protocol: protocol}).isDesktop() {
-					desktops++
 				}
 			}
 			for _, page := range []struct {
@@ -49,10 +46,10 @@ func TestCreationButtonsFollowEachPagesNeed(t *testing.T) {
 				canvas, _ := paintedTexts(s)
 				want := sshHosts >= page.minimum
 				if page.section == sectionProxies {
-					// A route signs in to an SSH jump; its target may be that
-					// SSH host (a second SSH host is then the jump) or a remote
-					// desktop (the jump alone is enough).
-					want = sshHosts >= 2 || sshHosts >= 1 && desktops >= 1
+					// A route is its own record, not a pair of saved hosts
+					// (decision 0031): the dialog opens with no host at all and
+					// names what it still needs, so the button is always usable.
+					want = true
 				}
 				buttons := 0
 				for _, hit := range canvas.Hits() {

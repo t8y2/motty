@@ -3,6 +3,7 @@ package workbench
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
@@ -150,14 +151,30 @@ func TestChoosingAResultOpensItsCategoryScrolledToItAndLeavesTheSearch(t *testin
 	if state.settingsCategory != settingsAssistant || state.settings.search.RuneCount() != 0 || state.settingsSearching() {
 		t.Fatalf("category %d, query %q", state.settingsCategory, state.settings.search.String())
 	}
-	// Two paints: the first scrolls, the second shows it there and asks for no more.
+	// The first paint scrolls and asks for the paint that shows the scroll; the
+	// animation that carries it out settles, and then nothing asks for frames.
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	if _, scheduled := canvas.NextFrame(); !scheduled {
 		t.Fatal("scrolling to a result did not ask for the paint that shows it")
 	}
-	canvas = gfx.Canvas{}
-	state.Paint(&canvas, size)
+	// A scrollbar left showing fades on the frame clock, so the clock is what the
+	// test advances: with the page still, the frames stop.
+	now := time.Duration(0)
+	settled := false
+	for paint := 0; paint < 120; paint++ {
+		canvas = gfx.Canvas{}
+		canvas.SetClock(func() time.Duration { return now })
+		state.Paint(&canvas, size)
+		if _, scheduled := canvas.NextFrame(); !scheduled {
+			settled = true
+			break
+		}
+		now += 50 * time.Millisecond
+	}
+	if !settled {
+		t.Fatal("the page kept asking for frames after it had scrolled")
+	}
 	if state.settingsScroll == 0 {
 		t.Fatal("the page was not scrolled to the group")
 	}
@@ -169,9 +186,6 @@ func TestChoosingAResultOpensItsCategoryScrolledToItAndLeavesTheSearch(t *testin
 	}
 	if !found {
 		t.Fatalf("the Behaviour group is not near the top (scroll %v)", state.settingsScroll)
-	}
-	if _, scheduled := canvas.NextFrame(); scheduled {
-		t.Fatal("the page kept asking for frames after it had scrolled")
 	}
 }
 
