@@ -3213,6 +3213,7 @@ var englishDesktop = DesktopMessages{
 	ViaSSHRouted:              "Connect through SSH (the host's jump route carries this)",
 	ShareClipboard:            "Share the clipboard with the remote desktop",
 	HideBars:                  "Show the picture alone (no bar above, no status line)",
+	CaptureKeyboard:           "Send the keyboard to the remote desktop",
 	RemoteAudio:               "Play remote audio",
 	Microphone:                "Forward local microphone",
 	ConsoleSession:            "Connect to the console (admin) session",

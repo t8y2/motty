@@ -204,8 +204,10 @@ func TestRDPLatencyShowsActualSampleOrExplicitlyUnavailableInEveryPresentation(t
 		if label != "RTT 137ms" || color != state.pal.warning || !strings.Contains(hint, measured.sampled.Local().Format("15:04:05")) {
 			t.Fatalf("%s measurement: %q / %v / %q", mode, label, color, hint)
 		}
-		if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopLatency); !ok {
-			t.Fatalf("%s has no latency badge", mode)
+		// The picture alone has no status line to hold the badge, and lays
+		// nothing over the remote's own taskbar (#1800).
+		if _, ok := hitByIDInSnapshot(driver.Snapshot(), hitDesktopLatency); ok != (mode != "picture-only") {
+			t.Fatalf("%s shows a latency badge: %v", mode, ok)
 		}
 	}
 	state.toggleDesktopFullscreen(session)

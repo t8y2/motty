@@ -3213,6 +3213,7 @@ var chineseDesktop = DesktopMessages{
 	ViaSSHRouted:              "通过 SSH 连接(由该主机的跳板路由接管)",
 	ShareClipboard:            "与远程桌面共享剪贴板",
 	HideBars:                  "只显示画面（隐藏顶栏与状态栏）",
+	CaptureKeyboard:           "键盘交给远程桌面",
 	RemoteAudio:               "播放远程音频",
 	Microphone:                "转发本地麦克风",
 	ConsoleSession:            "连接控制台（管理员）会话",

@@ -78,19 +78,36 @@ func TestChromelessDesktopShowsThePictureAlone(t *testing.T) {
 	if _, ok := hitByID(canvas, hitDesktopFit); ok {
 		t.Fatal("a chromeless page still paints the bar's scaling buttons")
 	}
-	// The keyboard belongs to the desktop, so the corner note stands in for the
-	// status line, and a press of it hands the keyboard back.
-	note, ok := hitByID(canvas, hitDesktopCapture)
-	if !ok || note.Bounds.Y+note.Bounds.Height > area.Bounds.Y+area.Bounds.Height {
-		t.Fatalf("the capture note is %+v over the picture at %+v", note.Bounds, area.Bounds)
-	}
-	state.Click(hitDesktopCapture)
-	if !session.desk.released {
-		t.Fatal("the corner note does not release the keyboard")
-	}
+	// The picture's edges are the remote's own taskbar and panels: nothing of
+	// Motty's lies over them to hide them or take their clicks (#1800).
+	state.terminalShowLatency = true
 	canvas = paintDesk(state)
-	if _, ok := hitByID(canvas, hitDesktopCapture); ok {
-		t.Fatal("a released keyboard still shows the capture note")
+	for _, id := range []gfx.ID{hitDesktopCapture, hitDesktopLatency} {
+		if hit, ok := hitByID(canvas, id); ok {
+			t.Fatalf("a chromeless page lays %v at %+v over the picture", id, hit.Bounds)
+		}
+	}
+	// The keyboard switch the bar would hold is in the tab's menu, with its
+	// chord, and takes the keyboard back as the chord does.
+	workspace := state.deck.ActiveWorkspace()
+	rightClickTab(state, hitTabList.At(int(workspace)))
+	canvas = paintDesk(state)
+	capture, ok := menuHit(canvas, state, hitTabMenuCapture)
+	if !ok || capture.Disabled || !capture.Checked {
+		t.Fatalf("the tab menu offers the captured keyboard as %+v", capture)
+	}
+	chooseMenu(t, state, hitTabMenuCapture)
+	if !session.desk.released {
+		t.Fatal("the menu's keyboard switch does not release the keyboard")
+	}
+	rightClickTab(state, hitTabList.At(int(workspace)))
+	canvas = paintDesk(state)
+	if capture, _ := menuHit(canvas, state, hitTabMenuCapture); capture.Checked {
+		t.Fatal("a released keyboard is still checked in the tab menu")
+	}
+	chooseMenu(t, state, hitTabMenuCapture)
+	if session.desk.released || !session.desk.focusPending {
+		t.Fatalf("the menu does not hand the keyboard back to the picture (released %v, focus %v)", session.desk.released, session.desk.focusPending)
 	}
 
 	// The tab's menu holds the controls the bar would: the scaling choice and
@@ -100,7 +117,6 @@ func TestChromelessDesktopShowsThePictureAlone(t *testing.T) {
 	if _, ok := hitByID(canvas, hitDesktopFit); !ok {
 		t.Fatal("a page with bars paints no scaling buttons")
 	}
-	workspace := state.deck.ActiveWorkspace()
 	rightClickTab(state, hitTabList.At(int(workspace)))
 	canvas = paintDesk(state)
 	hide, ok := menuHit(canvas, state, hitTabMenuHideBars)

@@ -3213,6 +3213,7 @@ var traditionalDesktop = DesktopMessages{
 	ViaSSHRouted:              "透過 SSH 連線(由該主機的跳板路由接管)",
 	ShareClipboard:            "與遠端桌面共享剪貼簿",
 	HideBars:                  "只顯示畫面（隱藏頂部列與狀態列）",
+	CaptureKeyboard:           "鍵盤交給遠端桌面",
 	RemoteAudio:               "播放遠端音訊",
 	Microphone:                "轉發本機麥克風",
 	ConsoleSession:            "連線控制檯（管理員）工作階段",

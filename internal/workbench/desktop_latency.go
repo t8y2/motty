@@ -236,21 +236,3 @@ func (state *State) paintDesktopFullscreenLatency(canvas *gfx.Canvas, session *S
 	canvas.Label(s.fullscreenText, bounds, gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: s.fullscreenColor})
 	canvas.HitWithOptions(state.paneIdentity(session, hitDesktopLatency), bounds, s.fullscreenText, gfx.HitOptions{Hint: s.fullscreenHint})
 }
-
-func (state *State) paintChromelessLatency(canvas *gfx.Canvas, view *desktopView, session *Session, area gfx.Rect) {
-	if !state.terminalShowLatency {
-		return
-	}
-	label, color, hint := state.desktopLatency(view)
-	if label == "" {
-		return
-	}
-	canvas.PushLayer(popupLayer)
-	defer canvas.PopLayer()
-	width := canvas.TextWidthWeight(label, metrics.FontSizeS, gfx.WeightMedium) + 16
-	bounds := gfx.Rect{X: area.X + 8, Y: area.Y + area.Height - 30, Width: width, Height: 22}
-	canvas.RoundedBorder(bounds, radius.item, 1, state.pal.line, withAlpha(state.pal.shell, 0.95))
-	canvas.Label(label, gfx.Rect{X: bounds.X + 8, Y: bounds.Y, Width: bounds.Width - 16, Height: bounds.Height},
-		gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: color})
-	canvas.HitWithOptions(state.paneIdentity(session, hitDesktopLatency), bounds, label, gfx.HitOptions{Role: gfx.RoleStatus, SkipFocus: true, Hint: hint})
-}

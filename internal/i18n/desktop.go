@@ -26,6 +26,7 @@ type DesktopMessages struct {
 	ViaSSHRouted              string
 	ShareClipboard            string
 	HideBars                  string
+	CaptureKeyboard           string
 	ConsoleSession            string
 	RemoteAudio               string
 	Microphone                string

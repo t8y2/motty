@@ -42,6 +42,7 @@ var (
 	hitTabMenuHideBars   = tree.ID(tabMenuHits, "tab-menu-hide-bars")
 	hitTabMenuFullscreen = tree.ID(tabMenuHits, "tab-menu-fullscreen")
 	hitTabMenuLatency    = tree.ID(tabMenuHits, "tab-menu-latency")
+	hitTabMenuCapture    = tree.ID(tabMenuHits, "tab-menu-capture")
 )
 
 // The rename dialog's identities, after the menu's.
@@ -168,6 +169,8 @@ func (state *State) declareTabMenu(c ui.C) {
 		rows.add(components.ContextMenuItem{ID: hitTabMenuFit, Label: desktop.Fit, Icon: icon(iconDesktop), Kind: components.ContextMenuRadio, Selected: session.desk.fit})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuActual, Label: desktop.Actual, Icon: icon(iconGrid2x2), Kind: components.ContextMenuRadio, Selected: !session.desk.fit})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuCtrlAltDel, Label: desktop.CtrlAltDel, Icon: icon(iconKeyboard), Disabled: session.desk.ended})
+		rows.add(components.ContextMenuItem{ID: hitTabMenuCapture, Label: desktop.CaptureKeyboard, Icon: icon(iconKeyboard), Kind: components.ContextMenuCheckbox,
+			Checked: !session.desk.released && !session.desk.ended, Keys: desktopEscapeKeys, Disabled: session.desk.ended})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuHideBars, Label: messages.Desktop.HideBars, Icon: icon(iconEyeOff), Kind: components.ContextMenuCheckbox, Checked: session.desk.chromeless})
 		rows.add(components.ContextMenuItem{ID: hitTabMenuFullscreen, Label: desktop.Fullscreen, Icon: icon(iconDesktop), Keys: []string{"Ctrl", "Alt", "Enter"}, Disabled: session.desk.ended})
 		if session.host.Protocol == protocolRDP {
@@ -264,7 +267,7 @@ func (state *State) chooseTabMenu(id gfx.ID) {
 				state.openEditHostID(host.ID)
 			}
 		}
-	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency:
+	case hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuCapture, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency:
 		session, ok := state.tabMenuSessionFor(workspace)
 		if !ok || session.desk == nil {
 			return
@@ -278,6 +281,11 @@ func (state *State) chooseTabMenu(id gfx.ID) {
 		case hitTabMenuCtrlAltDel:
 			if !session.desk.ended {
 				session.desk.tap([]desktop.Key{desktop.KeyControl, desktop.KeyAlt}, desktop.KeyEvent{Key: desktop.KeyDelete})
+			}
+		case hitTabMenuCapture:
+			if !session.desk.ended {
+				state.toggleCapture(session.desk)
+				session.desk.focusPending = !session.desk.released
 			}
 		case hitTabMenuHideBars:
 			state.setDesktopChromeless(session, !session.desk.chromeless)

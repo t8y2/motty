@@ -96,10 +96,9 @@ type Session interface {
   fullscreen frame is not saved as the next launch's window placement.
 * RDP tabs offer **Show network latency (RTT)** in the tab menu, sharing the
   existing latency display preference with SSH terminals (off by default).
-  The status line, the fullscreen bar, or the picture-only mode's floating
-  badge, shows the latest average TCP RTT reported by the RDP server through
-  MS-RDPBCGR network characteristics auto-detection. Its tooltip names the
-  sample time:
+  The status line or the fullscreen bar shows the latest average TCP RTT
+  reported by the RDP server through MS-RDPBCGR network characteristics
+  auto-detection. Its tooltip names the sample time:
   this is not input-to-display latency, and refresh frequency is controlled by
   the server. Before a measurement, or on a server without auto-detection,
   `RTT —` explicitly means unavailable. No ping, artificial frame refresh or
@@ -140,10 +139,11 @@ type Session interface {
 * The status line: remote size, scale, "Through SSH" or "Not encrypted", clipboard
   sharing, and the escape chord. A host that chose "the picture alone" (its
   editor switch, or the tab menu's checkbox) drops the bar above the picture and
-  this line: their room goes to the picture, the escape chord moves to a note in
-  the picture's corner while the keyboard is captured, the size and protection
-  move to the tab's tooltip, and the bar's controls (scaling, Ctrl+Alt+Del, the
-  keyboard switch) live in the tab's menu.
+  this line: their room goes to the picture, and nothing is laid over it, so
+  the remote's own taskbar and panels along its edges stay visible and
+  clickable. The size and protection move to the tab's tooltip, and the bar's
+  controls (scaling, Ctrl+Alt+Del, the keyboard switch with its chord) live in
+  the tab's menu; the RTT badge, a part of the status line, is not shown.
 * Hidden tabs ask for nothing (`SetActive`); the tab visible in the active
   workspace is active. Viva cannot say whether the window is minimized or covered,
   so that case still receives updates.

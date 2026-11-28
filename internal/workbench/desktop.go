@@ -60,6 +60,9 @@ const (
 	desktopResizeDelay = 250 * time.Millisecond
 )
 
+// desktopEscapeKeys is the escape chord as the menus show it, one keycap a key.
+var desktopEscapeKeys = strings.Split(desktopEscapeChord, "+")
+
 type desktopView struct {
 	session   desktop.Session
 	surface   gfx.Surface
@@ -1554,8 +1557,10 @@ func (state *State) declareDesktopStrip(c ui.C, session *Session, view *desktopV
 
 // paintDesktopDetails paints what a remote desktop's page leaves by hand: the
 // light or spinner in the info bar, the latency badge on the status strip, and
-// the badges a fullscreen or chromeless view shows over the picture. The
-// picture itself and the bars' controls are page elements.
+// the one the fullscreen bar holds. A chromeless view lays nothing over the
+// picture: its edges are the remote's own taskbar and panels, so a badge there
+// would hide them and take their clicks. The picture itself and the bars'
+// controls are page elements.
 func (state *State) paintDesktopDetails(canvas *gfx.Canvas, session *Session, bounds gfx.Rect) {
 	pal := state.pal
 	view, s := session.desk, state.paneBody(session)
@@ -1575,15 +1580,13 @@ func (state *State) paintDesktopDetails(canvas *gfx.Canvas, session *Session, bo
 	}
 	if view.fullscreen {
 		state.paintDesktopFullscreenLatency(canvas, session)
-	} else if view.chromeless {
-		state.paintChromelessLatency(canvas, view, session, view.area)
 	}
 }
 
 // paintDesktopPicture paints the picture in the slot the page declared for it:
 // the ground, the picture clipped to its area, the end notice over it, the
-// chromeless capture note, the remote pointer where the workbench draws it, and
-// the hit and focus of the picture itself.
+// remote pointer where the workbench draws it, and the hit and focus of the
+// picture itself.
 func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 	m := state.messages
 	view := session.desk
@@ -1610,9 +1613,6 @@ func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 			view.surface.Draw(canvas, gfx.Rect{X: origin.X, Y: origin.Y, Width: float32(view.width) * scale, Height: float32(view.height) * scale})
 		}
 	}
-	if view.chromeless && !view.fullscreen && !view.released && !view.ended {
-		state.paintDesktopCaptureNote(canvas, view, session, area)
-	}
 	canvas.Unclip()
 
 	name := fmt.Sprintf(m.Desktop.AccessibleFmt, session.Address)
@@ -1634,25 +1634,6 @@ func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 		canvas.RequestFocus(hitTerminalList.At(int(session.ID)))
 		view.focusPending = false
 	}
-}
-
-// paintDesktopCaptureNote is the corner note a chromeless session shows while it
-// holds the keyboard: the chord that hands it back, as the status line would say.
-// A press of it hands the keyboard back, as the bar's button does.
-func (state *State) paintDesktopCaptureNote(canvas *gfx.Canvas, view *desktopView, session *Session, area gfx.Rect) {
-	pal, m := state.pal, state.messages
-	chord := desktopEscapeChord
-	text := canvas.TextWidthWeight(chord, metrics.FontSizeS, gfx.WeightMedium)
-	pill := gfx.Rect{
-		Width: 8 + 14 + 6 + text + 8, Height: 22,
-		X: area.X + area.Width - (8 + 14 + 6 + text + 8) - 8, Y: area.Y + area.Height - 22 - 8,
-	}
-	canvas.RoundedBorder(pill, radius.item, 1, withAlpha(pal.line, 0.9), withAlpha(pal.shell, 0.92))
-	paintIcon(canvas, iconKeyboard, gfx.Rect{X: pill.X + 8, Y: pill.Y + 4, Width: 14, Height: 14}, pal.text)
-	canvas.Label(chord, gfx.Rect{X: pill.X + 8 + 14 + 6, Y: pill.Y, Width: text, Height: 22},
-		gfx.TextStyle{Size: metrics.FontSizeS, Weight: gfx.WeightMedium, Color: pal.text})
-	hint := fmt.Sprintf(m.Desktop.TipCapture, chord)
-	canvas.HitWithOptions(state.paneIdentity(session, hitDesktopCapture), pill, hint, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint})
 }
 
 // desktopTargetFor is the desktop a session's pane asks for when it connects:
