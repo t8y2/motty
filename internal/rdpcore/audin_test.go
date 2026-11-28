@@ -11,7 +11,6 @@ import (
 
 	"motty/internal/rdpcore/protocol/audin"
 	"motty/internal/rdpcore/protocol/dvc"
-	"motty/internal/rdpcore/protocol/mcs"
 	"motty/internal/rdpcore/protocol/sec"
 	"motty/internal/rdpcore/protocol/tpkt"
 	"motty/internal/rdpcore/protocol/x224"
@@ -168,8 +167,5 @@ func TestAudioInputDVCStreamsCapturedPCM(t *testing.T) {
 	if inc[2] != 0x05 || aud[2] != 0x06 || !bytes.Equal(aud[3:], want) {
 		t.Fatalf("captured audio DVC PDUs = %v / %v, want %v", inc, aud, want)
 	}
-
-	// Ensure mcs.ChannelOptionInitialized compiles and is untouched.
-	_ = mcs.ChannelOptionInitialized
 	h.Close()
 }
