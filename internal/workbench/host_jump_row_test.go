@@ -45,6 +45,64 @@ func TestJumpRouteHostPickersFilterAndChoose(t *testing.T) {
 	}
 }
 
+// The jump picker's dropdown scrollbar drags through the pointer event pass: a
+// press on the bar follows the pointer down the list and reaches the hosts at
+// its end. The wiring is Viva's (vivaui/viva#500); this walks motty's real
+// paint.
+func TestJumpRouteDropdownScrollbarDragsThroughThePointerEventPass(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.Click(hitProxies)
+	state.Click(hitProxyAdd)
+	if state.modal != modalNewProxy {
+		t.Fatalf("proxy dialog = %d", state.modal)
+	}
+	// More SSH hosts than the picker's seven rows show: the list overflows,
+	// grows a scrollbar, and its last row is one no initial paint shows.
+	for index := range 8 {
+		state.hosts = append(state.hosts, Host{ID: 500 + uint32(index), Label: fmt.Sprintf("Overflow %d", index), Address: fmt.Sprintf("10.0.0.%d", index+2), Port: 22})
+	}
+	size := gfx.Size{Width: 1400, Height: 900}
+	clickPageLabel(t, state, gfx.RoleCombobox, state.messages.ProxyFieldJump)
+	canvas, texts := paintAt(state, size)
+	if containsText(texts, "Overflow 7") {
+		t.Fatal("the list's last host was on screen before the drag")
+	}
+	var bar gfx.Hit
+	found := false
+	for _, hit := range canvas.Hits() {
+		if hit.Role == gfx.RoleSlider && hit.Label == "Scroll" {
+			bar, found = hit, true
+		}
+	}
+	if !found {
+		t.Fatal("the open picker declares no scrollbar hit")
+	}
+	drag := func(kind gfx.PointerEventKind, y float32) bool {
+		return canvas.DeliverPointer(gfx.PointerEvent{Kind: kind, Button: gfx.PointerButtonPrimary, X: bar.Bounds.X + 2, Y: y, Target: bar.ID, Captured: kind != gfx.PointerDown}, size, func(canvas *gfx.Canvas, size gfx.Size) {
+			state.Paint(canvas, size)
+		})
+	}
+	if !drag(gfx.PointerDown, bar.Bounds.Y+2) {
+		t.Fatal("pressing the scrollbar was not consumed")
+	}
+	if !drag(gfx.PointerMove, bar.Bounds.Y+bar.Bounds.Height+500) {
+		t.Fatal("the held drag was not delivered")
+	}
+	_, texts = paintAt(state, size)
+	if !containsText(texts, "Overflow 7") {
+		t.Fatalf("dragging the scrollbar to its end did not reach the list's last host")
+	}
+}
+
+func containsText(texts []string, want string) bool {
+	for _, text := range texts {
+		if text == want {
+			return true
+		}
+	}
+	return false
+}
+
 func hostByLabel(t *testing.T, state *State, label string) Host {
 	t.Helper()
 	for _, host := range state.hosts {
