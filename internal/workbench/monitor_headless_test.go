@@ -426,6 +426,65 @@ func TestMonitorShowsKnownSSHUserWhenSessionsAreUnavailable(t *testing.T) {
 	}
 }
 
+func TestMonitorGPUProcessCommandLayout(t *testing.T) {
+	state, session := monitorFixture(t)
+	p := &session.stats.panel
+	p.hardwareOpen, p.coresCollapsed, p.disksCollapsed, p.loginsClosed = true, true, true, true
+	p.sample.GPUs = []remotestats.GPU{
+		{
+			Vendor: "NVIDIA", Index: 0, Name: "NVIDIA RTX A6000", UUID: "GPU-0",
+			UtilPercent: 100, MemoryUsedBytes: 46 << 30, MemoryTotalBytes: 48 << 30,
+			TemperatureC: 84, PowerWatts: 291, PowerLimitWatts: 300,
+			Processes: []remotestats.GPUProcess{
+				{PID: 1698741, Name: "python", Command: "/opt/conda/envs/TDF_new/bin/python train.py --config configs/a.yaml", MemoryUsedBytes: 6 << 30, MemoryKnown: true},
+				{PID: 1708478, Name: "python", Command: "python evaluate.py --checkpoint runs/latest.ckpt", MemoryUsedBytes: 3 << 30, MemoryKnown: true},
+			},
+		},
+		{
+			Vendor: "NVIDIA", Index: 1, Name: "NVIDIA RTX A6000", UUID: "GPU-1",
+			UtilPercent: 100, MemoryUsedBytes: 47 << 30, MemoryTotalBytes: 48 << 30,
+			TemperatureC: 76, PowerWatts: 271, PowerLimitWatts: 300,
+			Processes: []remotestats.GPUProcess{
+				{PID: 1131263, Name: "python", Command: "python serve.py --model qwen --port 8000", MemoryUsedBytes: 12 << 30, MemoryKnown: true},
+				{PID: 2197119, Name: "python", Command: "accelerate launch train.py --num_processes 8", MemoryUsedBytes: 35 << 30, MemoryKnown: true},
+			},
+		},
+	}
+	state.formatMonitor(session.stats)
+	state.setAppearance(appearanceDark)
+
+	view, err := headless.Open(state.WindowConfig(app.Config{Title: "Monitor", Width: 1280, Height: 900, Tree: Tree(), Paint: state.Paint, OnPointer: state.Pointer, OnKey: state.Key, OnScroll: state.Scroll, OnResize: state.Resize}), nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	if err = view.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if err = view.Scroll(gfx.ScrollEvent{X: state.monitorRect.X + 50, Y: state.monitorRect.Y + 500, DeltaY: 10000}); err != nil {
+		t.Fatal(err)
+	}
+	for _, label := range []string{
+		"PID 1698741",
+		"/opt/conda/envs/TDF_new/bin/python train.py --config configs/a.yaml",
+		"PID 1708478",
+		"python evaluate.py --checkpoint runs/latest.ckpt",
+		"PID 1131263",
+		"python serve.py --model qwen --port 8000",
+		"PID 2197119",
+		"accelerate launch train.py --num_processes 8",
+	} {
+		if _, ok := view.Hit(label); !ok {
+			t.Fatalf("GPU process layout is missing %q", label)
+		}
+	}
+	if dir := os.Getenv("MOTTY_MONITOR_SCREENSHOTS"); dir != "" {
+		if err = view.Screenshot(filepath.Join(dir, "monitor-gpu-process-commands.png")); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestMonitorSpecialServerNativeStates(t *testing.T) {
 	for _, kind := range []string{"windows", "partial", "unsupported"} {
 		t.Run(kind, func(t *testing.T) {
