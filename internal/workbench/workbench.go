@@ -2949,12 +2949,19 @@ func (state *State) Pointer(event gfx.PointerEvent) (outcome gfx.EventResult) {
 		return result
 	}
 	if state.fileTabVerticalRailAt(event.X, event.Y) {
-		repaint := false
 		if w := state.activeSFTPWindow(); w != nil && w.drag.active {
 			w.cancelDrag()
-			repaint = true
+			return gfx.EventResult{Handled: true, Repaint: true}
 		}
-		return gfx.EventResult{Handled: true, Repaint: repaint}
+		// Blank rail surface (and any stray file-tab hit behind an expanded
+		// auto-hide rail) stops here; interactive controls painted on the
+		// vertical rail (tabs, close buttons, group headers, new-tab, menus)
+		// return unhandled so Viva delivers clicks and right-clicks normally
+		// without falling through to sftpTabPointer.
+		if event.Target.IsZero() || event.Target == hitVerticalTabs || state.fileTabHit(event.Target) {
+			return gfx.EventResult{Handled: true}
+		}
+		return gfx.EventResult{}
 	}
 	// An assistant drawer is painted over the page when the window is too narrow
 	// to dock it. It therefore owns pointer input before a full-page file tab.
