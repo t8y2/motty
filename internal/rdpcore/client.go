@@ -29,6 +29,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -40,6 +41,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unicode/utf16"
+
+	utls "github.com/refraction-networking/utls"
 
 	"motty/internal/rdpcore/protocol/audin"
 	"motty/internal/rdpcore/protocol/ber"
@@ -156,15 +159,17 @@ type Client struct {
 	// Network
 	conn     net.Conn
 	tpktConn *tpkt.Conn
-	tlsConn  *tls.Conn
-	writeMu  sync.Mutex // serializes all outgoing writes
+	tlsConn  net.Conn          // a *tls.Conn, or a *utls.UConn for helloSchannel
+	tlsCert  *x509.Certificate // the certificate the server presented in tlsConn
+	writeMu  sync.Mutex        // serializes all outgoing writes
 
 	// Negotiated parameters
 	selectedProtocol uint32
 	tlsMinVersion    uint16 // override for TLS version probing; 0 = default
 	tlsMaxVersion    uint16 // override for TLS version probing; 0 = default
-	credsspVersion   int    // CredSSP version to advertise; 0 = use MaxCredSSPVersion
-	rawNTLM          bool   // raw NTLM fallback for the current CredSSP attempt
+	tlsHello         tlsHello
+	credsspVersion   int  // CredSSP version to advertise; 0 = use MaxCredSSPVersion
+	rawNTLM          bool // raw NTLM fallback for the current CredSSP attempt
 
 	// extendedClientData is whether the server's RDP_NEG_RSP set
 	// EXTENDED_CLIENT_DATA_SUPPORTED. A server that sends no RDP_NEG_RSP, as
@@ -563,7 +568,7 @@ func (c *Client) connect() error {
 				for i, tlsVer := range tlsVersions {
 					c.log.LogAttrs(context.Background(), slog.LevelInfo, "retrying TLS-only",
 						slog.String("tls", tlsNames[i]))
-					if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL, tlsVer, tlsVer); reconnErr == nil {
+					if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL, helloGo, tlsVer, tlsVer); reconnErr == nil {
 						tlsFallbackOK = true
 						break
 					} else if errors.Is(reconnErr, ErrCertificateRejected) {
@@ -593,13 +598,26 @@ func (c *Client) connect() error {
 	}
 
 	// Step 3b: CredSSP/NLA authentication (if Hybrid selected).
-	// Some servers fail CredSSP at certain TLS or CredSSP versions.
-	// Probe: first try the natural TLS + max CredSSP version, then
-	// iterate pinned TLS versions (1.3→1.0) × CredSSP versions (6→2).
+	// Some servers fail CredSSP at certain TLS or CredSSP versions, or under
+	// crypto/tls's ClientHello.
+	// Probe: first try the natural TLS + max CredSSP version, then iterate
+	// TLS legs (Windows' own ClientHello, then crypto/tls pinned at 1.3→1.0)
+	// × CredSSP versions (6→2).
 	// If all NLA attempts fail, fall back to TLS-only.
 	if c.selectedProtocol == x224.ProtocolHybrid {
 		tlsVersions := []uint16{tls.VersionTLS13, tls.VersionTLS12, tls.VersionTLS11, tls.VersionTLS10}
 		tlsNames := []string{"TLS 1.3", "TLS 1.2", "TLS 1.1", "TLS 1.0"}
+		type tlsLeg struct {
+			hello          tlsHello
+			minVer, maxVer uint16
+			name           string
+		}
+		// Windows' ClientHello goes first: it is what Windows servers are
+		// built against, and the probe only runs once crypto/tls's failed.
+		legs := []tlsLeg{{helloSchannel, tls.VersionTLS10, tls.VersionTLS12, "Schannel ClientHello"}}
+		for i, v := range tlsVersions {
+			legs = append(legs, tlsLeg{helloGo, v, v, tlsNames[i]})
+		}
 		var credsspErr error
 		if initialTLSErr != nil {
 			credsspErr = initialTLSErr
@@ -609,18 +627,18 @@ func (c *Client) connect() error {
 		if canRetryCredSSP(credsspErr) {
 			credsspVersions := []int{6, 3, 2}
 		probeLoop:
-			for i, tlsVer := range tlsVersions {
+			for _, leg := range legs {
 				for _, csvVer := range credsspVersions {
 					c.log.LogAttrs(context.Background(), slog.LevelInfo, "retrying CredSSP",
-						slog.String("tls", tlsNames[i]), slog.Int("credsspVersion", csvVer))
-					if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL|x224.ProtocolHybrid, tlsVer, tlsVer); reconnErr != nil {
+						slog.String("tls", leg.name), slog.Int("credsspVersion", csvVer))
+					if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL|x224.ProtocolHybrid, leg.hello, leg.minVer, leg.maxVer); reconnErr != nil {
 						if errors.Is(reconnErr, ErrCertificateRejected) {
 							c.Close()
 							return reconnErr
 						}
 						c.log.LogAttrs(context.Background(), slog.LevelDebug, "TLS handshake failed",
-							slog.String("tls", tlsNames[i]), slog.Any("error", reconnErr))
-						break // this TLS version not supported, try next
+							slog.String("tls", leg.name), slog.Any("error", reconnErr))
+						break // this TLS leg not supported, try next
 					}
 					c.credsspVersion = csvVer
 					c.rawNTLM = false
@@ -648,7 +666,7 @@ func (c *Client) connect() error {
 				slog.Any("lastError", credsspErr))
 			tlsFallbackOK := false
 			// First try with default range (Go negotiates best version).
-			if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL, 0, 0); reconnErr == nil {
+			if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL, helloGo, 0, 0); reconnErr == nil {
 				tlsFallbackOK = true
 			} else if errors.Is(reconnErr, ErrCertificateRejected) {
 				c.Close()
@@ -658,7 +676,7 @@ func (c *Client) connect() error {
 				for i, tlsVer := range tlsVersions {
 					c.log.LogAttrs(context.Background(), slog.LevelInfo, "retrying TLS-only",
 						slog.String("tls", tlsNames[i]))
-					if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL, tlsVer, tlsVer); reconnErr == nil {
+					if reconnErr := c.reconnectWithTLS(x224.ProtocolSSL, helloGo, tlsVer, tlsVer); reconnErr == nil {
 						tlsFallbackOK = true
 						break
 					}
@@ -900,57 +918,54 @@ func legacyTLSCipherSuites() []uint16 {
 	)
 }
 
-// upgradeTLS upgrades the connection to TLS
+// upgradeTLS upgrades the connection to TLS, with the ClientHello c.tlsHello
+// names.
 func (c *Client) upgradeTLS() error {
 	c.log.LogAttrs(context.Background(), slog.LevelInfo, "upgrading to TLS")
 
-	tlsConfig := &tls.Config{
-		// RDP servers use self-signed certificates, so the chain is not checked;
-		// the caller pins the certificate itself through Options.VerifyCertificate
-		// (Motty divergence: upstream accepted anything).
-		InsecureSkipVerify: true,
-		ServerName:         c.targetHost(),
-		MinVersion:         tls.VersionTLS10, // Some RDP servers only support TLS 1.0
-		VerifyConnection: func(cs tls.ConnectionState) error {
-			if c.opts.VerifyCertificate == nil {
-				return nil
-			}
-			if len(cs.PeerCertificates) == 0 {
-				return errors.New("server presented no certificate")
-			}
-			// A redirection names the certificate its target presents inside a
-			// connection the caller already accepted (LB_TARGET_CERTIFICATE):
-			// it is the server the redirection leads to, not one to ask about.
-			if c.redirection != nil && len(c.redirection.TargetCertificate) > 0 &&
-				bytes.Equal(cs.PeerCertificates[0].Raw, c.redirection.TargetCertificate) {
-				c.log.LogAttrs(context.Background(), slog.LevelInfo, "server certificate is the target of the redirection")
-				return nil
-			}
-			if err := c.opts.VerifyCertificate(cs.PeerCertificates[0].Raw); err != nil {
-				c.certErr = err
-				return err
-			}
-			return nil
-		},
-	}
-
+	minVersion := uint16(tls.VersionTLS10) // Some RDP servers only support TLS 1.0
+	maxVersion := uint16(0)
 	// Apply version overrides from TLS probing, or cap at 1.2 for RDP.
 	if c.tlsMinVersion != 0 {
-		tlsConfig.MinVersion = c.tlsMinVersion
+		minVersion = c.tlsMinVersion
 	}
 	if c.tlsMaxVersion != 0 {
-		tlsConfig.MaxVersion = c.tlsMaxVersion
+		maxVersion = c.tlsMaxVersion
 	} else if c.selectedProtocol == x224.ProtocolHybrid {
 		// Cap TLS at 1.2 when CredSSP/NLA is selected (MS-CSSP was designed for 1.2;
 		// some Windows servers fail over 1.3).
-		tlsConfig.MaxVersion = tls.VersionTLS12
-	}
-	if c.opts.LegacyTLS {
-		tlsConfig.CipherSuites = legacyTLSCipherSuites()
+		maxVersion = tls.VersionTLS12
 	}
 
-	tlsConn := tls.Client(c.conn, tlsConfig)
-	if err := tlsConn.Handshake(); err != nil {
+	var (
+		conn  net.Conn
+		state tls.ConnectionState
+		err   error
+	)
+	switch c.tlsHello {
+	case helloSchannel:
+		conn, state, err = c.handshakeSchannel(minVersion, maxVersion)
+	default:
+		tlsConfig := &tls.Config{
+			// RDP servers use self-signed certificates, so the chain is not checked;
+			// the caller pins the certificate itself through Options.VerifyCertificate
+			// (Motty divergence: upstream accepted anything).
+			InsecureSkipVerify: true,
+			ServerName:         c.targetHost(),
+			MinVersion:         minVersion,
+			MaxVersion:         maxVersion,
+			VerifyConnection: func(cs tls.ConnectionState) error {
+				return c.verifyServerCertificate(cs.PeerCertificates)
+			},
+		}
+		if c.opts.LegacyTLS {
+			tlsConfig.CipherSuites = legacyTLSCipherSuites()
+		}
+		tlsConn := tls.Client(c.conn, tlsConfig)
+		err = tlsConn.Handshake()
+		conn, state = tlsConn, tlsConn.ConnectionState()
+	}
+	if err != nil {
 		if c.certErr != nil {
 			// Motty divergence: a certificate the caller refused ends the attempt;
 			// it is not a reason to try another protocol version.
@@ -958,12 +973,70 @@ func (c *Client) upgradeTLS() error {
 		}
 		return fmt.Errorf("%w: %v", ErrTLSFailed, err)
 	}
+	if len(state.PeerCertificates) == 0 {
+		conn.Close()
+		return fmt.Errorf("%w: server presented no certificate", ErrTLSFailed)
+	}
 
-	c.tlsConn = tlsConn
-	c.tpktConn.SetTCPConn(tlsConn)
+	c.tlsConn = conn
+	c.tlsCert = state.PeerCertificates[0]
+	c.tpktConn.SetTCPConn(conn)
 
-	state := tlsConn.ConnectionState()
-	c.log.LogAttrs(context.Background(), slog.LevelInfo, "TLS handshake complete", util.Hex4("version", uint16(state.Version)), util.Hex4("cipher", uint16(state.CipherSuite)))
+	c.log.LogAttrs(context.Background(), slog.LevelInfo, "TLS handshake complete", util.Hex4("version", state.Version), util.Hex4("cipher", state.CipherSuite), slog.Bool("schannelHello", c.tlsHello == helloSchannel))
+	return nil
+}
+
+// handshakeSchannel runs the TLS handshake with schannelClientHello and
+// returns the connection state in crypto/tls terms.
+func (c *Client) handshakeSchannel(minVersion, maxVersion uint16) (net.Conn, tls.ConnectionState, error) {
+	if maxVersion == 0 || maxVersion > tls.VersionTLS12 {
+		maxVersion = tls.VersionTLS12
+	}
+	host := c.targetHost()
+	uconn := utls.UClient(c.conn, &utls.Config{
+		InsecureSkipVerify: true, // pinned by verifyServerCertificate, as for crypto/tls
+		ServerName:         host,
+		MinVersion:         minVersion,
+		MaxVersion:         maxVersion,
+		VerifyConnection: func(cs utls.ConnectionState) error {
+			return c.verifyServerCertificate(cs.PeerCertificates)
+		},
+	}, utls.HelloCustom)
+	if err := uconn.ApplyPreset(schannelClientHello(host, c.opts.LegacyTLS)); err != nil {
+		return nil, tls.ConnectionState{}, err
+	}
+	if err := uconn.Handshake(); err != nil {
+		return nil, tls.ConnectionState{}, err
+	}
+	us := uconn.ConnectionState()
+	return uconn, tls.ConnectionState{
+		Version:          us.Version,
+		CipherSuite:      us.CipherSuite,
+		PeerCertificates: us.PeerCertificates,
+	}, nil
+}
+
+// verifyServerCertificate hands the server's certificate to
+// Options.VerifyCertificate, recording a refusal in c.certErr.
+func (c *Client) verifyServerCertificate(certs []*x509.Certificate) error {
+	if c.opts.VerifyCertificate == nil {
+		return nil
+	}
+	if len(certs) == 0 {
+		return errors.New("server presented no certificate")
+	}
+	// A redirection names the certificate its target presents inside a
+	// connection the caller already accepted (LB_TARGET_CERTIFICATE):
+	// it is the server the redirection leads to, not one to ask about.
+	if c.redirection != nil && len(c.redirection.TargetCertificate) > 0 &&
+		bytes.Equal(certs[0].Raw, c.redirection.TargetCertificate) {
+		c.log.LogAttrs(context.Background(), slog.LevelInfo, "server certificate is the target of the redirection")
+		return nil
+	}
+	if err := c.opts.VerifyCertificate(certs[0].Raw); err != nil {
+		c.certErr = err
+		return err
+	}
 	return nil
 }
 
@@ -979,7 +1052,7 @@ func (c *Client) tryCredSSP() error {
 	// were sent.
 	c.rawNTLM = true
 	c.logNla.LogAttrs(context.Background(), slog.LevelInfo, "retrying CredSSP with raw NTLM tokens")
-	if err := c.reconnectWithTLS(x224.ProtocolSSL|x224.ProtocolHybrid, c.tlsMinVersion, c.tlsMaxVersion); err != nil {
+	if err := c.reconnectWithTLS(x224.ProtocolSSL|x224.ProtocolHybrid, c.tlsHello, c.tlsMinVersion, c.tlsMaxVersion); err != nil {
 		return err
 	}
 	if c.selectedProtocol != x224.ProtocolHybrid {
@@ -995,9 +1068,9 @@ func canRetryCredSSP(err error) bool {
 }
 
 // reconnectWithTLS tears down the current connection and establishes a new
-// TCP → X.224 → TLS connection with the given protocol request and TLS version
-// constraints. Pass minVer=0,maxVer=0 to use defaults.
-func (c *Client) reconnectWithTLS(x224Protos uint32, minVer, maxVer uint16) error {
+// TCP → X.224 → TLS connection with the given protocol request, ClientHello
+// and TLS version constraints. Pass minVer=0,maxVer=0 to use defaults.
+func (c *Client) reconnectWithTLS(x224Protos uint32, hello tlsHello, minVer, maxVer uint16) error {
 	c.conn.Close()
 	conn, err := c.dialConn(c.targetAddr())
 	if err != nil {
@@ -1005,6 +1078,7 @@ func (c *Client) reconnectWithTLS(x224Protos uint32, minVer, maxVer uint16) erro
 	}
 	c.conn = conn
 	c.tlsConn = nil
+	c.tlsCert = nil
 	c.tpktConn = tpkt.NewConn(conn, c.logTpkt)
 
 	c.setState(StateX224Negotiation)
@@ -1013,6 +1087,7 @@ func (c *Client) reconnectWithTLS(x224Protos uint32, minVer, maxVer uint16) erro
 	}
 
 	c.setState(StateTLSHandshake)
+	c.tlsHello = hello
 	c.tlsMinVersion = minVer
 	c.tlsMaxVersion = maxVer
 	if err := c.upgradeTLS(); err != nil {
@@ -1032,7 +1107,7 @@ func (c *Client) credsspAuth() error {
 		authenticate = nla.AuthenticateRawNTLM
 	}
 	domain, username, password := c.credentials()
-	if err := authenticate(c.tlsConn, c.logNla, c.targetHost(), domain, username, password, ver); err != nil {
+	if err := authenticate(c.tlsConn, c.tlsCert, c.logNla, c.targetHost(), domain, username, password, ver); err != nil {
 		// Motty divergence: %w, so that nla.ErrCredentialsFatal survives and the
 		// caller stops at the first refusal. Upstream wrapped with %v, which hid it
 		// and made one wrong password into 14 logon attempts (an account lockout
@@ -2743,6 +2818,8 @@ func (c *Client) resetForReconnect() {
 	c.selectedProtocol = 0
 	c.tlsMinVersion = 0
 	c.tlsMaxVersion = 0
+	c.tlsHello = helloGo
+	c.tlsCert = nil
 	c.credsspVersion = 0
 	c.rawNTLM = false
 	c.channelIDs = nil

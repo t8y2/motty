@@ -9,6 +9,7 @@ require (
 	github.com/makiuchi-d/gozxing v0.1.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/sftp v1.13.11
+	github.com/refraction-networking/utls v1.8.2
 	github.com/vivaui/viva v0.0.0
 	golang.org/x/crypto v0.59.0
 	golang.org/x/image v0.47.0
@@ -16,6 +17,11 @@ require (
 	golang.org/x/text v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.62.0
+)
+
+require (
+	github.com/andybalholm/brotli v1.0.6 // indirect
+	github.com/klauspost/compress v1.17.4 // indirect
 )
 
 require (

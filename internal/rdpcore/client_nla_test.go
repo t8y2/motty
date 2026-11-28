@@ -368,3 +368,134 @@ func TestCredSSPVersionProbeRetriesSPNEGOOnLegacyTLS(t *testing.T) {
 		t.Fatalf("Connect error = %v, want ErrAuthFailed after reaching SPNEGO v2", err)
 	}
 }
+
+// TestCredSSPProbeOffersWindowsClientHello covers issue #1796: Windows Server
+// 2008 R2 refuses NLA under crypto/tls's ClientHello while mstsc connects. The
+// server here behaves as one such server was observed to: it ends CredSSP
+// after the NTLM Negotiate below TLS 1.2, and it refuses a TLS 1.2
+// ClientHello that offers Ed25519, which crypto/tls does and Schannel does
+// not. It requires NLA, so the connection only gets to a logon if the probe
+// offers Windows' ClientHello and runs CredSSP over it.
+func TestCredSSPProbeOffersWindowsClientHello(t *testing.T) {
+	certificateServer := httptest.NewTLSServer(nil)
+	certificate := certificateServer.TLS.Certificates[0]
+	certificateServer.Close()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	var refusedHellos, challenges atomic.Int32
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+			func() {
+				defer conn.Close()
+				var header [4]byte
+				if _, err := io.ReadFull(conn, header[:]); err != nil {
+					return
+				}
+				size := int(binary.BigEndian.Uint16(header[2:4])) - 4
+				if size < 8 || size > 4096 {
+					return
+				}
+				request := make([]byte, size)
+				if _, err := io.ReadFull(conn, request); err != nil {
+					return
+				}
+				if binary.LittleEndian.Uint32(request[len(request)-4:])&2 == 0 {
+					// HYBRID_REQUIRED_BY_SERVER
+					_, _ = conn.Write([]byte{3, 0, 0, 19, 14, 0xd0, 0, 0, 0, 0, 0, 3, 0, 8, 0, 5, 0, 0, 0})
+					return
+				}
+				if _, err := conn.Write([]byte{3, 0, 0, 19, 14, 0xd0, 0, 0, 0, 0, 0, 2, 0, 8, 0, 2, 0, 0, 0}); err != nil {
+					return
+				}
+				secured := tls.Server(conn, &tls.Config{
+					Certificates: []tls.Certificate{certificate},
+					MinVersion:   tls.VersionTLS10,
+					MaxVersion:   tls.VersionTLS12,
+					GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+						for _, scheme := range hello.SignatureSchemes {
+							if scheme == tls.Ed25519 {
+								refusedHellos.Add(1)
+								return nil, errors.New("refused ClientHello")
+							}
+						}
+						return nil, nil
+					},
+				})
+				if err := secured.Handshake(); err != nil {
+					return
+				}
+				first, err := readNLATestRequest(secured)
+				if err != nil || len(first.NegoTokens) != 1 {
+					return
+				}
+				if secured.ConnectionState().Version < tls.VersionTLS12 {
+					return
+				}
+				body, _ := asn1.Marshal(struct {
+					State asn1.Enumerated `asn1:"explicit,tag:0"`
+					Token []byte          `asn1:"explicit,tag:2"`
+				}{State: 1, Token: clientTestNTLMChallenge()})
+				token, _ := asn1.Marshal(asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: true, Bytes: body})
+				challenge := nlaTestRequest{Version: first.Version}
+				challenge.NegoTokens = append(challenge.NegoTokens, struct {
+					Data []byte `asn1:"explicit,tag:0"`
+				}{Data: token})
+				if err := writeNLATestRequest(secured, challenge); err != nil {
+					return
+				}
+				challenges.Add(1)
+				auth, err := readNLATestRequest(secured)
+				if err != nil || len(auth.PubKeyAuth) == 0 {
+					return
+				}
+				_ = writeNLATestRequest(secured, nlaTestRequest{Version: first.Version, ErrorCode: 0xC000006D})
+			}()
+		}
+	}()
+
+	host, port, _ := net.SplitHostPort(listener.Addr().String())
+	options := DefaultOptions()
+	options.Host, options.Port = host, mustTestPort(t, port)
+	options.Username, options.Domain, options.Password = "User", "Domain", "Password"
+	var certificateChecks atomic.Int32
+	options.VerifyCertificate = func(der []byte) error {
+		if !bytes.Equal(der, certificate.Certificate[0]) {
+			return errors.New("unexpected certificate")
+		}
+		certificateChecks.Add(1)
+		return nil
+	}
+	client, err := NewClient(options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.Connect()
+	client.Close()
+	listener.Close()
+	<-serverDone
+
+	if refusedHellos.Load() == 0 {
+		t.Fatal("the server never saw crypto/tls's ClientHello; the test no longer models the refusal")
+	}
+	if challenges.Load() != 1 {
+		t.Fatalf("CredSSP reached the NTLM Challenge %d times, want once; err = %v", challenges.Load(), err)
+	}
+	if certificateChecks.Load() == 0 {
+		t.Fatal("the certificate presented under Windows' ClientHello was not verified")
+	}
+	if !errors.Is(err, ErrAuthFailed) {
+		t.Fatalf("Connect error = %v, want the server's logon refusal", err)
+	}
+}

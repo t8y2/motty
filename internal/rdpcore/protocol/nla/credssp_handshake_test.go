@@ -76,7 +76,7 @@ func runCredSSPHandshake(t *testing.T, raw bool, version int, serve func(*tls.Co
 	if raw {
 		authenticate = AuthenticateRawNTLM
 	}
-	err := authenticate(client, slog.New(slog.NewTextHandler(io.Discard, nil)), "server.test", "Domain", "User", "Password", version)
+	err := authenticate(client, client.ConnectionState().PeerCertificates[0], slog.New(slog.NewTextHandler(io.Discard, nil)), "server.test", "Domain", "User", "Password", version)
 	clientPipe.Close()
 	if serverErr := <-serverDone; serverErr != nil {
 		t.Fatalf("test server: %v (client: %v)", serverErr, err)

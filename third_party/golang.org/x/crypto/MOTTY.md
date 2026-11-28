@@ -1,9 +1,11 @@
 # Patched golang.org/x/crypto
 
 This is `golang.org/x/crypto` v0.59.0, reduced to the packages Motty builds
-(`ssh`, `ssh/agent`, `ssh/knownhosts` and what they import) with test files and
-test data removed. `go.mod` replaces the module with this directory. The
-upstream BSD license and patent grant are in `LICENSE` and `PATENTS`.
+(`ssh`, `ssh/agent`, `ssh/knownhosts`, the `chacha20poly1305`, `hkdf` and
+`sha3` that `github.com/refraction-networking/utls` imports, and what they
+import) with test files and test data removed. `go.mod` replaces the module
+with this directory. The upstream BSD license and patent grant are in
+`LICENSE` and `PATENTS`.
 
 ## Change
 

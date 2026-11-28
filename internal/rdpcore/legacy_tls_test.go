@@ -116,11 +116,11 @@ func TestLegacyTLSControlsTheRSAKeyExchangeOffer(t *testing.T) {
 				if err != nil {
 					t.Fatalf("TLS: %v", err)
 				}
-				if got := client.tlsConn.ConnectionState().CipherSuite; got != test.want {
+				if got := client.tlsConn.(*tls.Conn).ConnectionState().CipherSuite; got != test.want {
 					t.Fatalf("negotiated cipher %#x, want %#x", got, test.want)
 				}
 				if test.minVer == test.maxVer {
-					if gotVer := client.tlsConn.ConnectionState().Version; gotVer != test.minVer {
+					if gotVer := client.tlsConn.(*tls.Conn).ConnectionState().Version; gotVer != test.minVer {
 						t.Fatalf("negotiated version %#x, want %#x", gotVer, test.minVer)
 					}
 				}
@@ -271,8 +271,8 @@ func TestStandardTLSProbesDownToTLS10(t *testing.T) {
 	if uint16(negotiatedVersion.Load()) != tls.VersionTLS10 {
 		t.Fatalf("server negotiated version = %#x, want TLS 1.0 (%#x)", negotiatedVersion.Load(), tls.VersionTLS10)
 	}
-	if client.tlsConn == nil || client.tlsConn.ConnectionState().Version != tls.VersionTLS10 {
-		t.Fatalf("client negotiated version = %#x, want TLS 1.0 (%#x)", client.tlsConn.ConnectionState().Version, tls.VersionTLS10)
+	if client.tlsConn == nil || client.tlsConn.(*tls.Conn).ConnectionState().Version != tls.VersionTLS10 {
+		t.Fatalf("client negotiated version = %#x, want TLS 1.0 (%#x)", client.tlsConn.(*tls.Conn).ConnectionState().Version, tls.VersionTLS10)
 	}
 }
 
@@ -317,7 +317,7 @@ func TestStandardTLSAllowsTLS13WhenLegacyEnabled(t *testing.T) {
 	if uint16(negotiatedVersion.Load()) != tls.VersionTLS13 {
 		t.Fatalf("server negotiated version = %#x, want TLS 1.3 (%#x)", negotiatedVersion.Load(), tls.VersionTLS13)
 	}
-	if client.tlsConn == nil || client.tlsConn.ConnectionState().Version != tls.VersionTLS13 {
-		t.Fatalf("client negotiated version = %#x, want TLS 1.3 (%#x)", client.tlsConn.ConnectionState().Version, tls.VersionTLS13)
+	if client.tlsConn == nil || client.tlsConn.(*tls.Conn).ConnectionState().Version != tls.VersionTLS13 {
+		t.Fatalf("client negotiated version = %#x, want TLS 1.3 (%#x)", client.tlsConn.(*tls.Conn).ConnectionState().Version, tls.VersionTLS13)
 	}
 }

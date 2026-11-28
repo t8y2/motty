@@ -6,7 +6,7 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/tls"
+	"crypto/x509"
 	"encoding/asn1"
 	"encoding/binary"
 	"errors"
@@ -101,24 +101,25 @@ type tsPasswordCreds struct {
 	Password   []byte `asn1:"explicit,tag:2"`
 }
 
-// Authenticate performs CredSSP/NLA authentication over a TLS connection.
+// Authenticate performs CredSSP/NLA authentication over a TLS connection,
+// given as its stream and the certificate the server presented in it.
 // It runs the full CredSSP handshake using NTLMv2 wrapped in SPNEGO.
 // advertiseVersion is the CredSSP version sent in the initial TSRequest;
 // the actual version used is the minimum of this and the server's response.
 // The hostname is used to construct the SPN for MsvAvTargetName in the NTLM TargetInfo.
-func Authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
-	return authenticate(tlsConn, log, hostname, domain, username, password, advertiseVersion, false)
+func Authenticate(tlsConn io.ReadWriter, serverCert *x509.Certificate, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
+	return authenticate(tlsConn, serverCert, log, hostname, domain, username, password, advertiseVersion, false)
 }
 
 // AuthenticateRawNTLM is Motty's compatibility path for unwrapped NTLM tokens
 // inside CredSSP, for servers such as WinPR 2.x whose Negotiate package passes
 // input directly to NTLM. It retains TLS, NTLMv2 MIC/channel binding and
 // CredSSP public-key verification.
-func AuthenticateRawNTLM(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
-	return authenticate(tlsConn, log, hostname, domain, username, password, advertiseVersion, true)
+func AuthenticateRawNTLM(tlsConn io.ReadWriter, serverCert *x509.Certificate, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int) error {
+	return authenticate(tlsConn, serverCert, log, hostname, domain, username, password, advertiseVersion, true)
 }
 
-func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int, rawNTLM bool) (err error) {
+func authenticate(tlsConn io.ReadWriter, serverCert *x509.Certificate, log *slog.Logger, hostname, domain, username, password string, advertiseVersion int, rawNTLM bool) (err error) {
 	credentialsSent := false
 	defer func() {
 		if err == nil {
@@ -134,11 +135,10 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 
 	// Compute TLS channel bindings hash (RFC 5929 tls-server-end-point)
 	// for MsvAvChannelBindings in NTLM TargetInfo (EPA support).
-	cert := tlsConn.ConnectionState().PeerCertificates[0]
-	cbHash := computeChannelBindingsHash(cert.Raw)
+	cbHash := computeChannelBindingsHash(serverCert.Raw)
 	log.LogAttrs(ctx, slog.LevelDebug, "TLS channel bindings computed",
 		util.Bytes("cbHash", cbHash[:]),
-		slog.String("certSigAlgo", cert.SignatureAlgorithm.String()))
+		slog.String("certSigAlgo", serverCert.SignatureAlgorithm.String()))
 
 	// SPN built inside ntlmClient.targetSPN
 
@@ -234,7 +234,7 @@ func authenticate(tlsConn *tls.Conn, log *slog.Logger, hostname, domain, usernam
 	// Extract SubjectPublicKey (raw key DER) from SubjectPublicKeyInfo.
 	// MS-CSSP 3.1.5 specifies "SubjectPublicKey" — the BIT STRING content
 	// inside SubjectPublicKeyInfo, not the full SPKI with algorithm OID.
-	spkiBytes := tlsConn.ConnectionState().PeerCertificates[0].RawSubjectPublicKeyInfo
+	spkiBytes := serverCert.RawSubjectPublicKeyInfo
 	subjectPubKey, err := extractSubjectPublicKey(spkiBytes)
 	if err != nil {
 		return fmt.Errorf("credssp: extracting public key: %w", err)

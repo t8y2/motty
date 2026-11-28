@@ -96,7 +96,7 @@ func TestLiveCredSSPTokenLegs(t *testing.T) {
 			if raw {
 				authenticate = nla.AuthenticateRawNTLM
 			}
-			if err := authenticate(secured, logger, host, "", user, password, nla.MaxCredSSPVersion); err != nil {
+			if err := authenticate(secured, secured.ConnectionState().PeerCertificates[0], logger, host, "", user, password, nla.MaxCredSSPVersion); err != nil {
 				t.Fatalf("CredSSP failed: %v", err)
 			}
 		})
