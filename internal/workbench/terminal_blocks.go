@@ -461,13 +461,17 @@ func (t *terminal) blockRange(index int, block *commandBlock) (rangeStart, range
 	if !block.end.ok {
 		return 0, 0, false
 	}
+	// The next prompt owns the bottom boundary. D's line can drift when a
+	// reflow merges or rewraps rows after it was captured; the prompt boundary
+	// is the invariant that separates commands.
 	rangeStop = block.end.line
 	if block.end.column > 0 {
 		rangeStop++
 	}
-	if block.endApprox || block.stale {
-		if line, ok := t.blockPromptBoundary(index, block); ok && line > rangeStop {
-			rangeStop = line
+	if line, ok := t.blockPromptBoundary(index, block); ok {
+		rangeStop = line
+		if block.end.column > 0 && line == block.end.line {
+			rangeStop++
 		}
 	}
 	return rangeStart, rangeStop, rangeStop >= rangeStart
