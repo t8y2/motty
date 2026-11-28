@@ -15,6 +15,10 @@ func commandW(state *State) gfx.EventResult {
 	return state.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary, Text: "w", Key: gfx.Key('w')})
 }
 
+func closePaneShortcut(state *State) gfx.EventResult {
+	return state.Shortcut(gfx.KeyEvent{Modifiers: keymap.Primary | gfx.ModifierAlt, Text: "w", Key: gfx.Key('w')})
+}
+
 func TestControlWBelongsToTheRunningTerminal(t *testing.T) {
 	for _, test := range []struct{ name, output, want string }{
 		{"shell", "", "\x17"},
@@ -231,4 +235,118 @@ func TestCommandWOnTheHostListLeavesTabsOpenBehindIt(t *testing.T) {
 	if got := len(state.deck.Workspaces(nil)); got != tabs {
 		t.Fatalf("tabs = %d, want %d: Command+W closed a tab that was not on show", got, tabs)
 	}
+}
+
+func TestClosePaneShortcutOnSettingsClosesSettingsAndKeepsTerminalPane(t *testing.T) {
+	state := threeVisiblePaneState(t)
+	tabs := len(state.deck.Workspaces(nil))
+	panes := len(state.Panes(nil))
+	sessions := len(state.sessions)
+
+	state.Click(hitSettings)
+	if state.activeSection != sectionSettings || !state.settingsTab {
+		t.Fatalf("setup: section=%d settingsTab=%v", state.activeSection, state.settingsTab)
+	}
+
+	result := closePaneShortcut(state)
+	if !result.Handled {
+		t.Fatalf("close-pane shortcut on settings was not handled: %+v", result)
+	}
+	if state.settingsTab {
+		t.Fatal("close-pane shortcut left settings tab open")
+	}
+	if state.activeSection != sectionTerminal {
+		t.Fatalf("section = %d, want sectionTerminal (%d)", state.activeSection, sectionTerminal)
+	}
+	if got := len(state.Panes(nil)); got != panes {
+		t.Fatalf("panes = %d, want %d: close-pane shortcut closed a terminal pane behind settings", got, panes)
+	}
+	if got := len(state.sessions); got != sessions {
+		t.Fatalf("sessions = %d, want %d", got, sessions)
+	}
+	if got := len(state.deck.Workspaces(nil)); got != tabs {
+		t.Fatalf("tabs = %d, want %d", got, tabs)
+	}
+}
+
+func TestClosePaneShortcutOnSettingsCoversSinglePaneVerticalAndHostsFallback(t *testing.T) {
+	t.Run("single pane terminal returns to terminal", func(t *testing.T) {
+		state, _, _, _ := liveSession(t)
+		state.Click(hitSettings)
+		result := closePaneShortcut(state)
+		if !result.Handled || state.settingsTab || state.activeSection != sectionTerminal {
+			t.Fatalf("result=%+v settingsTab=%v section=%d", result, state.settingsTab, state.activeSection)
+		}
+		if len(state.sessions) != 1 || len(state.deck.Workspaces(nil)) != 1 {
+			t.Fatalf("sessions=%d tabs=%d, want 1/1", len(state.sessions), len(state.deck.Workspaces(nil)))
+		}
+	})
+
+	t.Run("no workspace returns to host list", func(t *testing.T) {
+		state := newTestState(t, testOptions(t))
+		state.Click(hitSettings)
+		result := closePaneShortcut(state)
+		if !result.Handled || state.settingsTab || state.activeSection != sectionHosts {
+			t.Fatalf("result=%+v settingsTab=%v section=%d", result, state.settingsTab, state.activeSection)
+		}
+	})
+
+	t.Run("vertical tabs closes settings and keeps terminal", func(t *testing.T) {
+		state, _, _, _ := liveSession(t)
+		state.setTabOrientation(tabsVertical)
+		state.Click(hitSettings)
+		result := closePaneShortcut(state)
+		if !result.Handled || state.settingsTab || state.activeSection != sectionTerminal {
+			t.Fatalf("result=%+v settingsTab=%v section=%d", result, state.settingsTab, state.activeSection)
+		}
+		if len(state.sessions) != 1 || len(state.deck.Workspaces(nil)) != 1 {
+			t.Fatalf("sessions=%d tabs=%d, want 1/1", len(state.sessions), len(state.deck.Workspaces(nil)))
+		}
+	})
+
+	t.Run("settings search focus still closes settings", func(t *testing.T) {
+		state, _, _, _ := liveSession(t)
+		state.Click(hitSettings)
+		result := state.Shortcut(gfx.KeyEvent{
+			Target:    hitSettingsSearch,
+			Modifiers: keymap.Primary | gfx.ModifierAlt,
+			Text:      "w",
+			Key:       gfx.Key('w'),
+		})
+		if !result.Handled || state.settingsTab || state.activeSection != sectionTerminal {
+			t.Fatalf("result=%+v settingsTab=%v section=%d", result, state.settingsTab, state.activeSection)
+		}
+	})
+
+	t.Run("sftp tab closes sftp tab without closing background pane", func(t *testing.T) {
+		state, _, _, _, _ := openSFTPTabFixture(t)
+		panes := len(state.Panes(nil))
+		sessions := len(state.sessions)
+		if state.activeSection != sectionSFTP || len(state.sftpTabs) != 1 {
+			t.Fatalf("setup: section=%d sftpTabs=%d", state.activeSection, len(state.sftpTabs))
+		}
+		result := closePaneShortcut(state)
+		if !result.Handled || len(state.sftpTabs) != 0 || state.activeSection != sectionTerminal {
+			t.Fatalf("result=%+v sftpTabs=%d section=%d", result, len(state.sftpTabs), state.activeSection)
+		}
+		if got := len(state.Panes(nil)); got != panes {
+			t.Fatalf("panes = %d, want %d", got, panes)
+		}
+		if got := len(state.sessions); got != sessions {
+			t.Fatalf("sessions = %d, want %d", got, sessions)
+		}
+	})
+
+	t.Run("host list leaves background terminal panes untouched", func(t *testing.T) {
+		state := threeVisiblePaneState(t)
+		panes := len(state.Panes(nil))
+		state.Click(hitHosts)
+		result := closePaneShortcut(state)
+		if result.Handled {
+			t.Fatalf("close-pane shortcut on host list unexpectedly handled: %+v", result)
+		}
+		if got := len(state.Panes(nil)); got != panes {
+			t.Fatalf("panes = %d, want %d", got, panes)
+		}
+	})
 }

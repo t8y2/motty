@@ -64,7 +64,7 @@ func (state *State) activateSettingsTab() bool {
 // closeSettingsTab takes the settings tab off the bar. When it was in front, the
 // tab before it takes over, the way a file tab hands over when it closes.
 func (state *State) closeSettingsTab() {
-	if !state.settingsTab {
+	if !state.settingsTab && state.activeSection != sectionSettings {
 		return
 	}
 	wasActive := state.activeSection == sectionSettings

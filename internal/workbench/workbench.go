@@ -2492,7 +2492,35 @@ func (state *State) closeSession(id uint32) {
 	state.activeSessionID = state.sessions[min(index, len(state.sessions)-1)].ID
 }
 
+// canCloseActivePane reports whether the active page shows a pane or closeable
+// tab that hitPaneClose acts on.
+func (state *State) canCloseActivePane() bool {
+	switch state.activeSection {
+	case sectionSettings:
+		return true
+	case sectionSFTP:
+		return state.activeSFTPWindow() != nil
+	case sectionTerminal:
+		return state.deck.ActiveWorkspace() != 0
+	default:
+		return false
+	}
+}
+
 func (state *State) closeActivePane() {
+	switch state.activeSection {
+	case sectionSettings:
+		state.closeSettingsTab()
+		return
+	case sectionSFTP:
+		if manager := state.activeSFTPWindow(); manager != nil {
+			state.requestCloseSFTPTab(manager)
+		}
+		return
+	case sectionTerminal:
+	default:
+		return
+	}
 	workspaceID := state.deck.ActiveWorkspace()
 	if state.deck.Locked(workspaceID) && len(state.deck.Panes(workspaceID, nil)) == 1 {
 		state.closeWorkspace(workspaceID)

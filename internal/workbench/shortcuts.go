@@ -913,6 +913,9 @@ func (state *State) executeShortcut(action shortcutAction) gfx.EventResult {
 	case shortcutPaneMaximize:
 		state.Click(hitPaneMaximize)
 	case shortcutPaneClose:
+		if !state.canCloseActivePane() {
+			return gfx.EventResult{}
+		}
 		state.Click(hitPaneClose)
 	case shortcutSFTP:
 		if hasSession {

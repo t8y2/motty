@@ -532,3 +532,49 @@ func TestHeadlessShortcutClearAllLeavesNothingBoundAndSurvivesARestart(t *testin
 		t.Fatalf("after Reset defaults the find chord runs %v, want find", got)
 	}
 }
+
+func TestHeadlessClosePaneShortcutClosesSettingsAndKeepsTerminal(t *testing.T) {
+	state := threeVisiblePaneState(t)
+	panes := len(state.Panes(nil))
+	sessions := len(state.sessions)
+	session, err := headless.Open(app.Config{
+		Title: "settings close pane", Width: 1400, Height: 900,
+		Paint: state.Paint, OnPointer: state.Pointer,
+		OnKey: state.Key, OnShortcut: state.Shortcut, OnResize: state.Resize,
+		TextInput: state.TerminalInput,
+	}, nil, headless.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	state.Click(hitSettings)
+	if err := session.Rest(); err != nil {
+		t.Fatal(err)
+	}
+	if !state.settingsTab || state.activeSection != sectionSettings {
+		t.Fatalf("setup: settingsTab=%v section=%d", state.settingsTab, state.activeSection)
+	}
+
+	modifier := "ctrl"
+	if keymap.Primary&gfx.ModifierMeta != 0 {
+		modifier = "cmd"
+	}
+	if err := session.Keys(modifier + "+alt+w"); err != nil {
+		t.Fatal(err)
+	}
+	if state.settingsTab || state.activeSection != sectionTerminal {
+		t.Fatalf("after close-pane shortcut: settingsTab=%v section=%d", state.settingsTab, state.activeSection)
+	}
+	if got := len(state.Panes(nil)); got != panes {
+		t.Fatalf("panes = %d, want %d", got, panes)
+	}
+	if got := len(state.sessions); got != sessions {
+		t.Fatalf("sessions = %d, want %d", got, sessions)
+	}
+	for _, hit := range session.Snapshot().Hits {
+		if hit.ID == hitSettingsTab {
+			t.Fatal("settings tab remained painted after close-pane shortcut")
+		}
+	}
+}
