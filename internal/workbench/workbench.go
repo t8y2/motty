@@ -186,7 +186,6 @@ var (
 	hitKeysCopyPrivate = tree.ID(keysHits, "keys-copy-private")
 	hitKeysExport      = tree.ID(keysHits, "keys-export")
 	hitKeysEdit        = tree.ID(keysHits, "keys-edit")
-	hitKeysDeploy      = tree.ID(keysHits, "keys-deploy")
 	hitKeysRemove      = tree.ID(keysHits, "keys-remove")
 	hitKeysPassphrase  = tree.ID(keysHits, "keys-passphrase")
 	hitKeysCertificate = tree.ID(keysHits, "keys-certificate")
@@ -658,7 +657,10 @@ type State struct {
 	hostGroupMenu   bool
 	importMenu      bool
 	// keysMenu is the open menu under the Keychain page's Add Key button.
-	keysMenu          bool
+	keysMenu bool
+	// keysExportMenu is the open menu under the Keychain page's Export button:
+	// exporting the private half or deploying its public half to hosts.
+	keysExportMenu    bool
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu

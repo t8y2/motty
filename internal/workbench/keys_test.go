@@ -205,6 +205,7 @@ func TestKeyExportWritesTheKeyAsKeptAndWorksAfterItsFileIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	state.Click(hitKeysExport)
+	clickPageMenuRow(t, state, state.messages.KeyExport)
 	got, err := os.ReadFile(destination)
 	if err != nil || string(got) != string(original) {
 		t.Fatalf("exported key differs from the imported one: %v", err)

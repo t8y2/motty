@@ -6,23 +6,12 @@ import (
 	"github.com/vivaui/viva/ui"
 )
 
-// keysToolbarIconButton is a little narrower than the other pages' icon
-// buttons: the key page has nine actions and must fit them in a 345 px card.
-const keysToolbarIconButton = float32(32)
-
-func keysToolbarButtonLayout(canvas *gfx.Canvas, label string, icon, compact uint8, condensed bool) (float32, uint8) {
-	if condensed {
-		return keysToolbarIconButton, compact
-	}
-	return toolbarButtonWidth(canvas, label, icon != 0), icon
-}
-
 // keysSectionUI is what the keychain page's declaration leaves for its paint.
 type keysSectionUI struct {
-	empty, addButton, removeButton, passphraseButton, certificateButton, copyButton, copyPrivateButton, editButton, exportButton, deployButton ui.Box
-	copyWidth, copyPrivateWidth, editWidth, exportWidth, deployWidth, passphraseWidth, certificateWidth, removeWidth, addWidth                 float32
-	copyIcon, copyPrivateIcon, editIcon, exportIcon, deployIcon, passphraseIcon, certificateIcon, removeIcon, addIcon                          uint8
-	condensed                                                                                                                                  bool
+	empty, addButton, removeButton, passphraseButton, certificateButton, copyButton, copyPrivateButton, editButton, exportButton ui.Box
+	copyWidth, copyPrivateWidth, editWidth, exportWidth, passphraseWidth, certificateWidth, removeWidth, addWidth                float32
+	copyIcon, copyPrivateIcon, editIcon, exportIcon, passphraseIcon, certificateIcon, removeIcon, addIcon                        uint8
+	condensed                                                                                                                    bool
 	// draw is the page hook that paints the empty state and the Add Key menu. It
 	// is kept so a paint does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -39,29 +28,19 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 	// both shows the buttons as their icons, whose tooltips name them.
 	const (
 		titleLeast = float32(220)
-		buttonGap  = float32(10)
-		// The key page carries more actions than the other section pages; a
-		// tighter gap keeps all nine icon buttons inside a narrow card.
-		iconGap = float32(2)
+		gap        = float32(10)
 	)
-	labeled := toolbarButtonWidth(canvas, messages.KeyCopyPublic, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyCopyPrivate, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyEdit, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyExport, true) + buttonGap + keysToolbarIconButton + buttonGap + toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyCertificate, true) + buttonGap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + buttonGap + toolbarButtonWidth(canvas, messages.KeyAdd, true) + buttonGap + titleLeast
+	labeled := toolbarButtonWidth(canvas, messages.KeyCopyPublic, true) + gap + toolbarButtonWidth(canvas, messages.KeyCopyPrivate, true) + gap + toolbarButtonWidth(canvas, messages.KeyEdit, true) + gap + toolbarButtonWidth(canvas, messages.KeyExport, true) + gap + toolbarButtonWidth(canvas, messages.KeySavePassphrase, true) + gap + toolbarButtonWidth(canvas, messages.KeyCertificate, true) + gap + toolbarButtonWidth(canvas, messages.KeyRemove, false) + gap + toolbarButtonWidth(canvas, messages.KeyAdd, true) + gap + titleLeast
 	condensed := labeled > bounds.Width-36
-	gap := buttonGap
-	if condensed {
-		gap = iconGap
-	}
-	copyWidth, copyIcon := keysToolbarButtonLayout(canvas, messages.KeyCopyPublic, iconCopy, iconCopy, condensed)
-	copyPrivateWidth, copyPrivateIcon := keysToolbarButtonLayout(canvas, messages.KeyCopyPrivate, iconCopy, iconCopy, condensed)
-	editWidth, editIcon := keysToolbarButtonLayout(canvas, messages.KeyEdit, iconPencil, iconPencil, condensed)
-	exportWidth, exportIcon := keysToolbarButtonLayout(canvas, messages.KeyExport, iconDownload, iconDownload, condensed)
-	// Deploy is icon-only even in the wide row: its name is long and the key
-	// page already carries seven labeled actions beside the title.
-	deployWidth, deployIcon := keysToolbarButtonLayout(canvas, messages.KeyDeploy, iconUpload, iconUpload, true)
-	passphraseWidth, passphraseIcon := keysToolbarButtonLayout(canvas, messages.KeySavePassphrase, iconLock, iconLock, condensed)
-	certificateWidth, certificateIcon := keysToolbarButtonLayout(canvas, messages.KeyCertificate, iconCircleCheck, iconCircleCheck, condensed)
-	removeWidth, removeIcon := keysToolbarButtonLayout(canvas, messages.KeyRemove, 0, iconTrash, condensed)
-	addWidth, addIcon := keysToolbarButtonLayout(canvas, messages.KeyAdd, iconPlus, iconPlus, condensed)
-	titleRoom := max(bounds.Width-36-copyWidth-gap-copyPrivateWidth-gap-editWidth-gap-exportWidth-gap-deployWidth-gap-passphraseWidth-gap-certificateWidth-gap-removeWidth-gap-addWidth, 0)
+	copyWidth, copyIcon := toolbarButtonLayout(canvas, messages.KeyCopyPublic, iconCopy, iconCopy, condensed)
+	copyPrivateWidth, copyPrivateIcon := toolbarButtonLayout(canvas, messages.KeyCopyPrivate, iconCopy, iconCopy, condensed)
+	editWidth, editIcon := toolbarButtonLayout(canvas, messages.KeyEdit, iconPencil, iconPencil, condensed)
+	exportWidth, exportIcon := toolbarButtonLayout(canvas, messages.KeyExport, iconDownload, iconDownload, condensed)
+	passphraseWidth, passphraseIcon := toolbarButtonLayout(canvas, messages.KeySavePassphrase, iconLock, iconLock, condensed)
+	certificateWidth, certificateIcon := toolbarButtonLayout(canvas, messages.KeyCertificate, iconCircleCheck, iconCircleCheck, condensed)
+	removeWidth, removeIcon := toolbarButtonLayout(canvas, messages.KeyRemove, 0, iconTrash, condensed)
+	addWidth, addIcon := toolbarButtonLayout(canvas, messages.KeyAdd, iconPlus, iconPlus, condensed)
+	titleRoom := max(bounds.Width-36-copyWidth-gap-copyPrivateWidth-gap-editWidth-gap-exportWidth-gap-passphraseWidth-gap-certificateWidth-gap-removeWidth-gap-addWidth, 0)
 	statusColor, statusValue := pal.muted, ""
 	selected, hasSelection := state.identityByID(state.selectedIdentityID)
 	if hasSelection {
@@ -84,8 +63,8 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 	view := &state.sectionBodies.keys
 	draw := view.draw
 	*view = keysSectionUI{
-		copyWidth: copyWidth, copyPrivateWidth: copyPrivateWidth, editWidth: editWidth, exportWidth: exportWidth, deployWidth: deployWidth, passphraseWidth: passphraseWidth, certificateWidth: certificateWidth, removeWidth: removeWidth, addWidth: addWidth,
-		copyIcon: copyIcon, copyPrivateIcon: copyPrivateIcon, editIcon: editIcon, exportIcon: exportIcon, deployIcon: deployIcon, passphraseIcon: passphraseIcon, certificateIcon: certificateIcon, removeIcon: removeIcon, addIcon: addIcon,
+		copyWidth: copyWidth, copyPrivateWidth: copyPrivateWidth, editWidth: editWidth, exportWidth: exportWidth, passphraseWidth: passphraseWidth, certificateWidth: certificateWidth, removeWidth: removeWidth, addWidth: addWidth,
+		copyIcon: copyIcon, copyPrivateIcon: copyPrivateIcon, editIcon: editIcon, exportIcon: exportIcon, passphraseIcon: passphraseIcon, certificateIcon: certificateIcon, removeIcon: removeIcon, addIcon: addIcon,
 		condensed: condensed,
 	}
 	if draw == nil {
@@ -103,7 +82,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 			view.copyPrivateButton = state.declareButtonSized(c, hitKeysCopyPrivate, messages.KeyCopyPrivate, copyPrivateIcon, false, false, canCopyPrivate, toolbarFont, condensed).Size(copyPrivateWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.editButton = state.declareButtonSized(c, hitKeysEdit, messages.KeyEdit, editIcon, false, false, canEdit, toolbarFont, condensed).Size(editWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.exportButton = state.declareButtonSized(c, hitKeysExport, messages.KeyExport, exportIcon, false, false, canCopy, toolbarFont, condensed).Size(exportWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
-			view.deployButton = state.declareButtonSized(c, hitKeysDeploy, messages.KeyDeploy, deployIcon, false, false, canDeploy, toolbarFont, condensed).Size(deployWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+			state.declareKeysExportMenu(c, view.exportButton, canDeploy)
 			view.passphraseButton = state.declareButtonSized(c, hitKeysPassphrase, messages.KeySavePassphrase, passphraseIcon, false, false, selectedEncrypted, toolbarFont, condensed).Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.certificateButton = state.declareButtonSized(c, hitKeysCertificate, messages.KeyCertificate, certificateIcon, false, false, canCertify, toolbarFont, condensed).Size(certificateWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.removeButton = state.declareButtonSized(c, hitKeysRemove, messages.KeyRemove, removeIcon, false, false, state.selectedIdentityID != 0, toolbarFont, condensed).Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
@@ -171,6 +150,31 @@ func (state *State) declareKeysMenu(c ui.C, anchor ui.Box) {
 			if menu.Item(way.label).Clicked() {
 				c.After(func() { state.click(way.id, true) })
 			}
+		}
+	})
+}
+
+// declareKeysExportMenu puts the two export choices under the keychain's
+// Export button: the private half to a file, or the public half to hosts.
+func (state *State) declareKeysExportMenu(c ui.C, anchor ui.Box, canDeploy bool) {
+	if !state.keysExportMenu {
+		return
+	}
+	m := state.messages
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, &state.keysExportMenu, func(menu *ui.MenuItems) {
+		menu.WidthRange(220, 220)
+		if menu.Item(m.KeyExport).Clicked() {
+			c.After(func() {
+				state.keysExportMenu = false
+				state.exportSelectedKey()
+			})
+		}
+		if menu.Item(m.KeyDeploy).Disabled(!canDeploy).Clicked() {
+			c.After(func() {
+				state.keysExportMenu = false
+				state.openHostKeyDeployment()
+			})
 		}
 	})
 }
