@@ -379,6 +379,7 @@ func (state *State) deleteSnippetGroupWithSnippets(group string) {
 	}
 	form.resetSnippetPreview()
 	state.refreshSnippets()
+	state.selectFirstVisibleSnippet()
 	if form.inline.draft {
 		state.refreshInlineGroupOptions(form.inline.loadedSnap.Group)
 		state.refreshInlineMeta(form.inline.loadedSnap)
