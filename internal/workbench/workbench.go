@@ -1653,6 +1653,9 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if hit == hitDialogLoginCommand && state.editor.protocol == protocolSSH {
 			return &state.editor.loginCommand
 		}
+		if hit == hitDialogLoginCommandInterval && state.editor.protocol == protocolSSH && state.editor.loginCommandMode == loginSendFixedInterval {
+			return &state.editor.loginCommandInterval
+		}
 		if hit == hitDialogOTP && state.editor.protocol == protocolSSH {
 			return &state.editor.otp
 		}

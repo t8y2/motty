@@ -1193,15 +1193,27 @@ type ToolsMessages struct {
 	LoginCommandField                 string
 	LoginCommandPlaceholder           string
 	ErrLoginCommand                   string
+	ErrLoginCommandDirective          string
+	LoginCommandModeField             string
+	LoginCommandModeWaitPrompt        string
+	LoginCommandModeFixedInterval     string
+	LoginCommandIntervalField         string
+	LoginCommandIntervalPlaceholder   string
+	ErrLoginCommandInterval           string
 	LoginCommandPolicyField           string
 	LoginCommandStopOnError           string
 	LoginCommandContinueOnError       string
+	LoginCommandStepSentFmt           string
+	LoginCommandWaitingIntervalFmt    string
+	LoginCommandWaitingExpectFmt      string
+	LoginCommandWaitingPromptFmt      string
 	LoginCommandStepSuccessFmt        string
 	LoginCommandStepFailedStopFmt     string
 	LoginCommandStepFailedContinueFmt string
 	LoginCommandOutputFmt             string
 	LoginCommandAbortDisconnectFmt    string
 	LoginCommandAbortTimeoutFmt       string
+	LoginCommandAbortExpectTimeoutFmt string
 	LoginCommandAbortPromptFmt        string
 	IdleKeepAliveHeading              string
 	IdleKeepAliveField                string

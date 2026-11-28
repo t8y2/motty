@@ -77,9 +77,11 @@ type Host struct {
 	NoHistory bool
 	// LoginCommand is typed into each new shell of an SSH host once it is ready
 	// for input, as the user would type it. One or more lines, empty for none.
-	LoginCommand       string
-	LoginCommandPolicy loginFailurePolicy
-	RemoteLogPaths     []remoteLogPath
+	LoginCommand         string
+	LoginCommandMode     loginSendMode
+	LoginCommandInterval time.Duration
+	LoginCommandPolicy   loginFailurePolicy
+	RemoteLogPaths       []remoteLogPath
 	// Encoding is the character set of the remote shell's byte stream. Empty
 	// means UTF-8. A legacy server whose LANG names GB18030, Big5 or Shift_JIS
 	// needs its output decoded and its input encoded with that charset.
