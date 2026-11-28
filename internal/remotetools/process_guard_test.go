@@ -247,3 +247,37 @@ func TestGuardedStatPrefixValidatesStateAndNumericFieldTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestReadProcessIdentityAnswersTheInstanceUnderThePid(t *testing.T) {
+	runner := &scriptedRunner{results: []scriptedResult{
+		{output: "boot " + guardBoot + "\n42 100\n43 200\n"},
+	}}
+	identity, err := ReadProcessIdentity(context.Background(), runner, 42)
+	if err != nil || identity != "linux:"+guardBoot+":100" {
+		t.Fatalf("identity=%q err=%v", identity, err)
+	}
+}
+
+func TestReadProcessIdentityRefusesAPidTheHostNoLongerLists(t *testing.T) {
+	runner := &scriptedRunner{results: []scriptedResult{
+		{output: "boot " + guardBoot + "\n7 100\n"},
+	}}
+	if _, err := ReadProcessIdentity(context.Background(), runner, 42); !errors.Is(err, ErrProcessChanged) {
+		t.Fatalf("a gone process was reported as %v", err)
+	}
+}
+
+func TestReadProcessIdentityReadsNothingOnAHostThatCannotProveIt(t *testing.T) {
+	runner := &scriptedRunner{}
+	for _, pid := range []int{0, 1} {
+		if _, err := ReadProcessIdentity(context.Background(), runner, pid); !errors.Is(err, ErrProcessUnverifiable) {
+			t.Fatalf("pid %d: %v", pid, err)
+		}
+	}
+	if _, err := ReadProcessIdentity(context.Background(), ForSystem(runner, "darwin"), 42); !errors.Is(err, ErrProcessUnverifiable) {
+		t.Fatalf("macOS host was asked for an identity: %v", err)
+	}
+	if len(runner.commands) != 0 {
+		t.Fatalf("unverifiable targets ran %q", runner.commands)
+	}
+}
