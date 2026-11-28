@@ -1445,8 +1445,8 @@ type hostsHeaderPlan struct {
 	connectIcon, importIcon      uint8
 	newHostIcon                  uint8
 	anySelected                  bool
-	actions                      [7]hostsHeaderAction
-	actionWidths                 [7]float32
+	actions                      [8]hostsHeaderAction
+	actionWidths                 [8]float32
 	actionsCondensed             bool
 	showChips, showGroupControls bool
 	compactHostControls          bool
@@ -1459,7 +1459,7 @@ type hostsHeaderPlan struct {
 type hostsHeaderBoxes struct {
 	search, connect, importButton, newHost ui.Box
 	toggle, selectAll, orderButton         ui.Box
-	buttons                                [7]ui.Box
+	buttons                                [8]ui.Box
 	groupControls                          [2]ui.Box
 }
 
@@ -1613,6 +1613,7 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, layout hostsLayout) host
 		{hitEditHost, m.EditHost, iconPencil, false, false},
 		{hitCopyHost, m.CopyHost, iconCopy, false, false},
 		{hitMoveHostGroup, m.MoveHostGroup, iconFolderOpen, false, false},
+		{hitBulkHostPassword, m.BulkPasswordTitle, iconKey, false, false},
 		{hitDashboardAddHosts, state.messages.Dashboard.AddHosts, iconGauge, false, false},
 		{hitDeleteHost, m.DeleteHost, iconTrash, false, true},
 	}
@@ -1629,6 +1630,8 @@ func (state *State) hostsHeaderPlan(canvas *gfx.Canvas, layout hostsLayout) host
 				plan.actions[i].enabled = single
 			case hitMoveHostGroup, hitDeleteHost:
 				plan.actions[i].enabled = enabled
+			case hitBulkHostPassword:
+				plan.actions[i].enabled = state.selectedHostsCanEditAuth()
 			case hitDashboardAddHosts:
 				plan.actions[i].enabled = state.dashboardCanAddHosts()
 			}
@@ -3088,6 +3091,8 @@ func (state *State) declareDialogs(c ui.C) {
 		state.declareProxyDialog(c)
 	case modalProxyBatchAssociate:
 		state.declareProxyBatchDialog(c)
+	case modalBulkHostPassword:
+		state.declareBulkHostPassword(c)
 	case modalProxyDeleteConfirm:
 		state.declareProxyDeleteConfirmDialog(c)
 	case modalProxyBatchDeleteConfirm:

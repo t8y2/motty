@@ -52,6 +52,7 @@ var (
 	hitCopyHost                = tree.ID(shellHits, "copy-host")
 	hitDeleteHost              = tree.ID(shellHits, "delete-host")
 	hitMoveHostGroup           = tree.ID(shellHits, "move-host-group")
+	hitBulkHostPassword        = tree.ID(shellHits, "bulk-host-password")
 	hitConnectSelectedHosts    = tree.ID(shellHits, "connect-selected-hosts")
 	hitExportHosts             = tree.ID(shellHits, "export-hosts")
 	hitImportHostCatalog       = tree.ID(shellHits, "import-host-catalog")
@@ -674,6 +675,7 @@ type State struct {
 	proxyCountText    string
 	hostImportResult  hostImportResult
 	sessionImport     sessionImportPreview
+	bulkPassword      bulkHostPassword
 	mobaEncoding      mobaEncodingPrompt
 	knownHosts        knownHostsView
 	// selectedWorkspaceTemplateID is the template the library will apply next.
@@ -1592,6 +1594,8 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		return editor
 	}
 	switch state.modal {
+	case modalBulkHostPassword:
+		return state.bulkPassword.editorFor(hit)
 	case modalNone:
 		if editor := state.sftpEditor(hit); editor != nil {
 			return editor
@@ -1986,6 +1990,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalSessionImportPreview:
 		state.clickSessionImportPreview(id)
+		return
+	case modalBulkHostPassword:
+		state.clickBulkHostPassword(id)
 		return
 	case modalMobaEncoding:
 		state.clickMobaEncoding(id)
@@ -3524,6 +3531,10 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 	}
 	if state.modal == modalVaultUnlock && event.Key == gfx.KeyEnter && event.Target == hitVaultUnlockField && !event.Repeat {
 		state.submitVaultUnlock()
+		return gfx.EventResult{Handled: true, Repaint: true}
+	}
+	if state.modal == modalBulkHostPassword && event.Key == gfx.KeyEnter && !event.Repeat && state.bulkPassword.editorFor(event.Target) != nil {
+		state.submitBulkHostPassword()
 		return gfx.EventResult{Handled: true, Repaint: true}
 	}
 	if state.modal == modalOutboundProxy && event.Key == gfx.KeyEnter && !event.Repeat &&

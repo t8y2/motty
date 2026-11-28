@@ -147,6 +147,27 @@ func TestApplyWithCommitFailureRestoresCiphertextWithoutTombstones(t *testing.T)
 	}
 }
 
+func TestApplyCheckedWithCommitRefusesAnUnreviewedRecord(t *testing.T) {
+	file, _ := openVault(t, &memoryKeystore{})
+	if err := file.Set("edited", "newer"); err != nil {
+		t.Fatal(err)
+	}
+	changes := []Change{{Name: "other", Value: "pending"}, {Name: "edited", Delete: true}}
+	err := file.ApplyCheckedWithCommit(changes, map[string]string{"edited": "reviewed"}, func() error {
+		t.Error("a stale review reached the config write")
+		return nil
+	})
+	if !errors.Is(err, ErrChanged) {
+		t.Fatalf("checked apply returned %v", err)
+	}
+	if _, found, err := file.Get("other"); err != nil || found {
+		t.Fatalf("a stale review created a different record: found=%v err=%v", found, err)
+	}
+	if value, found, err := file.Get("edited"); err != nil || !found || value != "newer" {
+		t.Fatalf("a stale review altered the newer record: found=%v err=%v", found, err)
+	}
+}
+
 func TestApplyMissingWithCommitKeepsConcurrentWinner(t *testing.T) {
 	vault, _ := openVault(t, &memoryKeystore{})
 	if _, found, err := vault.Get("host"); err != nil || found {

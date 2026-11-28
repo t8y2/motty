@@ -62,6 +62,7 @@ var (
 	ErrKeystoreUnavailable = errors.New("vault: the system has no secret store")
 	ErrKeystoreDenied      = errors.New("vault: the secret store refused access")
 	ErrRollbackFailed      = errors.New("vault: could not restore the previous records")
+	ErrChanged             = errors.New("vault: a saved credential changed after review")
 )
 
 // Keystore is a store for a small secret: what the data key lives in.
@@ -324,6 +325,10 @@ func (vault *Vault) ConvertLegacy(password string) error {
 func (vault *Vault) Get(name string) (string, bool, error) {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
+	return vault.get(name)
+}
+
+func (vault *Vault) get(name string) (string, bool, error) {
 	if err := vault.prepare(false); err != nil {
 		return "", false, err
 	}
@@ -366,6 +371,24 @@ func (vault *Vault) Apply(changes []Change) error {
 func (vault *Vault) ApplyWithCommit(changes []Change, commit func() error) error {
 	vault.mu.Lock()
 	defer vault.mu.Unlock()
+	return vault.applyWithCommit(changes, commit)
+}
+
+// ApplyCheckedWithCommit only commits if each destination still contains its
+// reviewed value, or is absent when it had no entry in expected.
+func (vault *Vault) ApplyCheckedWithCommit(changes []Change, expected map[string]string, commit func() error) error {
+	vault.mu.Lock()
+	defer vault.mu.Unlock()
+	for _, change := range changes {
+		value, found, err := vault.get(change.Name)
+		if err != nil {
+			return err
+		}
+		before, present := expected[change.Name]
+		if found != present || value != before {
+			return ErrChanged
+		}
+	}
 	return vault.applyWithCommit(changes, commit)
 }
 

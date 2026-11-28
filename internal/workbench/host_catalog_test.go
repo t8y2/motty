@@ -342,6 +342,15 @@ func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *
 	state.save()
 	wantPW := "staging-pw"
 	wantProxyPW := "staging-proxy-pw"
+	keyPath := "/keys/staging"
+	keySecret := "fixture-" + "phrase"
+	if err := state.secrets.vault.Set(hostPassphraseSecretName(state.hosts[1].CatalogID), encodeHostPassphrase(keyPath, keySecret)); err != nil {
+		t.Fatal(err)
+	}
+	plainCatalog, err := state.buildHostCatalogDocument(state.hosts[1:2], false)
+	if err != nil || len(plainCatalog.Secrets) != 0 {
+		t.Fatalf("plain export included secrets or failed: %v", err)
+	}
 	if err := state.secrets.vault.Set(hostSecretName(state.hosts[1].CatalogID, hostPasswordPart), wantPW); err != nil {
 		t.Fatal(err)
 	}
@@ -385,6 +394,9 @@ func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *
 	if strings.Contains(string(sealed), "unselected-pw") {
 		t.Fatal("the encrypted export leaked a password")
 	}
+	if strings.Contains(string(sealed), keySecret) {
+		t.Fatal("the encrypted export leaked a key passphrase")
+	}
 
 	// Target already has a DIFFERENT host occupying the same CatalogID.
 	targetOptions := freshOptions(t)
@@ -400,6 +412,9 @@ func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *
 	target.hosts = append(target.hosts, occupier)
 	target.hostDataChanged()
 	if err := target.secrets.vault.Set(hostSecretName(occupier.CatalogID, hostPasswordPart), "occupier-pw"); err != nil {
+		t.Fatal(err)
+	}
+	if err := target.secrets.vault.Set(hostPassphraseSecretName(occupier.CatalogID), encodeHostPassphrase(keyPath, "occupier-phrase")); err != nil {
 		t.Fatal(err)
 	}
 
@@ -424,6 +439,12 @@ func TestHostCatalogEncryptedImportRemapsCollidingCatalogIDsAndExportsSubset(t *
 	}
 	if got, found, err := target.secrets.vault.Get(hostSecretName(occupier.CatalogID, hostPasswordPart)); err != nil || !found || got != "occupier-pw" {
 		t.Fatalf("occupier password was overwritten: (%q, %v, %v)", got, found, err)
+	}
+	if _, value, found, err := savedPassphrase(target.secrets.vault, importedHost.CatalogID, keyPath); err != nil || !found || value != keySecret {
+		t.Fatalf("remapped host override is not usable: found=%v err=%v", found, err)
+	}
+	if _, value, found, err := savedPassphrase(target.secrets.vault, occupier.CatalogID, keyPath); err != nil || !found || value != "occupier-phrase" {
+		t.Fatalf("remapping changed the original host override: found=%v err=%v", found, err)
 	}
 }
 

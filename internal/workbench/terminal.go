@@ -2497,6 +2497,11 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 	if state.modal == modalNewHost {
 		return state.scrollHostForm(event)
 	}
+	if state.modal == modalBulkHostPassword {
+		result := state.windowPage().RouteWheel(event)
+		result.Handled = true
+		return result
+	}
 	if state.modal == modalFontPicker {
 		return state.scrollFontPicker(event)
 	}

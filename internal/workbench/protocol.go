@@ -345,9 +345,6 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 			return false
 		}
 		host.Identity = strings.TrimSpace(transport.Identity)
-		if host.Auth != authPrivateKey {
-			host.Identity = ""
-		}
 		host.IdentitiesOnly = transport.IdentitiesOnly
 		host.ForwardX11 = transport.ForwardX11
 		host.AgentForward = transport.AgentForward
