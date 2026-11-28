@@ -48,6 +48,8 @@ func (t *Terminal) Clone() *Terminal {
 	clone.commandStartFn = nil
 	clone.commandFinishedFn = nil
 	clone.syncFn = nil
+	clone.screenClearedFn = nil
+	clone.scrollbackClearedFn = nil
 	clone.clock = nil
 	clone.images = nil
 	clone.kitty = nil

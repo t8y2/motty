@@ -152,6 +152,28 @@ func TestCloneKeepsAPartialSequence(t *testing.T) {
 	assertScreensEqual(t, clone, original)
 }
 
+// The clear hooks belong to the terminal their owner installed them on: a
+// replicated state that fired them would report one clear several times.
+func TestCloneHasNoClearHooks(t *testing.T) {
+	original := New(20, 4, 10)
+	screen, scrollback := 0, 0
+	original.SetScreenCleared(func() { screen++ })
+	original.SetScrollbackCleared(func() { scrollback++ })
+
+	clone := original.Clone()
+	clone.Write([]byte("\x1b[2J\x1b[3J"))
+	clone.Reset()
+	if screen != 0 || scrollback != 0 {
+		t.Fatalf("clone fired the owner's clear hooks: screen=%d scrollback=%d, want 0/0", screen, scrollback)
+	}
+
+	original.Write([]byte("\x1b[2J\x1b[3J"))
+	original.Reset()
+	if screen == 0 || scrollback == 0 {
+		t.Fatalf("original lost its clear hooks: screen=%d scrollback=%d, want both > 0", screen, scrollback)
+	}
+}
+
 // A screen that scrolled while the cursor was not on its last row uses a
 // scrolling region rather than the whole screen's carriage return and newlines.
 func TestScreenDiffScrollsARegionAwayFromTheBottom(t *testing.T) {
