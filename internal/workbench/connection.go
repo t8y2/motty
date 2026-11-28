@@ -484,7 +484,7 @@ func (options Options) withDefaults() Options {
 	}
 	if options.WatchNetworkChanges == nil {
 		options.WatchNetworkChanges = func(report func(linkwatch.Change)) func() {
-			return linkwatch.Watch(linkwatch.DefaultInterval, report)
+			return linkwatch.Watch(report)
 		}
 	}
 	if options.SetNativeAppearance == nil {

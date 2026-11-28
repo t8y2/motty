@@ -3,8 +3,10 @@
 // The signal is the set of addresses the interfaces carry: switching a Wi-Fi
 // network, unplugging a cable and a VPN coming up each replace it, and a
 // connection that was bound to the old one is dead even though neither end has
-// closed it. It is polled rather than subscribed because the desktop APIs that
-// push the same information need cgo, and this repository builds without it.
+// closed it. The system says when it changes (a route socket on macOS and the
+// BSDs, a netlink socket on Linux, an IP Helper notification on Windows), so a
+// watcher reads the interfaces only after it was told something moved. Where
+// no notification can be had, it falls back to reading them on a timer.
 package linkwatch
 
 import (
@@ -14,10 +16,16 @@ import (
 	"time"
 )
 
-// DefaultInterval is how often the interfaces are read. Two seconds is short
-// enough that a Wi-Fi switch is noticed before a user reaches for the keyboard,
-// and long enough that reading them costs nothing measurable.
+// DefaultInterval is how often the interfaces are read where the system cannot
+// say when they change. Two seconds is short enough that a Wi-Fi switch is
+// noticed before a user reaches for the keyboard.
 const DefaultInterval = 2 * time.Second
+
+// settle is how long a watcher waits after the system's first word of a change
+// before it reads the interfaces. A switch arrives as a burst (an address goes,
+// another comes), and reading after the burst reports where it ended, not each
+// step on the way.
+const settle = 250 * time.Millisecond
 
 // Change is one difference in the network path.
 type Change struct {
@@ -83,37 +91,88 @@ func routable(address net.Addr) bool {
 // function is called. It reports nothing for the first reading: that one is the
 // baseline, not a change. report runs on Watch's own goroutine and must not
 // block.
-func Watch(interval time.Duration, report func(Change)) func() {
-	return watch(Read, interval, report)
+func Watch(report func(Change)) func() {
+	done := make(chan struct{})
+	signals, err := subscribe(done)
+	if err != nil {
+		close(done)
+		return watch(Read, DefaultInterval, report)
+	}
+	return follow(Read, signals, settle, done, report)
 }
 
-// watch is Watch with the reading injected, so a test can move the network
-// without touching the machine's.
+// watch is Watch on a timer, with the reading injected, so a test can move the
+// network without touching the machine's.
 func watch(read func() Snapshot, interval time.Duration, report func(Change)) func() {
 	if interval <= 0 {
 		interval = DefaultInterval
 	}
 	done := make(chan struct{})
-	var once sync.Once
-	// A stop function called twice, or after the watcher already ended, must
-	// not close the channel again.
-	stop := func() { once.Do(func() { close(done) }) }
+	return follow(read, tick(interval, done), 0, done, report)
+}
+
+// tick signals every interval until done is closed.
+func tick(interval time.Duration, done <-chan struct{}) <-chan struct{} {
+	signals := make(chan struct{}, 1)
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		previous := read()
 		for {
 			select {
 			case <-done:
 				return
 			case <-ticker.C:
-				current := read()
-				if slices.Equal(previous.Addrs, current.Addrs) {
+				select {
+				case signals <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+	return signals
+}
+
+// follow reads the network after each signal and reports what changed. With
+// settle, signals that arrive within it of the first are taken as one. A
+// signal source that closes (its socket failed) is replaced by the timer, so a
+// watcher never goes deaf.
+func follow(read func() Snapshot, signals <-chan struct{}, settle time.Duration, done chan struct{}, report func(Change)) func() {
+	var once sync.Once
+	// A stop function called twice, or after the watcher already ended, must
+	// not close the channel again.
+	stop := func() { once.Do(func() { close(done) }) }
+	go func() {
+		previous := read()
+		for {
+			select {
+			case <-done:
+				return
+			case _, open := <-signals:
+				if !open {
+					signals = tick(DefaultInterval, done)
 					continue
 				}
-				previous = current
-				report(Change{At: time.Now(), Up: current.Up, Addrs: current.Addrs})
 			}
+			if settle > 0 {
+				wait := time.NewTimer(settle)
+			gather:
+				for {
+					select {
+					case <-done:
+						wait.Stop()
+						return
+					case <-wait.C:
+						break gather
+					case <-signals:
+					}
+				}
+			}
+			current := read()
+			if slices.Equal(previous.Addrs, current.Addrs) {
+				continue
+			}
+			previous = current
+			report(Change{At: time.Now(), Up: current.Up, Addrs: current.Addrs})
 		}
 	}()
 	return stop

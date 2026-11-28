@@ -144,3 +144,70 @@ func TestReadReportsTheMachineAsItIs(t *testing.T) {
 		t.Error("Up without an address to carry a connection")
 	}
 }
+
+// A burst of signals is read once, after it, so a switch that drops one address
+// and adds another is reported where it ended rather than as each step.
+func TestABurstOfSignalsIsReadOnceAfterItSettles(t *testing.T) {
+	network := &fakeNetwork{snapshots: []Snapshot{
+		{Addrs: []string{"192.168.1.5/24"}, Up: true},
+		{Addrs: []string{"10.0.0.7/8"}, Up: true},
+	}}
+	signals := make(chan struct{}, 1)
+	done := make(chan struct{})
+	changes := make(chan Change, 4)
+	stop := follow(network.read, signals, 30*time.Millisecond, done, func(change Change) { changes <- change })
+	defer stop()
+	for range 5 {
+		signals <- struct{}{}
+		time.Sleep(2 * time.Millisecond)
+	}
+	select {
+	case change := <-changes:
+		if len(change.Addrs) != 1 || change.Addrs[0] != "10.0.0.7/8" {
+			t.Fatalf("Addrs = %v", change.Addrs)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("no change reported")
+	}
+	network.mu.Lock()
+	calls := network.calls
+	network.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("the network was read %d times for one burst, want the baseline and one", calls)
+	}
+}
+
+// Nothing is read while the system says nothing: the watcher does not poll.
+func TestNoSignalMeansNoRead(t *testing.T) {
+	network := &fakeNetwork{snapshots: []Snapshot{{Addrs: []string{"192.168.1.5/24"}, Up: true}}}
+	done := make(chan struct{})
+	stop := follow(network.read, make(chan struct{}), 0, done, func(Change) {})
+	defer stop()
+	time.Sleep(50 * time.Millisecond)
+	network.mu.Lock()
+	calls := network.calls
+	network.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("read %d times with no signal, want only the baseline", calls)
+	}
+}
+
+// A notification source that fails is replaced by the timer, so the watcher
+// never goes deaf.
+func TestAFailedSourceFallsBackToTheTimer(t *testing.T) {
+	network := &fakeNetwork{snapshots: []Snapshot{
+		{Addrs: []string{"192.168.1.5/24"}, Up: true},
+		{Addrs: []string{"10.0.0.7/8"}, Up: true},
+	}}
+	signals := make(chan struct{})
+	close(signals)
+	done := make(chan struct{})
+	changes := make(chan Change, 1)
+	stop := follow(network.read, signals, 0, done, func(change Change) { changes <- change })
+	defer stop()
+	select {
+	case <-changes:
+	case <-time.After(DefaultInterval + time.Second):
+		t.Fatal("a watcher whose source failed never read again")
+	}
+}
