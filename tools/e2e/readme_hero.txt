@@ -1,5 +1,4 @@
-# The README's hero shot (assets/readme-hero.png, below the readme-hero.svg
-# banner): the file panel, the shell and
+# The README's hero shot (assets/readme-hero.png): the file panel, the shell and
 # the assistant on one connection, the way the front page describes it. Real
 # classes over the loopback fixture; only the assistant's conversation is
 # authored, because a real one would need a model and a key.

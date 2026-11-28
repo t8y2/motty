@@ -2,10 +2,6 @@
   <p><a href="README.md">English</a> | <a href="README.zh-CN.md">简体中文</a> | 日本語</p>
 
   <p>
-    <a href="assets/readme-hero.svg"><img src="assets/readme-hero.svg" width="100%" alt="Motty —— デスクトップ SSH クライアント：シェル、ファイル、トンネル、画面、アシスタントをひとつのウィンドウに" /></a>
-  </p>
-
-  <p>
     <a href="https://qm.qq.com/cgi-bin/qm/qr?k=&group_code=1131573299"><img src="assets/badge-qq.svg" alt="QQ 群 1131573299" /></a>
     <a href="https://docs.qq.com/doc/DVXBGYnFFdm9UWkVP"><img src="assets/badge-wechat.svg" alt="微信群" /></a>
     <a href="https://discord.gg/6s5tn9H4p2"><img src="assets/badge-discord.svg" alt="Discord" /></a>
