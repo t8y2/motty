@@ -707,3 +707,26 @@ func TestDisplayToleratesPromptOutputBeforeTheWrapperEcho(t *testing.T) {
 		t.Fatalf("logical command missing from %q", display)
 	}
 }
+
+func TestDisplayReplacesASyntaxHighlightedRedraw(t *testing.T) {
+	sent := Wrap("free -h", testNonce)
+	highlight := " \x1b[49D\x1b[33m}\x1b[39m\x1b[2C\x1b[32mp\x1b[32mr\x1b[32mi\x1b[32mn\x1b[32mt\x1b[32mf\x1b[39m \x1b[33m'\x1b[33m\\\x1b[33mn\x1b[33m%\x1b[33ms\x1b[33m%\x1b[33ms\x1b[33m%\x1b[33md\x1b[33m\\\x1b[33mn\x1b[33m'\x1b[39m\x1b[27C"
+	stream := "{\b{ free -h\x1b[?2004l\r\r\n" +
+		"\r\x1b[0m\x1b[27m\x1b[24m\x1b[Jcursh> \x1b[K\x1b[?2004h}\b}; printf '\\n%s%s%d\\n' GOPAI_ " + testNonce + " $?" + highlight + "\x1b[?2004l\r\r\n" +
+		"out\r\n\r\n" + marker(0) + "\r\nPROMPT% "
+	tp := NewTap(testNonce, 1000)
+	tp.SetEcho(sent)
+	tp.SetDisplay("free -h")
+	display, done := tp.Feed([]byte(stream))
+	if !done || !strings.Contains(string(display), "free -h") {
+		t.Fatalf("display = %q, done %v", display, done)
+	}
+	for _, leak := range []string{"GOPAI_", "printf", "};", "cursh>"} {
+		if strings.Contains(string(display), leak) {
+			t.Fatalf("wrapper leaked %q into %q", leak, display)
+		}
+	}
+	if r := tp.Result(); r.Output != "out" || r.ExitCode != 0 {
+		t.Fatalf("result = %+v", r)
+	}
+}

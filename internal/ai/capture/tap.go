@@ -2,6 +2,8 @@ package capture
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -159,6 +161,7 @@ func (t *Tap) SetEcho(sent []byte) {
 // called first. The capture recorder still receives the raw echo, so its echo
 // matching and output result are unchanged.
 func (t *Tap) SetDisplay(command string) {
+	debugTap(fmt.Sprintf("SETDISPLAY command=%q echoLines=%q\n", command, t.echoLines))
 	t.displayCmd = append(t.displayCmd[:0], command...)
 	t.displayOn = len(t.echoLines) > 0
 	t.echoIndex = 0
@@ -268,6 +271,8 @@ func (t *Tap) display(b []byte) {
 		}
 		line := terminalLine(rest[:i])
 		if t.echoIndex >= len(t.echoLines) || !matchDisplayEcho(line, t.echoLines[t.echoIndex], t.echoIndex > 0) {
+			debugTap(fmt.Sprintf("MISMATCH idx=%d line=%q exp=%q raw=%q\n", t.echoIndex, line, t.echoLineAt(t.echoIndex), rest[:i]))
+
 			// A prompt redraw can be printed before the wrapper echo. It is not
 			// part of the wrapper, so show it and keep looking for the first echo
 			// line instead of flushing the whole raw wrapper.
@@ -285,6 +290,7 @@ func (t *Tap) display(b []byte) {
 		t.echoScan += i + 1
 		if t.echoIndex == len(t.echoLines) {
 			t.echoDone = true
+			debugTap(fmt.Sprintf("ECHO_DONE command=%q trailing=%q\n", t.displayCmd, t.hidden[t.echoScan:]))
 			command := bytes.TrimRight(t.displayCmd, "\r\n")
 			if len(command) == 0 {
 				command = []byte(":")
@@ -326,6 +332,9 @@ const minScrolledEcho = 8
 func matchDisplayEcho(line, exp []byte, continuation bool) bool {
 	line = bytes.TrimSpace(line)
 	if matchEcho(line, exp) {
+		return true
+	}
+	if len(exp) >= 8 && bytes.Contains(line, exp) {
 		return true
 	}
 	return continuation && len(line) >= minScrolledEcho && bytes.HasSuffix(exp, line)
@@ -434,4 +443,23 @@ func (t *Tap) Result() Result {
 		}
 	}
 	return result
+}
+
+func (t *Tap) echoLineAt(index int) []byte {
+	if index < 0 || index >= len(t.echoLines) {
+		return nil
+	}
+	return t.echoLines[index]
+}
+
+func debugTap(report string) {
+	if os.Getenv("MOTTY_TAP_DEBUG") == "" {
+		return
+	}
+	f, err := os.OpenFile("/tmp/motty-tap-debug.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(report)
 }
