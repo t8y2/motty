@@ -40,4 +40,4 @@
 
 ## 组件依赖
 
-实时色盘使用 Viva 的 `ui.ColorPicker(...).Live(true)`，组件变更见 [vivaui/viva#501](https://github.com/vivaui/viva/pull/501)。CI 已固定到该 PR 的 `473396f065137ee692fa1fa837e64a2b8862ceda`；本地构建也需使用该提交或包含它的后续版本。正式合并 Motty 前，应先合并 Viva 的组件变更。
+实时色盘使用 Viva 的 `ui.ColorPicker(...).Live(true)`，组件变更见 [vivaui/viva#501](https://github.com/vivaui/viva/pull/501)。CI 已固定到该 PR 的 `a8f3f7ab1afa23a4f691ae740c270b050945a6be`；本地构建也需使用该提交或包含它的后续版本。正式合并 Motty 前，应先合并 Viva 的组件变更。

@@ -17,7 +17,7 @@ permissions:
 # reverse) without any change on the Motty side. Move the pin in the same commit
 # that needs a newer Viva API; do not check out the default branch here.
 env:
-  VIVA_REF: 473396f065137ee692fa1fa837e64a2b8862ceda # vivaui/viva#501: live color picker
+  VIVA_REF: a8f3f7ab1afa23a4f691ae740c270b050945a6be # vivaui/viva#501: live color picker
 
 # A superseded pull-request run is cancelled: the newer push contains everything
 # the older one would have tested, and leaving the older run in place makes the
