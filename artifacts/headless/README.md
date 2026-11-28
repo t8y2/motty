@@ -51,3 +51,18 @@ cleanup.
 The race run is focused. Windows/Linux runtime behavior and installed-app
 acceptance were not tested locally. No merge, installation or release was
 performed.
+
+## AI Assistant Wrapper Echo
+
+PR: https://github.com/t8y2/motty/pull/1782
+Captured: 2026-11-28.
+
+These PNGs compare the terminal echo for the same assistant command before and
+after the wrapper display fix. They are manually captured desktop screenshots
+on Arch Linux with zsh 5.9 and zsh-syntax-highlighting; no application data
+outside the disposable `MOTTY_DATA_DIR` was used.
+
+| File | State |
+| --- | --- |
+| [assistant-wrapper-echo-before.png](assistant-wrapper-echo-before.png) | Before: the internal wrapper, `GOPAI_` sentinel and a mangled prompt leak into the terminal |
+| [assistant-wrapper-echo-after.png](assistant-wrapper-echo-after.png) | After: only the real command, its output and the normal prompt remain |
