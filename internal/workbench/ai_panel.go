@@ -154,9 +154,82 @@ func (panel *aiPanel) textLength(surface int) int {
 	return 0
 }
 
+// aiSelectUnit is the granularity of a conversation text selection drag.
+type aiSelectUnit uint8
+
+const (
+	aiSelectChar aiSelectUnit = iota
+	aiSelectWord
+	aiSelectLine
+)
+
 // clearAITextSelection drops the selection, a drag in progress included.
 func (panel *aiPanel) clearAITextSelection() {
 	panel.textSelect.Clear()
+	panel.selectUnit = aiSelectChar
+	panel.selectOrigin = [2]ui.TextPoint{}
+	panel.selectAnchor = ui.TextPoint{}
+	panel.hasAnchor = false
+}
+
+func textPointBefore(left, right ui.TextPoint) bool {
+	return left.Surface < right.Surface || left.Surface == right.Surface && left.Offset < right.Offset
+}
+
+// textUnitSpan returns the word or logical line around point, in source byte offsets.
+func (panel *aiPanel) textUnitSpan(point ui.TextPoint, unit aiSelectUnit) (ui.TextPoint, ui.TextPoint) {
+	if unit == aiSelectChar {
+		return point, point
+	}
+	row, part := aiTextSurfaceRow(point.Surface)
+	if row < 0 || row >= len(panel.rows) {
+		return point, point
+	}
+	layout := panel.rows[row].textLayout(part)
+	if layout == nil || layout.TextLen() == 0 {
+		return point, point
+	}
+	value := layout.SelectedText(ui.TextRange{Focus: layout.TextLen()})
+	offset := min(max(point.Offset, 0), len(value))
+	for offset > 0 && offset < len(value) && value[offset]&0xc0 == 0x80 {
+		offset--
+	}
+	// Clicking to the right of a line snaps OffsetAt to the trailing newline;
+	// step onto the last character on that line so double-clicking selects the
+	// trailing word rather than the line break.
+	if unit == aiSelectWord && offset < len(value) && (value[offset] == '\n' || value[offset] == '\r') && offset > 0 {
+		if prev, size := utf8.DecodeLastRuneInString(value[:offset]); prev != '\n' && prev != '\r' {
+			offset -= size
+		}
+	}
+	index := utf8.RuneCountInString(value[:offset])
+	var span text.Range
+	if unit == aiSelectWord {
+		span = text.WordRange(value, index)
+	} else {
+		span = text.LineRange(value, index)
+	}
+	from, to := aiByteOffset(value, span.Start), aiByteOffset(value, span.End)
+	return ui.TextPoint{Surface: point.Surface, Offset: from}, ui.TextPoint{Surface: point.Surface, Offset: to}
+}
+
+// extendUnitSelection stretches an active word or line drag to the unit at point
+// while keeping the clicked origin unit inside the selection.
+func (panel *aiPanel) extendUnitSelection(at gfx.Point) bool {
+	point, ok := panel.textPointAt(at)
+	if !ok {
+		return false
+	}
+	from, to := panel.textUnitSpan(point, panel.selectUnit)
+	anchor, focus := panel.selectOrigin[0], to
+	if textPointBefore(from, panel.selectOrigin[0]) {
+		anchor, focus = panel.selectOrigin[1], from
+	}
+	if panel.textSelect.Anchor == anchor && panel.textSelect.Focus == focus {
+		return false
+	}
+	panel.textSelect.Anchor, panel.textSelect.Focus = anchor, focus
+	return true
 }
 
 // selectionFor is the Markdown highlight to paint for one row, empty for every
@@ -390,7 +463,15 @@ type aiPanel struct {
 	// saved. textFirst and textLast are the rows the last paint put on screen,
 	// the ones a drag can reach; -1 when none was painted.
 	textSelect          ui.TextSelection
+	selectUnit          aiSelectUnit
+	selectOrigin        [2]ui.TextPoint
+	selectAnchor        ui.TextPoint
+	hasAnchor           bool
 	textFirst, textLast int
+
+	// focusTarget asks the next paint to move keyboard focus to a control or text block.
+	focusTarget gfx.ID
+	contextMenu aiContextMenu
 
 	// The active message or history scrollbar's geometry and pointer drag.
 	scrollbar aiScrollbarState
@@ -573,6 +654,8 @@ func (state *State) setAIPanelOpen(open bool) {
 		ai.panel.history = false
 		ai.panel.modelMenu = false
 		ai.panel.autoMenu = false
+		ai.panel.reasoningMenu = false
+		ai.panel.contextMenu.open = false
 		ai.panel.scrollbar.dragging = false
 		ai.panel.clearAITextSelection()
 	}
@@ -616,6 +699,7 @@ func (state *State) openAIPanelWith(prompt string) {
 	}
 	ai.panel.history = false
 	if existing := ai.input.String(); strings.TrimSpace(existing) != "" {
+		ai.input.MoveTo(utf8.RuneCountInString(existing), false)
 		ai.input.Insert("\n\n" + prompt)
 		return
 	}
@@ -632,6 +716,7 @@ func (state *State) aiPanelReset() {
 	panel.scrollToEnd = true
 	panel.followSuppressed, panel.restoreMessage = false, false
 	panel.history = false
+	panel.contextMenu.open = false
 	panel.copied = ""
 	panel.scrollbar.dragging = false
 	panel.clearAITextSelection()
@@ -669,6 +754,8 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 			panel.targetOpen = !panel.targetOpen
 			panel.modelMenu = false
 			panel.autoMenu = false
+			panel.reasoningMenu = false
+			panel.contextMenu.open = false
 		}
 	case id == hitAITargetDismiss:
 		panel.targetOpen = false
@@ -704,16 +791,19 @@ func (state *State) aiPanelClick(id gfx.ID) bool {
 		panel.targetOpen = false
 		panel.autoMenu = false
 		panel.reasoningMenu = false
+		panel.contextMenu.open = false
 		panel.modelMenu = !panel.modelMenu
 	case id == hitAIAutoScope:
 		panel.targetOpen = false
 		panel.modelMenu = false
 		panel.reasoningMenu = false
+		panel.contextMenu.open = false
 		panel.autoMenu = !panel.autoMenu
 	case id == hitAIReasoningChip:
 		panel.targetOpen = false
 		panel.modelMenu = false
 		panel.autoMenu = false
+		panel.contextMenu.open = false
 		panel.reasoningMenu = !panel.reasoningMenu
 	case id == hitAISend:
 		if ai.run != nil {
@@ -798,6 +888,7 @@ func (state *State) toggleAIHistory() {
 		panel.restoreMessage = !panel.messageScroll.AtEnd()
 	}
 	panel.history = !panel.history
+	panel.contextMenu.open = false
 	panel.clearAITextSelection()
 	if panel.history {
 		state.aiPanelLoadHistory()
@@ -887,7 +978,7 @@ func (state *State) aiTrackPointer(event gfx.PointerEvent) (repaint bool) {
 	changed := over != panel.answerOver
 	panel.answerOver = over
 	if event.Kind == gfx.PointerDown && (event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone) &&
-		panel.hasAITextSelection() {
+		panel.hasAITextSelection() && !panel.contextMenu.open {
 		if _, _, onText := aiTextTarget(event.Target); !onText {
 			panel.clearAITextSelection()
 			changed = true
@@ -1021,10 +1112,13 @@ func (state *State) aiPanelPointerGesture(event gfx.PointerEvent) (gfx.EventResu
 	if result, handled := state.aiPanelScrollbarPointer(event); handled {
 		return result, true
 	}
+	if result, handled := state.aiPanelMenuPointer(event); handled {
+		return result, true
+	}
 	primary := event.Button == gfx.PointerButtonPrimary || event.Button == gfx.PointerButtonNone
 	if event.Kind == gfx.PointerDown && primary {
 		if _, _, ok := aiTextTarget(event.Target); ok {
-			if result := panel.textSelect.Pointer(event, panel.textPointAt); result.Handled {
+			if result := state.aiTextPointerDown(event); result.Handled {
 				return gfx.EventResult{Handled: true, Repaint: result.Changed, Focus: event.Target}, true
 			}
 		}
@@ -1032,7 +1126,7 @@ func (state *State) aiPanelPointerGesture(event gfx.PointerEvent) (gfx.EventResu
 		// A hovered move does not belong to the press and does not extend the
 		// selection, matching the terminal's drag; leaving the window ends the
 		// drag and keeps what was selected.
-		if result := panel.textSelect.Pointer(event, panel.textPointAt); result.Handled {
+		if result := state.aiTextPointerDrag(event); result.Handled {
 			return gfx.EventResult{Handled: true, Repaint: result.Changed}, true
 		}
 	}
@@ -1233,7 +1327,7 @@ func (state *State) aiPanelKeyGesture(event gfx.KeyEvent) (gfx.EventResult, bool
 	}
 	ai := &state.ai
 	panel := &ai.panel
-	if state.aiMenuShown() {
+	if state.aiMenuShown() || panel.contextMenu.open {
 		switch event.Key {
 		case gfx.KeyEscape, gfx.KeyEnter, gfx.KeySpace, gfx.KeyTab:
 			return gfx.EventResult{}, true
@@ -1360,12 +1454,20 @@ func (state *State) aiPanelEnter() {
 // selectable conversation text it owns the copy chord, so a selection never
 // falls through to the terminal's copy.
 func (state *State) aiPanelShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) {
-	if _, _, onText := aiTextTarget(event.Target); onText {
-		if chord, ok := keymap.FromEvent(event); ok && state.shortcuts.actionFor(chord) == shortcutCopy {
-			if !event.Repeat {
-				state.aiCopyTextSelection()
+	if row, _, onText := aiTextTarget(event.Target); onText {
+		if chord, ok := keymap.FromEvent(event); ok {
+			if state.shortcuts.actionFor(chord) == shortcutCopy {
+				if !event.Repeat {
+					state.aiCopyTextSelection()
+				}
+				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			return gfx.EventResult{Handled: true, Repaint: true}, true
+			if chord == (keymap.Chord{Modifiers: keymap.Primary, Char: 'a'}) {
+				if !event.Repeat {
+					state.aiSelectRow(row)
+				}
+				return gfx.EventResult{Handled: true, Repaint: true}, true
+			}
 		}
 	}
 	if event.Target != hitAIInput || event.Text != "j" || event.Modifiers&(gfx.ModifierControl|gfx.ModifierMeta) == 0 ||
@@ -1376,6 +1478,121 @@ func (state *State) aiPanelShortcut(event gfx.KeyEvent) (gfx.EventResult, bool) 
 		state.ai.input.Insert("\n")
 	}
 	return gfx.EventResult{Handled: true, Repaint: true}, true
+}
+
+// aiTextPointerDown begins or extends a selection in conversation text: a single
+// press begins a character selection, Shift+click extends from the last anchor,
+// and double or triple clicks select a word or logical line while keeping drag
+// tracking active.
+func (state *State) aiTextPointerDown(event gfx.PointerEvent) ui.TextSelectionResult {
+	panel := &state.ai.panel
+	at := gfx.Point{X: event.X, Y: event.Y}
+	point, ok := panel.textPointAt(at)
+	if !ok {
+		panel.selectUnit = aiSelectChar
+		panel.selectOrigin = [2]ui.TextPoint{}
+		return panel.textSelect.Pointer(event, panel.textPointAt)
+	}
+	clicks := max(event.ClickCount, 1)
+	if event.Modifiers&gfx.ModifierShift != 0 && clicks == 1 && (panel.hasAnchor || panel.hasAITextSelection()) {
+		anchor := panel.selectAnchor
+		if panel.hasAITextSelection() {
+			anchor = panel.textSelect.Anchor
+		}
+		result := panel.textSelect.Pointer(event, func(gfx.Point) (ui.TextPoint, bool) { return anchor, true })
+		panel.textSelect.Focus = point
+		panel.selectUnit = aiSelectChar
+		panel.selectOrigin = [2]ui.TextPoint{}
+		panel.selectAnchor, panel.hasAnchor = anchor, true
+		return result
+	}
+	if clicks >= 2 {
+		unit := aiSelectWord
+		if clicks >= 3 {
+			unit = aiSelectLine
+		}
+		from, to := panel.textUnitSpan(point, unit)
+		result := panel.textSelect.Pointer(event, func(gfx.Point) (ui.TextPoint, bool) { return from, true })
+		panel.textSelect.Focus = to
+		panel.selectUnit = unit
+		panel.selectOrigin = [2]ui.TextPoint{from, to}
+		panel.selectAnchor, panel.hasAnchor = point, true
+		return result
+	}
+	result := panel.textSelect.Pointer(event, panel.textPointAt)
+	panel.selectUnit = aiSelectChar
+	panel.selectOrigin = [2]ui.TextPoint{}
+	if result.Handled {
+		panel.selectAnchor, panel.hasAnchor = panel.textSelect.Anchor, true
+	}
+	return result
+}
+
+// aiTextPointerDrag continues or ends a drag on conversation text at the
+// granularity chosen when the press began.
+func (state *State) aiTextPointerDrag(event gfx.PointerEvent) ui.TextSelectionResult {
+	panel := &state.ai.panel
+	if panel.selectUnit == aiSelectChar {
+		return panel.textSelect.Pointer(event, panel.textPointAt)
+	}
+	switch event.Kind {
+	case gfx.PointerMove:
+		if !event.Captured {
+			return ui.TextSelectionResult{}
+		}
+		changed := panel.extendUnitSelection(gfx.Point{X: event.X, Y: event.Y})
+		return ui.TextSelectionResult{Handled: true, Changed: changed}
+	case gfx.PointerUp:
+		panel.extendUnitSelection(gfx.Point{X: event.X, Y: event.Y})
+		panel.textSelect.EndDrag()
+		if panel.textSelect.Empty() {
+			panel.textSelect.Clear()
+		}
+		return ui.TextSelectionResult{Handled: true, Changed: true}
+	case gfx.PointerExit:
+		panel.textSelect.EndDrag()
+		return ui.TextSelectionResult{Handled: true, Changed: true}
+	}
+	return ui.TextSelectionResult{}
+}
+
+// aiSelectRow selects all selectable text belonging to conversation row and
+// returns the primary hit identity of that row when it has one.
+func (state *State) aiSelectRow(row int) (gfx.ID, bool) {
+	panel := &state.ai.panel
+	if row < 0 || row >= len(panel.rows) {
+		return gfx.ID{}, false
+	}
+	first, last, lastLen := -1, -1, 0
+	var firstHit gfx.ID
+	for part := aiTextPart(0); part < aiTextPartCount; part++ {
+		if layout := panel.rows[row].textLayout(part); layout != nil {
+			if n := layout.TextLen(); n > 0 {
+				surface := aiTextSurface(row, part)
+				if first < 0 {
+					first = surface
+					if row < aiMaxRowHits {
+						if part == aiTextOutput {
+							firstHit = hitAIToolOutputText.At(row)
+						} else {
+							firstHit = hitAIAnswerText.At(row)
+						}
+					}
+				}
+				last, lastLen = surface, n
+			}
+		}
+	}
+	if first < 0 {
+		return gfx.ID{}, false
+	}
+	start := ui.TextPoint{Surface: first, Offset: 0}
+	end := ui.TextPoint{Surface: last, Offset: lastLen}
+	panel.textSelect.Select(start, end)
+	panel.selectUnit = aiSelectChar
+	panel.selectOrigin = [2]ui.TextPoint{}
+	panel.selectAnchor, panel.hasAnchor = start, true
+	return firstHit, true
 }
 
 // aiCopyTextSelection writes the selected conversation text to the clipboard.

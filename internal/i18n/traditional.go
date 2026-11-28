@@ -1547,10 +1547,13 @@ var traditionalAIPanel = AIPanelMessages{
 	NoticeStoreError:    "無法開啟助手的資料庫：%s",
 	AnswerTruncated:     "回答達到了模型的輸出上限，末尾被截斷。",
 
-	MenuAskSelection:  "就所選內容詢問助手",
-	MenuExplainOutput: "解釋最近的輸出",
-	PromptSelectionFn: "關於終端機中的這一段：",
-	PromptExplain:     "請解釋這個終端機最近的輸出，並指出其中的問題。",
+	MenuAskSelection:      "就所選內容詢問助手",
+	MenuExplainOutput:     "解釋最近的輸出",
+	MenuCopyMessage:       "複製整則訊息",
+	MenuFollowUpSelection: "追問選取內容",
+	MenuFollowUpMessage:   "引用此訊息追問",
+	PromptSelectionFn:     "關於終端機中的這一段：",
+	PromptExplain:         "請解釋這個終端機最近的輸出，並指出其中的問題。",
 }
 var traditionalAISettings = AISettingsMessages{
 	CLIAuthTitle:      "CLI 認證",

@@ -188,8 +188,11 @@ type AIPanelMessages struct {
 	// limit, so a half answer is not read as a finished one.
 	AnswerTruncated string
 
-	MenuAskSelection  string
-	MenuExplainOutput string
-	PromptSelectionFn string // introduces a quoted selection
-	PromptExplain     string
+	MenuAskSelection      string
+	MenuExplainOutput     string
+	MenuCopyMessage       string
+	MenuFollowUpSelection string
+	MenuFollowUpMessage   string
+	PromptSelectionFn     string // introduces a quoted selection
+	PromptExplain         string
 }

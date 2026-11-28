@@ -619,8 +619,8 @@ func (state *State) scrollWindow(event gfx.ScrollEvent) gfx.EventResult {
 		p := &state.editor.tagPicker
 		return gfx.EventResult{Handled: true, Repaint: pointInRect(event.X, event.Y, p.popup) && p.control.Wheel(event)}
 	}
-	if state.aiMenuShown() {
-		// An open chip menu is the page's popup and owns the wheel; its own
+	if state.aiMenuShown() || state.ai.panel.contextMenu.open {
+		// An open assistant menu is the page's popup and owns the wheel; its own
 		// scroll route (and its backdrop) decide where the event goes.
 		return state.windowPage().RouteWheel(event)
 	}

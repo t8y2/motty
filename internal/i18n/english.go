@@ -1547,10 +1547,13 @@ var englishAIPanel = AIPanelMessages{
 	NoticeStoreError:    "The assistant's database could not be opened: %s",
 	AnswerTruncated:     "The answer reached the model's output limit and was cut off.",
 
-	MenuAskSelection:  "Ask the assistant about the selection",
-	MenuExplainOutput: "Explain recent output",
-	PromptSelectionFn: "About this part of the terminal:",
-	PromptExplain:     "Explain the recent output of this terminal and point out anything wrong.",
+	MenuAskSelection:      "Ask the assistant about the selection",
+	MenuExplainOutput:     "Explain recent output",
+	MenuCopyMessage:       "Copy message",
+	MenuFollowUpSelection: "Follow up on selection",
+	MenuFollowUpMessage:   "Follow up on message",
+	PromptSelectionFn:     "About this part of the terminal:",
+	PromptExplain:         "Explain the recent output of this terminal and point out anything wrong.",
 }
 var englishAISettings = AISettingsMessages{
 	CLIAuthTitle:      "CLI authentication",

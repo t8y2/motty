@@ -1420,6 +1420,7 @@ func (state *State) aiNewConversation() {
 	ai.target, ai.extras, ai.targetSet = gate.SessionInfo{}, nil, false
 	ai.panel.targetOpen = false
 	ai.panel.autoMenu = false
+	ai.panel.contextMenu.open = false
 	ai.items, ai.history, ai.conv, ai.session, ai.notice = nil, nil, 0, "", ""
 	ai.noteMentions, ai.requestNoteReferences = nil, nil
 	state.aiClearAttachments()
@@ -1456,6 +1457,7 @@ func (state *State) aiOpenConversation(id int64) {
 	ai.target, ai.extras, ai.targetSet = gate.SessionInfo{}, nil, true
 	ai.panel.targetOpen = false
 	ai.panel.autoMenu = false
+	ai.panel.contextMenu.open = false
 	ai.autoUpTo = nil // another conversation's scope does not follow this one
 	ai.modelPinned = false
 	state.aiSyncModel()

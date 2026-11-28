@@ -1547,10 +1547,13 @@ var chineseAIPanel = AIPanelMessages{
 	NoticeStoreError:    "无法打开助手的数据库:%s",
 	AnswerTruncated:     "回答达到了模型的输出上限，末尾被截断。",
 
-	MenuAskSelection:  "就所选内容询问助手",
-	MenuExplainOutput: "解释最近的输出",
-	PromptSelectionFn: "关于终端中的这一段:",
-	PromptExplain:     "请解释这个终端最近的输出,并指出其中的问题。",
+	MenuAskSelection:      "就所选内容询问助手",
+	MenuExplainOutput:     "解释最近的输出",
+	MenuCopyMessage:       "复制整条消息",
+	MenuFollowUpSelection: "追问选中内容",
+	MenuFollowUpMessage:   "引用此消息追问",
+	PromptSelectionFn:     "关于终端中的这一段:",
+	PromptExplain:         "请解释这个终端最近的输出,并指出其中的问题。",
 }
 var chineseAISettings = AISettingsMessages{
 	CLIAuthTitle:      "CLI 认证",

@@ -25,6 +25,7 @@ func init() {
 		hitToolbarDockTop, hitToolbarDockSideTop, hitToolbarDockSideBottom, hitToolbarDockLeftTop, hitToolbarDockLeftBottom, hitToolbarDockBottom, hitToolbarDockBottomRight, hitToolbarDockHide, hitToolbarDockCustomize, hitToolbarDockReset,
 		hitTabMenuRename, hitTabMenuDuplicate, hitTabMenuEditHost, hitTabMenuNewWindow, hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuBrowserClose, hitTabMenuBrowserOpen, hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency, hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuReconnect, hitTabMenuRestart, hitTabMenuDisconnect, hitTabMenuSaveWorkspace, hitTabMenuLock, hitTabMenuCloseRight,
 		hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuDownloadHere, hitSFTPMenuSend, hitSFTPMenuInsertPath, hitSFTPMenuEdit, hitSFTPMenuReveal, hitSFTPMenuOpenFolder, hitSFTPMenuRename, hitSFTPMenuMove, hitSFTPMenuChmod, hitSFTPMenuChown, hitSFTPMenuExtract, hitSFTPMenuCompress, hitSFTPMenuDelete, hitSFTPMenuSudo, hitSFTPMenuCopyFiles, hitSFTPMenuPasteFiles,
+		hitAIMenuCopy, hitAIMenuCopyCode, hitAIMenuCopyMessage, hitAIMenuFollowUp, hitAIMenuSelectAll,
 	} {
 		menuRowIDs[id] = true
 	}
@@ -146,6 +147,19 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.MenuReconnect
 	case hitTerminalMenuDisconnect:
 		return m.MenuDisconnect
+	case hitAIMenuCopy:
+		return m.MenuCopy
+	case hitAIMenuCopyCode:
+		return m.AIPanel.CopyCode
+	case hitAIMenuCopyMessage:
+		return m.AIPanel.MenuCopyMessage
+	case hitAIMenuFollowUp:
+		if state.ai.panel.hasAITextSelection() {
+			return m.AIPanel.MenuFollowUpSelection
+		}
+		return m.AIPanel.MenuFollowUpMessage
+	case hitAIMenuSelectAll:
+		return m.MenuSelectAll
 	case hitSnippetMenuSend:
 		return m.Tools.SnippetSend
 	case hitSnippetMenuUp:

@@ -775,3 +775,216 @@ func TestTruncatedUserMessageEndsWithAnEllipsis(t *testing.T) {
 	}
 	t.Fatal("the truncated user message does not show that it was cut")
 }
+
+func answerCaretCenter(t *testing.T, view *aiRowView, offset int) gfx.Point {
+	t.Helper()
+	caret, ok := view.md.CaretAt(offset)
+	if !ok {
+		t.Fatalf("no caret at offset %d", offset)
+	}
+	return gfx.Point{X: caret.X + 2, Y: caret.Y + caret.Height/2}
+}
+
+func TestDoubleClickSelectsWordAndExtendsByWords(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.ai.open = true
+	body := "alpha beta_two 中文测试 omega\nsecond line"
+	state.ai.items = []aiItem{{kind: aiAssistant, text: body}}
+	paintAt(state, panelWide)
+	panel := &state.ai.panel
+	row := &panel.rows[0]
+	id := hitAIAnswerText.At(0)
+
+	// Double-click inside an identifier with an underscore selects the whole token.
+	wordAt := answerCaretCenter(t, row, strings.Index(body, "beta_two")+3)
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, X: wordAt.X, Y: wordAt.Y, Target: id, Viewport: panelWide})
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "beta_two" {
+		t.Fatalf("double-click selected %q, %v; want %q", got, ok, "beta_two")
+	}
+
+	// Dragging backward keeps the originally double-clicked word inside the selection.
+	alphaAt := answerCaretCenter(t, row, 2)
+	answerPointerCaptured(state, gfx.PointerMove, alphaAt, id, true)
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta_two" {
+		t.Fatalf("backward word drag selected %q, %v; want %q", got, ok, "alpha beta_two")
+	}
+
+	// Dragging forward across CJK text keeps the original word as the anchor.
+	cjkAt := answerCaretCenter(t, row, strings.Index(body, "中文测试")+3)
+	answerPointerCaptured(state, gfx.PointerMove, cjkAt, id, true)
+	answerPointerCaptured(state, gfx.PointerUp, cjkAt, id, true)
+	if panel.textSelect.Dragging() {
+		t.Fatal("word drag did not end on PointerUp")
+	}
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "beta_two 中文测试" {
+		t.Fatalf("forward word drag selected %q, %v; want %q", got, ok, "beta_two 中文测试")
+	}
+
+	// Double-clicking past the right end of a line selects its trailing word, not the newline.
+	lineEndY := answerCaretCenter(t, row, strings.Index(body, "omega")).Y
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 2, X: row.textRect.X + row.textRect.Width - 1, Y: lineEndY, Target: id, Viewport: panelWide})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, ClickCount: 2, X: row.textRect.X + row.textRect.Width - 1, Y: lineEndY, Target: id, Captured: true, Viewport: panelWide})
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "omega" {
+		t.Fatalf("line-end double-click selected %q, %v; want %q", got, ok, "omega")
+	}
+}
+
+func TestTripleClickSelectsParagraphOrCodeLineAndExtends(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.ai.open = true
+	longPara := strings.Repeat("wrapping paragraph word ", 8) + "end"
+	body := longPara + "\n\n```\nfirst line\nsecond line\n```"
+	state.ai.items = []aiItem{{kind: aiAssistant, text: body}}
+	paintAt(state, panelWide)
+	panel := &state.ai.panel
+	row := &panel.rows[0]
+	id := hitAIAnswerText.At(0)
+
+	// Triple-click on a wrapped paragraph selects the whole logical paragraph.
+	paraAt := answerCaretCenter(t, row, 10)
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 3, X: paraAt.X, Y: paraAt.Y, Target: id, Viewport: panelWide})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, ClickCount: 3, X: paraAt.X, Y: paraAt.Y, Target: id, Captured: true, Viewport: panelWide})
+	if got, ok := panel.aiTextSelectionText(); !ok || got != longPara+"\n" {
+		t.Fatalf("triple-click paragraph selected %q, %v; want %q", got, ok, longPara+"\n")
+	}
+
+	// Triple-click inside a fenced code block selects that code line and extends by lines.
+	rendered := row.md.SelectedText(ui.TextRange{Focus: row.md.TextLen()})
+	firstOffset := strings.Index(rendered, "first line")
+	secondOffset := strings.Index(rendered, "second line")
+	firstAt := answerCaretCenter(t, row, firstOffset+2)
+	secondAt := answerCaretCenter(t, row, secondOffset+2)
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, ClickCount: 3, X: firstAt.X, Y: firstAt.Y, Target: id, Viewport: panelWide})
+	answerPointerCaptured(state, gfx.PointerMove, secondAt, id, true)
+	answerPointerCaptured(state, gfx.PointerUp, secondAt, id, true)
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "first line\nsecond line" {
+		t.Fatalf("triple-click code drag selected %q, %v; want %q", got, ok, "first line\nsecond line")
+	}
+}
+
+func TestShiftClickExtendsFromLastPressOrSelection(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.ai.open = true
+	body := "alpha beta gamma delta"
+	state.ai.items = []aiItem{{kind: aiAssistant, text: body}}
+	paintAt(state, panelWide)
+	panel := &state.ai.panel
+	row := &panel.rows[0]
+	id := hitAIAnswerText.At(0)
+
+	// Single click without dragging leaves no selection, but preserves the anchor for Shift+click.
+	start := answerCaretCenter(t, row, 0)
+	answerPointer(state, gfx.PointerDown, start, id)
+	answerPointer(state, gfx.PointerUp, start, id)
+	if panel.hasAITextSelection() {
+		t.Fatal("click left a selection")
+	}
+
+	caretMid, ok := row.md.CaretAt(len("alpha beta"))
+	if !ok {
+		t.Fatal("no caret at mid")
+	}
+	mid := gfx.Point{X: caretMid.X, Y: caretMid.Y + caretMid.Height/2}
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Modifiers: gfx.ModifierShift, ClickCount: 1, X: mid.X, Y: mid.Y, Target: id, Viewport: panelWide})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Modifiers: gfx.ModifierShift, ClickCount: 1, X: mid.X, Y: mid.Y, Target: id, Captured: true, Viewport: panelWide})
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta" {
+		t.Fatalf("shift-click from click anchor selected %q, %v; want %q", got, ok, "alpha beta")
+	}
+
+	// Another Shift+click extends further from the original anchor.
+	caretEnd, ok := row.md.CaretAt(len("alpha beta gamma"))
+	if !ok {
+		t.Fatal("no caret at end")
+	}
+	end := gfx.Point{X: caretEnd.X, Y: caretEnd.Y + caretEnd.Height/2}
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerDown, Button: gfx.PointerButtonPrimary, Modifiers: gfx.ModifierShift, ClickCount: 1, X: end.X, Y: end.Y, Target: id, Viewport: panelWide})
+	state.Pointer(gfx.PointerEvent{Kind: gfx.PointerUp, Button: gfx.PointerButtonPrimary, Modifiers: gfx.ModifierShift, ClickCount: 1, X: end.X, Y: end.Y, Target: id, Captured: true, Viewport: panelWide})
+	if got, ok := panel.aiTextSelectionText(); !ok || got != "alpha beta gamma" {
+		t.Fatalf("second shift-click selected %q, %v; want %q", got, ok, "alpha beta gamma")
+	}
+}
+
+func TestNoticeAndExpandedReasoningSelectAndCopy(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.ai.open = true
+	reason := "checking the host logs first"
+	notice := "request failed: timeout"
+	state.ai.items = []aiItem{
+		{kind: aiReasoning, text: reason},
+		{kind: aiNotice, text: notice},
+	}
+	canvas, _ := paintAt(state, panelWide)
+	panel := &state.ai.panel
+
+	// Collapsed reasoning exposes no selectable body hit.
+	if _, ok := canvasHit(canvas.Hits(), hitAIAnswerText.At(0)); ok {
+		t.Fatal("collapsed reasoning exposed a selectable text hit")
+	}
+
+	// Notice text is immediately selectable, highlightable and copyable.
+	noticeID := hitAIAnswerText.At(1)
+	dragSelectWholeText(t, state, canvas, noticeID)
+	if got, ok := panel.aiTextSelectionText(); !ok || got != notice {
+		t.Fatalf("notice selection = %q, %v; want %q", got, ok, notice)
+	}
+	canvas, _ = paintAt(state, panelWide)
+	if rects := markdownSelectionRects(canvas, withAlpha(state.pal.text, 0.25)); len(rects) == 0 {
+		t.Fatal("notice selection was not highlighted")
+	}
+	var copied string
+	state.options.SetClipboardText = func(value string) error { copied = value; return nil }
+	if result := state.Shortcut(copyChord(noticeID)); !result.Handled || copied != notice {
+		t.Fatalf("copying notice = %q, %+v", copied, result)
+	}
+
+	// Expanding reasoning makes its body selectable; collapsing clears that selection.
+	state.Click(hitAIRows.At(0))
+	canvas, _ = paintAt(state, panelWide)
+	reasonID := hitAIAnswerText.At(0)
+	dragSelectWholeText(t, state, canvas, reasonID)
+	if got, ok := panel.aiTextSelectionText(); !ok || got != reason {
+		t.Fatalf("reasoning selection = %q, %v; want %q", got, ok, reason)
+	}
+	state.Click(hitAIRows.At(0))
+	paintAt(state, panelWide)
+	if panel.hasAITextSelection() {
+		t.Fatal("collapsing reasoning kept its text selection")
+	}
+}
+
+func TestPrimaryASelectsCurrentMessageRow(t *testing.T) {
+	state, _ := panelState(t, nil)
+	state.ai.open = true
+	state.ai.items = []aiItem{
+		{kind: aiAssistant, text: "first message"},
+		{kind: aiTool, call: llm.ToolCall{ID: "1", Name: "terminal_exec", Arguments: `{"command":"pwd"}`}, status: aiToolDone, result: "/tmp"},
+		{kind: aiNotice, text: "warning line"},
+	}
+	paintAt(state, panelWide)
+	state.Click(hitAIRows.At(1))
+	paintAt(state, panelWide)
+
+	allChord := gfx.KeyEvent{Text: "a", Modifiers: keymap.Primary, Target: hitAIAnswerText.At(0)}
+	if result := state.Shortcut(allChord); !result.Handled {
+		t.Fatalf("Primary+A on assistant = %+v", result)
+	}
+	if got, ok := state.ai.panel.aiTextSelectionText(); !ok || got != "first message" {
+		t.Fatalf("Primary+A on assistant selected %q, %v", got, ok)
+	}
+
+	// Primary+A on a tool card selects both its command and expanded output, not adjacent messages.
+	if result := state.Shortcut(gfx.KeyEvent{Text: "a", Modifiers: keymap.Primary, Target: hitAIToolOutputText.At(1)}); !result.Handled {
+		t.Fatalf("Primary+A on tool = %+v", result)
+	}
+	if got, ok := state.ai.panel.aiTextSelectionText(); !ok || got != "pwd\n\n/tmp" {
+		t.Fatalf("Primary+A on tool selected %q, %v", got, ok)
+	}
+
+	// Primary+A on a notice selects only that notice.
+	if result := state.Shortcut(gfx.KeyEvent{Text: "a", Modifiers: keymap.Primary, Target: hitAIAnswerText.At(2)}); !result.Handled {
+		t.Fatalf("Primary+A on notice = %+v", result)
+	}
+	if got, ok := state.ai.panel.aiTextSelectionText(); !ok || got != "warning line" {
+		t.Fatalf("Primary+A on notice selected %q, %v", got, ok)
+	}
+}
