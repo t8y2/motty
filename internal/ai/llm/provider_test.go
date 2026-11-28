@@ -231,7 +231,7 @@ func TestParallelToolCalls(t *testing.T) {
 				}
 				evs := collect(t, ch)
 				done := terminal(t, evs)
-				want := []ToolCall{{"call_a", "read", args1}, {"call_b", "run", args2}}
+				want := []ToolCall{{ID: "call_a", Name: "read", Arguments: args1}, {ID: "call_b", Name: "run", Arguments: args2}}
 				if got := toolCalls(evs); !reflect.DeepEqual(got, want) || done.Kind != EventDone {
 					t.Fatalf("got %+v", evs)
 				}
@@ -250,7 +250,7 @@ func TestOpenAIToolCallsInterleavedAndEmptyArgs(t *testing.T) {
 	ch, _ := NewOpenAI(Config{BaseURL: srv.URL}).Stream(bg, simpleReq)
 	evs := collect(t, ch)
 	terminal(t, evs)
-	want := []ToolCall{{"a", "one", "{}"}, {"b", "two", `{"x":1}`}}
+	want := []ToolCall{{ID: "a", Name: "one", Arguments: "{}"}, {ID: "b", Name: "two", Arguments: `{"x":1}`}}
 	if got := toolCalls(evs); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)
 	}
@@ -969,12 +969,12 @@ func TestOpenAIResponsesStreams(t *testing.T) {
 		{name: "arguments only on the done item",
 			body: item("response.output_item.added", 0, `"id":"fc_1","call_id":"c1","name":"run"`) +
 				item("response.output_item.done", 0, `"id":"fc_1","call_id":"c1","name":"run","arguments":"{\"a\":1}"`) + rsCompleted(),
-			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3}, calls: []ToolCall{{"c1", "run", `{"a":1}`}}},
+			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3}, calls: []ToolCall{{ID: "c1", Name: "run", Arguments: `{"a":1}`}}},
 		{name: "arguments only as deltas, flushed at completion",
 			body: item("response.output_item.added", 0, `"id":"fc_1","call_id":"c1","name":"run"`) +
 				rsEv("response.function_call_arguments.delta", `"item_id":"fc_1","delta":"{\"a\""`) +
 				rsEv("response.function_call_arguments.delta", `"item_id":"fc_1","delta":":2}"`) + rsCompleted(),
-			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3}, calls: []ToolCall{{"c1", "run", `{"a":2}`}}},
+			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3}, calls: []ToolCall{{ID: "c1", Name: "run", Arguments: `{"a":2}`}}},
 		{name: "items named by position only",
 			body: item("response.output_item.added", 1, `"call_id":"c2","name":"two"`) +
 				item("response.output_item.added", 0, `"call_id":"c1","name":"one"`) +
@@ -982,7 +982,7 @@ func TestOpenAIResponsesStreams(t *testing.T) {
 				item("response.output_item.done", 0, `"call_id":"c1","name":"one","arguments":""`) +
 				item("response.output_item.done", 1, `"call_id":"c2","name":"two","arguments":""`) + rsCompleted(),
 			reason: "tool_calls", usage: Usage{InputTokens: 7, OutputTokens: 3},
-			calls: []ToolCall{{"c1", "one", "{}"}, {"c2", "two", `{"k":1}`}}},
+			calls: []ToolCall{{ID: "c1", Name: "one", Arguments: "{}"}, {ID: "c2", Name: "two", Arguments: `{"k":1}`}}},
 		{name: "failed response",
 			body: rsText("a") + rsEv("response.failed", `"response":{"error":{"code":"x","message":"model overloaded"}}`), text: "a", errMsg: "model overloaded"},
 		{name: "error without a message",
