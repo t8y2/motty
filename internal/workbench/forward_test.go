@@ -2237,3 +2237,82 @@ func TestForwardWithAutoStartStartsWhenATabConnectsToItsHost(t *testing.T) {
 		t.Fatalf("forward without auto-start was started: %+v", state.forwards[1])
 	}
 }
+
+func TestForwardRuntimeRefusalShowsDeduplicatedNotice(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	fake.dial = func(context.Context, string, string) (net.Conn, error) {
+		return nil, &ssh.OpenChannelError{Reason: ssh.Prohibited, Message: "open failed"}
+	}
+	addForwardRule(t, state, "PermitOpen Refused", freePort(t), "127.0.0.1", 3306)
+	refusedFwd := &state.forwards[0]
+
+	// Starting a forward does not produce speculative warnings before a connection is actually refused.
+	state.Click(hitForwardRowToggleList.At(int(refusedFwd.ID)))
+	waitForward(t, state, func() bool { return refusedFwd.runner != nil })
+	if len(state.fileNotices.items) != 0 {
+		t.Fatalf("unexpected speculative notice on start: %+v", state.fileNotices.items)
+	}
+
+	// First refused connection triggers a visible toast notice and updates the row detail.
+	client1, err := net.Dial("tcp", refusedFwd.runner.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(client1)
+	_ = client1.Close()
+
+	waitForward(t, state, func() bool { return len(state.fileNotices.items) == 1 })
+	if got := state.fileNotices.items[0]; got.title != "PermitOpen Refused" || got.detail != state.messages.ForwardRefusedHint {
+		t.Fatalf("notice = %+v, want title %q and detail %q", got, "PermitOpen Refused", state.messages.ForwardRefusedHint)
+	}
+	if refusedFwd.detail != state.messages.ForwardRefusedHint {
+		t.Fatalf("forward detail = %q, want %q", refusedFwd.detail, state.messages.ForwardRefusedHint)
+	}
+
+	// Subsequent refused connections on the same running forward do not spam duplicate notices.
+	client2, err := net.Dial("tcp", refusedFwd.runner.Status().ListenAddress)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(client2)
+	_ = client2.Close()
+	state.Wake()
+	if len(state.fileNotices.items) != 1 {
+		t.Fatalf("expected 1 deduplicated notice, got %d", len(state.fileNotices.items))
+	}
+	state.Click(hitForwardRowToggleList.At(int(refusedFwd.ID)))
+}
+
+func TestRemoteForwardRefusedShowsLocalizedWarning(t *testing.T) {
+	world, options := newWorld(t)
+	state := newTestState(t, options)
+	fake := connect(t, state, world)
+	fake.set(func(status *sshconn.Status) { status.Phase = sshconn.PhaseConnected })
+	state.Wake()
+
+	fake.listen = func(string, string) (net.Listener, error) {
+		return nil, errors.New("ssh: tcpip-forward request denied by peer")
+	}
+	openForwardEditor(t, state)
+	state.forwardEditor.mode = portforward.ModeRemote
+	replaceForwardField(state, hitForwardDialogLabel, "Remote Web")
+	replaceForwardField(state, hitForwardDialogLocalPort, "18080")
+	replaceForwardField(state, hitForwardDialogDestination, "127.0.0.1")
+	replaceForwardField(state, hitForwardDialogDestinationPort, "8080")
+	state.Click(hitForwardDialogSubmit)
+
+	forward := &state.forwards[0]
+	state.Click(hitForwardRowToggleList.At(int(forward.ID)))
+	waitForward(t, state, func() bool { return !forward.starting && forward.lastError != "" })
+	if forward.lastError != state.messages.ForwardRemoteRefusedHint {
+		t.Fatalf("lastError = %q, want %q", forward.lastError, state.messages.ForwardRemoteRefusedHint)
+	}
+	if len(state.fileNotices.items) != 1 || state.fileNotices.items[0].detail != state.messages.ForwardRemoteRefusedHint {
+		t.Fatalf("notices = %+v, want remote forward refused warning", state.fileNotices.items)
+	}
+}

@@ -1065,6 +1065,7 @@ type Messages struct {
 	ForwardFieldRelay             string
 	ForwardRelayPlaceholder       string
 	ForwardRefusedHint            string
+	ForwardRemoteRefusedHint      string
 	ForwardRelayRefused           string
 	ErrForwardRelayFmt            string
 	ForwardDestinationPlaceholder string

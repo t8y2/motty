@@ -59,6 +59,7 @@ type forwardRecord struct {
 	// network recovery that revives that tab re-attaches the forward too.
 	reviveSessionID uint32
 	lastError       string
+	refusedNotified bool
 	detail          string
 	cells           [5]string
 }
@@ -263,6 +264,7 @@ func (forward *forwardRecord) refresh(messages i18n.Messages, hostAvailable bool
 			status = messages.ForwardRunningError
 		} else {
 			forward.lastError = ""
+			forward.refusedNotified = false
 			forward.detail = fmt.Sprintf(messages.ForwardTrafficFmt, runtime.Accepted, runtime.Uploaded, runtime.Downloaded)
 			status = fmt.Sprintf(messages.ForwardRunningFmt, runtime.Active)
 		}
@@ -301,6 +303,7 @@ func (forward *forwardRecord) stop() {
 	forward.starting = false
 	forward.startID = 0
 	forward.reviveSessionID = 0
+	forward.refusedNotified = false
 }
 
 // hold closes what the forward runs and leaves it waiting for its session to
@@ -855,6 +858,7 @@ func (state *State) startForward(forward *forwardRecord, session *Session) {
 	forward.pending = false
 	forward.reviveSessionID = 0
 	forward.lastError = ""
+	forward.refusedNotified = false
 	if message := state.forwardPortConflict(*forward); message != "" {
 		state.failForward(forward, message)
 		return
@@ -1072,6 +1076,10 @@ func (state *State) pumpForwards() {
 			continue
 		}
 		forward.refresh(state.messages, state.forwardHostAvailable(*forward))
+		if status.LastError != nil && sshconn.IsChannelRefused(status.LastError) && !forward.refusedNotified {
+			forward.refusedNotified = true
+			state.showActionWarning(forward.Label, forwardFailureText(state.messages, *forward, status.LastError))
+		}
 	}
 }
 
@@ -1089,7 +1097,12 @@ func (state *State) pumpForwardStarts() {
 			forward.starting = false
 			forward.startID = 0
 			if result.err != nil {
-				state.failForward(forward, result.err.Error())
+				message := result.err.Error()
+				if sshconn.IsRemoteForwardRefused(result.err) {
+					message = state.messages.ForwardRemoteRefusedHint
+					state.showActionWarning(forward.Label, message)
+				}
+				state.failForward(forward, message)
 				continue
 			}
 			forward.runner = result.runner
