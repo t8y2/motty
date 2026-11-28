@@ -41,13 +41,15 @@ type Tap struct {
 	// The wrapper's echo is hidden from the terminal: the user sees the
 	// logical command once instead. All raw bytes stay in hidden so a mismatch
 	// can fall back to showing exactly what the shell sent.
-	displayOn  bool
-	displayCmd []byte
-	echoLines  [][]byte
-	echoIndex  int
-	echoScan   int
-	echoDone   bool
-	hidden     []byte
+	displayOn   bool
+	displayCmd  []byte
+	echoLines   [][]byte
+	echoIndex   int
+	echoScan    int
+	echoLead    int
+	echoLeadEnd int
+	echoDone    bool
+	hidden      []byte
 }
 
 // NewTap returns a Tap for one command wrapped with the same nonce. maxOutput
@@ -161,6 +163,8 @@ func (t *Tap) SetDisplay(command string) {
 	t.displayOn = len(t.echoLines) > 0
 	t.echoIndex = 0
 	t.echoScan = 0
+	t.echoLead = 0
+	t.echoLeadEnd = 0
 	t.echoDone = false
 	t.hidden = t.hidden[:0]
 }
@@ -264,6 +268,16 @@ func (t *Tap) display(b []byte) {
 		}
 		line := terminalLine(rest[:i])
 		if t.echoIndex >= len(t.echoLines) || !matchDisplayEcho(line, t.echoLines[t.echoIndex], t.echoIndex > 0) {
+			// A prompt redraw can be printed before the wrapper echo. It is not
+			// part of the wrapper, so show it and keep looking for the first echo
+			// line instead of flushing the whole raw wrapper.
+			if t.echoIndex == 0 && !t.echoDone && t.echoLead < 16 {
+				t.echoLead++
+				t.out = append(t.out, rest[:i+1]...)
+				t.echoScan += i + 1
+				t.echoLeadEnd = t.echoScan
+				continue
+			}
 			t.out = append(t.out, t.flushDisplay()...)
 			return
 		}
@@ -325,7 +339,7 @@ func (t *Tap) flushDisplay() []byte {
 		return nil
 	}
 	t.echoDone = true
-	out := append([]byte(nil), t.hidden...)
+	out := append([]byte(nil), t.hidden[t.echoLeadEnd:]...)
 	t.hidden = t.hidden[:0]
 	t.echoScan = 0
 	return out

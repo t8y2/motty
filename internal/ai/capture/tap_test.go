@@ -687,3 +687,23 @@ func TestTapPageReadsWhileRunningAndReportsDroppedOutput(t *testing.T) {
 		t.Fatal("small pages returned nothing")
 	}
 }
+
+func TestDisplayToleratesPromptOutputBeforeTheWrapperEcho(t *testing.T) {
+	sent := Wrap("df -h", testNonce)
+	tp := NewTap(testNonce, 1000)
+	tp.SetEcho(sent)
+	tp.SetDisplay("df -h")
+	stream := "arch%\r\n" + zshEcho(sent) + "out\r\n\r\n" + marker(0) + "\r\nPROMPT% "
+	display, done := tp.Feed([]byte(stream))
+	if !done {
+		t.Fatal("the command did not finish")
+	}
+	for _, leak := range []string{"GOPAI_", "printf", "};", "cursh>", "\x1b["} {
+		if strings.Contains(string(display), leak) {
+			t.Fatalf("wrapper leaked %q into %q", leak, display)
+		}
+	}
+	if !strings.Contains(string(display), "df -h") {
+		t.Fatalf("logical command missing from %q", display)
+	}
+}
