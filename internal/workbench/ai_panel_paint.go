@@ -1355,30 +1355,35 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 		})
 	case aiReasoning:
 		root.Children(func() {
-			header := f.Row().Height(aiReasonHeader).PadX(4).Gap(6).Items(ui.Center).Radius(radius.item).Children(func() {
-				icon := iconChevronRight
-				if view.expanded {
-					icon = iconChevronDown
-				}
-				if state.aiThinking(index) {
-					ui.Spinner(f.c).Size(12, 12)
-				} else {
-					f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
-				}
-				f.Text(view.title).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18)
-			})
-			if index < aiMaxRowHits {
-				header.Hover(ui.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, gfx.HitOptions{Role: gfx.RoleButton, Expanded: view.expanded})
-			}
-			if view.expanded {
-				// The thread down the left side, and the thought beside it.
-				f.Row().MarginSides(2, 0, 0, 0).Children(func() {
-					f.Column().Width(1).MarginSides(0, 0, 4, 7).Background(pal.line)
-					f.Column().Grow(1).MarginSides(2, 0, 6, 6).Children(func() {
-						aiTextLines(f, view.lines, aiSizes.small, aiSizes.smallLine, pal.muted)
-					})
+			// The header and the thought stack in a column: the row the List
+			// hands out is itself a Row, and without the column the header sits
+			// beside the thought instead of above it.
+			f.Column().Children(func() {
+				header := f.Row().Height(aiReasonHeader).PadX(4).Gap(6).Items(ui.Center).Radius(radius.item).Children(func() {
+					icon := iconChevronRight
+					if view.expanded {
+						icon = iconChevronDown
+					}
+					if state.aiThinking(index) {
+						ui.Spinner(f.c).Size(12, 12)
+					} else {
+						f.Icon(lucideIcons[icon]).Size(12, 12).Color(pal.muted)
+					}
+					f.Text(view.title).FontSize(aiSizes.small).Weight(gfx.WeightMedium).Color(pal.muted).LineHeight(18)
 				})
-			}
+				if index < aiMaxRowHits {
+					header.Hover(ui.Look{}.Background(pal.surfaceSoft)).HitWith(hitAIRows.At(index), view.title, gfx.HitOptions{Role: gfx.RoleButton, Expanded: view.expanded})
+				}
+				if view.expanded {
+					// The thread down the left side, and the thought beside it.
+					f.Row().MarginSides(2, 0, 0, 0).Children(func() {
+						f.Column().Width(1).MarginSides(0, 0, 4, 7).Background(pal.line)
+						f.Column().Grow(1).MarginSides(2, 0, 6, 6).Children(func() {
+							aiTextLines(f, view.lines, aiSizes.small, aiSizes.smallLine, pal.muted)
+						})
+					})
+				}
+			})
 		})
 	case aiNotice:
 		root.Children(func() {
