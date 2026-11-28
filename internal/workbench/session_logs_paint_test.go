@@ -70,7 +70,7 @@ func sessionLogsSeed(t testing.TB, state *State) {
 		sessionlog.EventFailed)
 	sessionLogsInsert(t, state, sessionlog.Record{
 		ID: "log-02", RunID: run, Host: "lab", Address: "192.168.1.10", Account: "ops",
-		Protocol: sessionlog.ProtocolLocal, StartedAt: sessionLogsTestNow.Add(-30 * time.Hour),
+		Protocol: sessionlog.ProtocolLocal, TargetKind: sessionlog.TargetLocal, StartedAt: sessionLogsTestNow.Add(-30 * time.Hour),
 	}, sessionlog.StatusEnded, sessionlog.ReasonUserClosed, sessionLogsTestNow.Add(-29*time.Hour),
 		sessionlog.EventConnected, sessionlog.EventDisconnected)
 	sessionLogsInsert(t, state, sessionlog.Record{
@@ -782,26 +782,30 @@ func TestSessionLogsKeyboardAndDeletionFocus(t *testing.T) {
 	// ID: the tab that owns log-02 is session 7, and session 2 belongs to
 	// another record.
 	live := sessionLogsState(t, true)
-	live.sessions = append(live.sessions,
-		Session{ID: 2, Title: "other", logRecordID: "log-04"},
-		Session{ID: 7, Title: "moved tab", logRecordID: "log-02"},
-	)
-	live.ensureWorkspaceDeck()
+	// Tabs are made the way the window makes them, so the deck knows them and
+	// activating one goes to the pane it is bound to.
+	other := live.openLocalTerminal()
+	other.logRecordID = "log-04"
+	owner := live.openLocalTerminal()
+	owner.logRecordID = "log-02"
 	live.selectSessionLogRecord("log-02")
 	sessionLogsWait(t, live)
 	live.Click(hitSessionLogsLive)
-	if live.activeSection != sectionTerminal || live.activeSessionID != 7 {
-		t.Fatalf("live jump went to section=%d session=%d, want session 7", live.activeSection, live.activeSessionID)
+	if live.activeSection != sectionTerminal || live.activeSessionID != owner.ID {
+		t.Fatalf("live jump went to section=%d session=%d, want session %d", live.activeSection, live.activeSessionID, owner.ID)
 	}
 
-	// A closed local record creates a fresh local terminal, never reuses a stale ID.
-	live.sessions[1].logFinished = true
+	// A closed local record creates a fresh local terminal, never the tab that
+	// held it.
+	if ownerTab, ok := live.sessionByIDPointer(owner.ID); ok {
+		ownerTab.logFinished = true
+	}
 	live.activeSection = sectionSessionLogs
-	live.activeSessionID = 2
+	live.activeSessionID = other.ID
 	live.selectSessionLogRecord("log-02")
 	sessionLogsWait(t, live)
 	live.Click(hitSessionLogsLive)
-	if live.activeSection != sectionTerminal || live.activeSessionID == 2 || len(live.sessions) != 3 {
+	if live.activeSection != sectionTerminal || live.activeSessionID == owner.ID || len(live.sessions) != 3 {
 		t.Fatalf("a closed local record did not create a fresh terminal: section=%d session=%d count=%d", live.activeSection, live.activeSessionID, len(live.sessions))
 	}
 }

@@ -185,7 +185,7 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return nil, err
 		}
 		return []byte(processFixture), nil
-	case strings.HasPrefix(command, "docker ps"):
+	case strings.Contains(command, "docker ps -a"):
 		if err := server.failures["docker ps"]; err != nil {
 			return []byte("sh: 1: docker: not found"), err
 		}
@@ -193,7 +193,7 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.containers), nil
 		}
 		return []byte(containerFixture), nil
-	case strings.HasPrefix(command, "docker stats"):
+	case strings.Contains(command, "docker stats"):
 		if err := server.failures["docker stats"]; err != nil {
 			return []byte("denied by the test\nsecond line"), err
 		}
@@ -201,7 +201,7 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.containerUsage), nil
 		}
 		return []byte(containerUsageFixture), nil
-	case strings.HasPrefix(command, "docker inspect --format '{{json .Config.Env}}'"):
+	case strings.Contains(command, "docker inspect --format '{{json .Config.Env}}'"):
 		if err := server.failures["docker inspect --format '{{json .Config.Env}}'"]; err != nil {
 			return []byte("denied by the test\nsecond line"), err
 		}
@@ -209,9 +209,9 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.containerEnvironment), nil
 		}
 		return []byte(`["PATH=/usr/local/sbin:/usr/local/bin","SERVICE=web","EMPTY="]`), nil
-	case strings.HasPrefix(command, "docker inspect --format"):
+	case strings.Contains(command, "docker inspect --format"):
 		return []byte("0f1e2d3c4b5a" + strings.Repeat("0", 52) + "\n"), nil
-	case strings.HasPrefix(command, "docker inspect "):
+	case strings.Contains(command, "docker inspect "):
 		if err := server.failures["docker inspect"]; err != nil {
 			return []byte("denied by the test\nsecond line"), err
 		}
@@ -219,15 +219,18 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 			return []byte(server.containerInspect), nil
 		}
 		return []byte(containerInspectFixture), nil
-	case command == "motty-container-runtime":
-		return []byte("docker\n"), nil
-	case strings.HasPrefix(command, "docker images"):
+	case strings.Contains(command, "docker images"):
 		return []byte(imageFixture), nil
-	case strings.HasPrefix(command, "docker volume ls"):
+	case strings.Contains(command, "docker volume ls"):
 		return []byte("pgdata|local|local\n"), nil
-	case strings.HasPrefix(command, "docker compose ls"):
+	case strings.Contains(command, "docker compose ls"):
 		return []byte(composeFixture), nil
-	case strings.HasPrefix(command, "kill -"), strings.HasPrefix(command, "renice "), strings.HasPrefix(command, "docker "):
+	// The engine probe names the container CLI: its chain prints the name
+	// instead of running a subcommand, so it is matched on that print rather
+	// than on the wrapper every container command shares.
+	case command == "motty-container-runtime", strings.Contains(command, "; then printf 'docker\\n';"):
+		return []byte("docker\n"), nil
+	case strings.HasPrefix(command, "kill -"), strings.HasPrefix(command, "renice "), strings.Contains(command, "docker "):
 		for fragment, err := range server.failures {
 			if strings.Contains(command, fragment) {
 				return []byte("denied by the test\nsecond line"), err
@@ -238,12 +241,25 @@ func (server *remoteServer) run(_ context.Context, command string, _ int) ([]byt
 	return nil, errors.New("unexpected command " + command)
 }
 
+// ran counts the commands that start with prefix. A guarded action is recorded
+// as the bare action it ran, which is what a test names.
 func (server *remoteServer) ran(prefix string) int {
+	return server.countCommands(func(command string) bool { return strings.HasPrefix(command, prefix) })
+}
+
+// ranPart counts the commands that name a fragment anywhere: a container
+// command is wrapped in the engine probe, so the command a test names is not at
+// its start.
+func (server *remoteServer) ranPart(fragment string) int {
+	return server.countCommands(func(command string) bool { return strings.Contains(command, fragment) })
+}
+
+func (server *remoteServer) countCommands(match func(string) bool) int {
 	server.mu.Lock()
 	defer server.mu.Unlock()
 	count := 0
 	for _, command := range server.commands {
-		if strings.HasPrefix(command, prefix) {
+		if match(command) {
 			count++
 		}
 	}
@@ -403,13 +419,13 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 	state, server, shell := openRemoteToolsDialog(t)
 	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabContainers)
 	waitFor(t, state, func() bool { return !state.remote.loading && len(state.remote.rows) == 2 })
-	if state.remote.rows[0].cells[0] != "web" || server.ran("docker ps") != 1 {
+	if state.remote.rows[0].cells[0] != "web" || server.ranPart("docker ps") != 1 {
 		t.Fatalf("rows %+v", state.remote.rows)
 	}
 	selectRemoteToolsRow(state, 1) // old-job, stopped
 	clickRemoteToolsAction(t, state, hitRemoteStart)
 	waitFor(t, state, func() bool {
-		return server.ran("docker start a1b2c3d4e5f6") == 1 && !state.remote.loading && server.ran("docker ps") == 2
+		return server.ranPart("docker start a1b2c3d4e5f6") == 1 && !state.remote.loading && server.ranPart("docker ps") == 2
 	})
 
 	clickRemoteToolsAction(t, state, hitRemoteRemove)
@@ -417,7 +433,7 @@ func TestRemoteToolsManageContainers(t *testing.T) {
 		t.Fatalf("no confirmation before removing: modal %d", state.modal)
 	}
 	state.Click(hitFormSubmit)
-	waitFor(t, state, func() bool { return server.ran("docker rm a1b2c3d4e5f6") == 1 })
+	waitFor(t, state, func() bool { return server.ranPart("docker rm a1b2c3d4e5f6") == 1 })
 
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	selectRemoteToolsRow(state, 0) // web
@@ -452,7 +468,7 @@ func TestRemoteToolsContainerShellOpensSharedTabWithoutTypingIntoOriginal(t *tes
 	if len(world.conns) != 1 || len(world.shared) != 1 ||
 		len(original.shells) != 1 || len(world.shared[0].configs) != 1 ||
 		world.shared[0].configs[0].Command != "docker exec -it 0f1e2d3c4b5a"+strings.Repeat("0", 52)+" sh" ||
-		server.ran("docker exec 0f1e2d3c4b5a"+strings.Repeat("0", 52)+" sh -c :") != 1 {
+		server.ranPart("docker exec 0f1e2d3c4b5a"+strings.Repeat("0", 52)+" sh -c :") != 1 {
 		t.Fatalf("dials=%d shares=%d originalShells=%d childConfigs=%+v probes=%q", len(world.conns), len(world.shared), len(original.shells), world.shared[0].configs, server.commands)
 	}
 }
@@ -469,7 +485,7 @@ func TestRemoteToolsContainerShellRejectsStoppedSelection(t *testing.T) {
 		t.Fatalf("stopped container offered Shell: button=%+v painted=%v", button, painted)
 	}
 	clickRemoteToolsAction(t, state, hitRemoteShell)
-	if server.ran("docker exec") != 0 || len(state.sessions) != 1 || state.modal != modalRemoteTools {
+	if server.ranPart("docker exec") != 0 || len(state.sessions) != 1 || state.modal != modalRemoteTools {
 		t.Fatalf("stopped container opened a Shell: probes=%q tabs=%d modal=%d", server.commands, len(state.sessions), state.modal)
 	}
 }
@@ -488,7 +504,7 @@ func TestRemoteToolsWindowsHostNeverProbesPOSIXContainerShell(t *testing.T) {
 		t.Fatalf("Windows SSH host offered Shell: button=%+v painted=%v", button, painted)
 	}
 	clickRemoteToolsAction(t, state, hitRemoteShell)
-	if server.ran("docker inspect") != 0 || server.ran("docker exec") != 0 || len(state.sessions) != 1 {
+	if server.ranPart("docker inspect") != 0 || server.ranPart("docker exec") != 0 || len(state.sessions) != 1 {
 		t.Fatalf("Windows host probed a POSIX container Shell: commands=%q", server.commands)
 	}
 }
@@ -528,7 +544,7 @@ func TestRemoteToolsContainerShellIgnoresClosedDialogResult(t *testing.T) {
 	server := &remoteServer{failures: map[string]error{}}
 	started, release := make(chan struct{}), make(chan struct{})
 	original.runCommand = func(ctx context.Context, command string, limit int) ([]byte, error) {
-		if strings.HasPrefix(command, "docker exec") {
+		if strings.Contains(command, "docker exec") {
 			close(started)
 			<-release
 		}
@@ -689,20 +705,20 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 		t.Fatalf("no confirmation: modal %d %q", state.modal, state.form.title)
 	}
 	state.Click(hitFormCancel)
-	if server.ran("docker rmi") != 0 {
+	if server.ranPart("docker rmi") != 0 {
 		t.Fatal("cancelling still removed the image")
 	}
 	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	state.Click(hitFormSubmit)
 	waitFor(t, state, func() bool {
-		return server.ran("docker rmi debian:bookworm-slim") == 1 && !state.remote.loading && server.ran("docker images") == 2
+		return server.ranPart("docker rmi debian:bookworm-slim") == 1 && !state.remote.loading && server.ranPart("docker images") == 2
 	})
 
 	// An image without a tag has nothing to be addressed by but its ID.
 	selectRemoteToolsRow(state, 1)
 	clickRemoteToolsAction(t, state, hitRemoteRemove)
 	state.Click(hitFormSubmit)
-	waitFor(t, state, func() bool { return server.ran("docker rmi cf001c2f8af7") == 1 })
+	waitFor(t, state, func() bool { return server.ranPart("docker rmi cf001c2f8af7") == 1 })
 
 	waitFor(t, state, func() bool { return !state.remote.loading })
 	clickSettingsChoice(t, state, state.messages.Tools.RemoteTabVolumes)
@@ -713,7 +729,7 @@ func TestRemoteToolsListAndRemoveImagesVolumesAndNetworks(t *testing.T) {
 		t.Fatalf("a volume's confirmation is %q", state.form.title)
 	}
 	state.Click(hitFormSubmit)
-	waitFor(t, state, func() bool { return server.ran("docker volume rm pgdata") == 1 })
+	waitFor(t, state, func() bool { return server.ranPart("docker volume rm pgdata") == 1 })
 }
 
 func TestReniceUsesTheSelectedProcessAndShowsTheServersRefusal(t *testing.T) {
@@ -749,7 +765,7 @@ func TestRemoteToolsManageComposeProjects(t *testing.T) {
 	selectRemoteToolsRow(state, 0)
 	clickRemoteToolsAction(t, state, hitRemoteRestart)
 	waitFor(t, state, func() bool {
-		return server.ran("docker compose -p batch restart") == 1 && !state.remote.loading && server.ran("docker compose ls") == 2
+		return server.ranPart("docker compose -p batch restart") == 1 && !state.remote.loading && server.ranPart("docker compose ls") == 2
 	})
 	// Down asks first.
 	clickRemoteToolsAction(t, state, hitRemoteDown)
@@ -757,12 +773,12 @@ func TestRemoteToolsManageComposeProjects(t *testing.T) {
 		t.Fatalf("no confirmation: modal %d", state.modal)
 	}
 	state.Click(hitFormCancel)
-	if server.ran("docker compose -p batch down") != 0 {
+	if server.ranPart("docker compose -p batch down") != 0 {
 		t.Fatal("cancelling still ran down")
 	}
 	clickRemoteToolsAction(t, state, hitRemoteDown)
 	state.Click(hitFormSubmit)
-	waitFor(t, state, func() bool { return server.ran("docker compose -p batch down") == 1 })
+	waitFor(t, state, func() bool { return server.ranPart("docker compose -p batch down") == 1 })
 }
 
 func TestAServerWithoutComposeSaysSo(t *testing.T) {
@@ -796,10 +812,13 @@ func TestPullingAnImageTypesTheCommandIntoTheTerminal(t *testing.T) {
 	}
 	state.form.set(0, "ghcr.io/org/app:1.2")
 	state.Click(hitFormSubmit)
-	if state.modal != modalNone || !strings.Contains(shell.typed(), "docker pull ghcr.io/org/app:1.2\r") {
-		t.Fatalf("modal %d, typed %q", state.modal, shell.typed())
+	// The engine the server runs is found off the window thread, so the command
+	// reaches the terminal a round trip after the form is submitted.
+	waitFor(t, state, func() bool { return strings.Contains(shell.typed(), "docker pull ghcr.io/org/app:1.2\r") })
+	if state.modal != modalNone {
+		t.Fatalf("modal %d after the pull, typed %q", state.modal, shell.typed())
 	}
-	if server.ran("docker pull") != 0 {
+	if server.ranPart("docker pull") != 0 {
 		t.Fatal("the pull ran in the background instead of the terminal")
 	}
 }
@@ -827,12 +846,12 @@ func TestCreatingAVolumeAndANetworkFromTheirTabs(t *testing.T) {
 		}
 		state.form.set(0, "no good")
 		state.Click(hitFormSubmit)
-		if state.form.dialogError != state.messages.Tools.RemoteBadName || server.ran(entry.command) != 0 {
+		if state.form.dialogError != state.messages.Tools.RemoteBadName || server.ranPart(entry.command) != 0 {
 			t.Fatalf("a bad name: error %q", state.form.dialogError)
 		}
 		state.form.set(0, "scratch")
 		state.Click(hitFormSubmit)
-		waitFor(t, state, func() bool { return server.ran(entry.command) == 1 && !state.remote.loading })
+		waitFor(t, state, func() bool { return server.ranPart(entry.command) == 1 && !state.remote.loading })
 		if state.modal != modalRemoteTools {
 			t.Fatalf("after creating, modal %d, want the tools again", state.modal)
 		}

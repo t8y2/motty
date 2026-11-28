@@ -54,7 +54,16 @@ func TestHostsToolbarMenusCloseWithEscape(t *testing.T) {
 			t.Fatalf("Escape left the %s menu open", menu.trigger)
 		}
 	}
-	// A context menu opened at a point of the window closes the same way.
+	// A context menu opened at a point of the window closes the same way. The
+	// pointer goes to that point first, as a secondary press would put it there:
+	// a tooltip left over a toolbar button would otherwise be the thing Escape
+	// reaches.
+	if err := view.Move(300, 300); err != nil {
+		t.Fatal(err)
+	}
+	if err := view.Rest(); err != nil {
+		t.Fatal(err)
+	}
 	state.openHostBlankMenu(gfx.Point{X: 300, Y: 300})
 	if err := view.Rest(); err != nil {
 		t.Fatal(err)
