@@ -48,3 +48,28 @@ func TestAppearanceFollowTerminalPersistsRoundTrip(t *testing.T) {
 		t.Fatalf("reloaded workspace = %v, want %v", reloaded.pal.workspace, reloaded.termPal.terminal)
 	}
 }
+
+func TestAppearanceFollowTerminalInvalidatesDetachedSFTPOnSchemeChange(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.appearanceFollowTerminal = true
+	state.rebuildTerminalLook()
+	invalidations := 0
+	state.options.Invalidate = func() { invalidations++ }
+	state.sftpWindows = map[uint32]*sftpWindow{1: {owner: state}}
+	defer func() { state.sftpWindows = nil }()
+
+	if !state.setTerminalScheme(colorSchemes[1].id) {
+		t.Fatal("the first scheme did not change")
+	}
+	palettePointer := state.pal
+	invalidations = 0
+	if !state.setTerminalScheme(colorSchemes[2].id) {
+		t.Fatal("the second scheme did not change")
+	}
+	if state.pal != palettePointer {
+		t.Fatal("the palette pointer changed instead of updating the existing palette")
+	}
+	if invalidations == 0 {
+		t.Fatal("the detached SFTP presentation was not invalidated when its palette changed")
+	}
+}

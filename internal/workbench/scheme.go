@@ -200,6 +200,11 @@ func (state *State) migrateTerminalScheme(id string) (dark, light string) {
 // the chosen scheme and the highlight rules, and starts a new epoch so every
 // prepared line is built again with it.
 func (state *State) rebuildTerminalLook() {
+	previous := state.pal
+	var previousPalette palette
+	if previous != nil {
+		previousPalette = *previous
+	}
 	basePal := state.appearance.palette()
 	schemeID := state.activeScheme()
 	if state.schemePreview.shown != "" {
@@ -240,6 +245,12 @@ func (state *State) rebuildTerminalLook() {
 	}
 	if login := state.ai.login; login != nil {
 		state.reportTerminalColors(login.term)
+	}
+	if previous != nil && previousPalette != *state.pal {
+		if len(state.sftpWindows) > 0 {
+			state.invalidateSFTPWindows()
+		}
+		state.invalidateRemoteToolsWindows()
 	}
 }
 
