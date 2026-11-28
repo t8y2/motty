@@ -46,6 +46,7 @@ func main() {
 	// moved main to another OS thread.
 	runtime.LockOSThread()
 	log.SetOutput(io.MultiWriter(os.Stderr, recentLog))
+	logFrameworkEvents()
 	// OpenSSH runs SSH_ASKPASS as a child of ssh-add or ssh-sk-helper. Such a
 	// launch carries this marker and must answer the prompt, not claim the
 	// single instance and open a window.
