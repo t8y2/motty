@@ -234,6 +234,7 @@ var (
 	hitSettingsAppearanceFollowTerminal = tree.ID(settingsHits, "appearance-follow-terminal")
 	hitSettingsCursorProgram            = tree.ID(settingsHits, "settings-cursor-program")
 	hitSettingsCopyOnSelect             = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsCommandBlocks            = tree.ID(settingsHits, "settings-command-blocks")
 	hitSettingsWordSeparators           = tree.ID(settingsHits, "settings-word-separators")
 	hitSettingsRightClickPaste          = tree.ID(settingsHits, "settings-right-click-paste")
 	hitSettingsInputClick               = tree.ID(settingsHits, "settings-input-click")
@@ -355,6 +356,10 @@ var (
 	hitTerminalMenuCopy           = tree.ID(terminalMenuHits, "terminal-menu-copy")
 	hitTerminalMenuPaste          = tree.ID(terminalMenuHits, "terminal-menu-paste")
 	hitTerminalMenuPasteSelection = tree.ID(terminalMenuHits, "terminal-menu-paste-selection")
+	hitTerminalMenuBlockCommand   = tree.ID(terminalMenuHits, "terminal-menu-block-command")
+	hitTerminalMenuBlockOutput    = tree.ID(terminalMenuHits, "terminal-menu-block-output")
+	hitTerminalMenuBlockAll       = tree.ID(terminalMenuHits, "terminal-menu-block-all")
+	hitTerminalMenuBlockFold      = tree.ID(terminalMenuHits, "terminal-menu-block-fold")
 	hitTerminalMenuSelectAll      = tree.ID(terminalMenuHits, "terminal-menu-select-all")
 	hitTerminalMenuClearScreen    = tree.ID(terminalMenuHits, "terminal-menu-clear-screen")
 	hitTerminalMenuClear          = tree.ID(terminalMenuHits, "terminal-menu-clear")
@@ -946,8 +951,12 @@ type State struct {
 	// and terminalRightClickPaste makes a right click paste instead of opening
 	// the terminal menu.
 	terminalCopyOnSelect, terminalRightClickPaste bool
-	terminalWordSeparators                        string
-	terminalWordEditor                            text.Editor
+	// terminalCommandBlocks enables the OSC 133 command-block view. It is off by
+	// default; turning it off clears the blocks already built. The menu switch
+	// is subordinate to it and is forced off with it.
+	terminalCommandBlocks  bool
+	terminalWordSeparators string
+	terminalWordEditor     text.Editor
 	// hiddenHostTags are the keys of the built-in tag suggestions deleted in
 	// Settings; see host_tag_settings.go.
 	hiddenHostTags []string

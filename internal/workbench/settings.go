@@ -743,6 +743,9 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		changed = state.stepTerminalScrollback(terminalScrollbackStep)
 	case hitSettingsScrollbackValue:
 		state.beginScrollbackEdit()
+	case hitSettingsCommandBlocks:
+		changed = state.setCommandBlocks(!state.terminalCommandBlocks)
+
 	case hitSettingsShareToggle:
 		if state.shareConnections == shareConnectionsOff {
 			changed = state.setShareConnections(shareConnectionsOn)

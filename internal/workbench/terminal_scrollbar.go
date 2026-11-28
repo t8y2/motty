@@ -56,7 +56,12 @@ func (s scrollbarSize) pixels() float32 {
 // through. The alternate screen has none, and a synchronized update is a frozen
 // picture of the screen, not a place to move in.
 func (t *terminal) terminalScrollbarShown() bool {
-	return t.sync == nil && !t.presentedAltScreen() && t.screen.Scrollback() > 0
+	if t.sync != nil || t.presentedAltScreen() {
+		return false
+	}
+	_, rows := t.screen.Size()
+	total, _ := t.displayScroll(rows)
+	return total > rows
 }
 
 // paintTerminalScrollbar paints the bar over the right edge of the grid, in the
@@ -86,7 +91,11 @@ func (state *State) terminalBarFade(canvas *gfx.Canvas, session *Session) float3
 	session.term.pageIdentity(session.ID)
 	id := session.term.parts.At(terminalPartScrollbar)
 	now := canvas.Now()
-	offset := t.screen.ViewOffset()
+	offset := t.displayOffset
+	if t.sync != nil || !t.foldsActive() || !t.hasFolds() {
+		offset = t.screen.ViewOffset()
+		t.displayOffset = offset
+	}
 	hovered := canvas.Hovered()
 	over := t.barDragging || canvas.Pressed() == id || hovered == id || hovered == session.term.controlID
 	if offset != t.barOffset {
@@ -109,11 +118,13 @@ func (state *State) terminalBarFade(canvas *gfx.Canvas, session *Session) float3
 // terminalScrollGeometry is the terminal bar's geometry without painting it.
 // The bar is as thick as the full-size scroll area the component draws.
 func (state *State) terminalScrollGeometry(session *Session, area gfx.Rect) base.ScrollAreaGeometry {
-	screen := session.term.screen
-	history := float32(screen.Scrollback()) * state.cellHeight
+	t := session.term
+	_, rows := t.screen.Size()
+	total, offset := t.displayScroll(rows)
+	history := float32(max(total-rows, 0)) * state.cellHeight
 	return base.LayoutScrollArea(area, gfx.Size{Width: area.Width, Height: area.Height + history},
 		base.ScrollAreaLayout{
-			OffsetY: float32(screen.Scrollback()-screen.ViewOffset()) * state.cellHeight,
+			OffsetY: float32(offset) * state.cellHeight,
 			BarSize: state.terminalScrollbarSize.pixels(),
 		})
 }
@@ -153,7 +164,10 @@ func (state *State) terminalScrollbarPointer(session *Session, event gfx.Pointer
 		}
 		offset := geometry.VerticalOffsetForThumb(event.Y - t.barGrab)
 		line := int(math.Round(float64(offset / state.cellHeight)))
-		result := state.scrollTerminalView(t, t.screen.Scrollback()-line-t.screen.ViewOffset())
+		_, rows := t.screen.Size()
+		total, _ := t.displayScroll(rows)
+		target := max(max(total-rows, 0)-line, 0)
+		result := state.scrollTerminalView(t, target-t.displayOffset)
 		if event.Kind == gfx.PointerUp {
 			t.barDragging = false
 		}
@@ -173,5 +187,5 @@ func (state *State) scrollTerminalView(t *terminal, lines int) gfx.EventResult {
 	if lines == 0 {
 		return gfx.EventResult{Handled: true}
 	}
-	return gfx.EventResult{Handled: true, Repaint: t.screen.Scroll(lines)}
+	return gfx.EventResult{Handled: true, Repaint: t.scrollDisplay(lines)}
 }

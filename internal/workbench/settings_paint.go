@@ -506,6 +506,11 @@ func (state *State) paintTerminalSettings(page *settingsPage) {
 		state.paintAutofillSettings(page)
 		state.paintBackgroundSettings(page)
 		state.paintTerminalFindSettingsGroup(page)
+		// Command block settings come last so they do not move the existing
+		// terminal/background rows and their fixed-height test snapshots.
+		page.group("", func() {
+			page.toggleRow(state.messages.Blocks.SettingsRow, state.messages.Blocks.SettingsDescription, state.terminalCommandBlocks, hitSettingsCommandBlocks)
+		})
 	})
 }
 
@@ -744,9 +749,15 @@ func settingsSelectRow[T comparable](page *settingsPage, label, description stri
 // id stays the same in both states, so the keyboard's place in the page does not
 // move when it is pressed.
 func (page *settingsPage) toggleRow(label, description string, on bool, id gfx.ID) {
+	page.toggleRowDisabled(label, description, on, false, id)
+}
+
+// toggleRowDisabled is toggleRow with a control that is visibly unavailable:
+// the row still explains why, and the switch cannot be pressed.
+func (page *settingsPage) toggleRowDisabled(label, description string, on, disabled bool, id gfx.ID) {
 	// The control is only a switch: the rest of the row is for the words.
 	page.lineFor(id, label, description, aiSwitchWidth, func() {
-		page.switchSlot(id, on, false, label)
+		page.switchSlot(id, on, disabled, label)
 	})
 }
 

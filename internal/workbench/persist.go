@@ -109,6 +109,7 @@ type savedState struct {
 	TerminalCursorSteady     bool                `json:"terminal_cursor_steady,omitempty"`
 	TerminalCursorThickness  string              `json:"terminal_cursor_thickness,omitempty"`
 	TerminalCopyOnSelect     bool                `json:"terminal_copy_on_select,omitempty"`
+	TerminalCommandBlocks    bool                `json:"terminal_command_blocks,omitempty"`
 	TerminalWordSeparators   string              `json:"terminal_word_separators,omitempty"`
 	TerminalRightClickPaste  bool                `json:"terminal_right_click_paste,omitempty"`
 	TabTitleMode             tabTitleMode        `json:"tab_title_mode,omitempty"`
@@ -629,6 +630,7 @@ func (state *State) snapshot() savedState {
 		TerminalCursorSteady:       state.terminalCursorSteady,
 		TerminalCursorThickness:    state.terminalCursorThickness.String(),
 		TerminalCopyOnSelect:       state.terminalCopyOnSelect,
+		TerminalCommandBlocks:      state.terminalCommandBlocks,
 		TerminalWordSeparators:     state.terminalWordSeparators,
 		TerminalRightClickPaste:    state.terminalRightClickPaste,
 		TabTitleMode:               state.tabTitleMode,
@@ -1297,6 +1299,7 @@ func (state *State) restoreShared(saved savedState) {
 	state.terminalCursorSteady = saved.TerminalCursorSteady
 	state.terminalCursorThickness = cursorThicknessFromString(saved.TerminalCursorThickness)
 	state.terminalCopyOnSelect = saved.TerminalCopyOnSelect
+	state.terminalCommandBlocks = saved.TerminalCommandBlocks
 	state.terminalWordSeparators = saved.TerminalWordSeparators
 	state.terminalWordEditor = *text.NewEditor(saved.TerminalWordSeparators)
 	state.terminalRightClickPaste = saved.TerminalRightClickPaste

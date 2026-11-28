@@ -52,11 +52,39 @@ type terminalMenu struct {
 	// found is what can be done with the text the menu was opened on.
 	found [maxMenuActions]detected
 	count int
+	// blockID is the command block the menu was opened on, or zero.
+	blockID uint64
 }
 
 func (state *State) openTerminalMenu(session *Session) {
 	state.ghostMenu.open = false
 	state.terminalMenu = terminalMenu{open: true, session: session.ID, at: state.terminalMenu.pointer, pointer: state.terminalMenu.pointer}
+}
+
+// openTerminalMenuAt is openTerminalMenu for a press on a cell: the menu also
+// offers the command block that cell belongs to.
+func (state *State) openTerminalMenuAt(session *Session, position term.Position) {
+	state.openTerminalMenu(session)
+	if session.term == nil || !session.term.blocksEnabled {
+		return
+	}
+	if index := session.term.blockAtLine(session.term.displayLine(position.Row)); index >= 0 {
+		state.terminalMenu.blockID = session.term.blocks[index].id
+	}
+}
+
+// terminalMenuBlock is the block the open menu acts on, if it is still retained.
+func (state *State) terminalMenuBlock(session *Session) *commandBlock {
+	id := state.terminalMenu.blockID
+	if id == 0 || session.term == nil {
+		return nil
+	}
+	for index := range session.term.blocks {
+		if session.term.blocks[index].id == id {
+			return &session.term.blocks[index]
+		}
+	}
+	return nil
 }
 
 // Install the mnemonics outside ui.Configure: the page's own menu typeahead
@@ -269,6 +297,25 @@ func (state *State) declareTerminalMenu(c ui.C) {
 	chord := func(action shortcutAction) keymap.Chord { return state.shortcuts.chords.Chord(action) }
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
+	var block *commandBlock
+	if session.term != nil && session.term.blocksEnabled {
+		block = state.terminalMenuBlock(session)
+	}
+	if block != nil {
+		rows.add(components.ContextMenuItem{Label: state.blockStatusText(block), Icon: icon(blockStatusIcon(block.status)), Disabled: true})
+		commandOK := session.term.blockTextAvailable(block, blockCopyCommand)
+		outputOK := session.term.blockTextAvailable(block, blockCopyOutput)
+		allOK := session.term.blockTextAvailable(block, blockCopyAll)
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuBlockCommand, Label: messages.Blocks.CopyCommand, Icon: icon(iconTerminal), Disabled: !commandOK})
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuBlockOutput, Label: messages.Blocks.CopyOutput, Icon: icon(iconCopy), Disabled: !outputOK})
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuBlockAll, Label: messages.Blocks.CopyBlock, Icon: icon(iconSelectAll), Disabled: !allOK})
+		foldLabel, foldIcon := messages.Blocks.Collapse, icon(iconChevronRight)
+		if block.collapsed {
+			foldLabel, foldIcon = messages.Blocks.Expand, icon(iconChevronDown)
+		}
+		rows.add(components.ContextMenuItem{ID: hitTerminalMenuBlockFold, Label: foldLabel, Icon: foldIcon, Disabled: blockFoldLines(block) == 0})
+		rows.separate()
+	}
 	for index := 0; index < state.terminalMenu.count; index++ {
 		found := state.terminalMenu.found[index]
 		rows.add(components.ContextMenuItem{ID: hitTerminalMenuAction[index], Label: state.actionLabel(found), Icon: icon(actionIcon(found.kind))})
@@ -368,6 +415,10 @@ func (state *State) chooseTerminalMenu(id gfx.ID) {
 				state.status = err.Error()
 			}
 		}
+	case hitTerminalMenuBlockCommand, hitTerminalMenuBlockOutput, hitTerminalMenuBlockAll:
+		state.copyTerminalBlock(session, id)
+	case hitTerminalMenuBlockFold:
+		state.toggleTerminalMenuBlock(session)
 	case hitTerminalMenuPaste:
 		state.pasteIntoTerminal(session)
 	case hitTerminalMenuPasteSelection:

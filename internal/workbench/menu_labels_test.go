@@ -21,6 +21,8 @@ func init() {
 		hitGroupNewHost, hitGroupNewChild, hitGroupPaste, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupUp, hitGroupDown, hitGroupDelete,
 		hitHostBlankNewHost, hitHostBlankNewGroup, hitHostBlankPaste,
 		hitTerminalMenuCopy, hitTerminalMenuPaste, hitTerminalMenuPasteSelection, hitTerminalMenuSelectAll, hitTerminalMenuClearScreen, hitTerminalMenuClear, hitTerminalMenuSave, hitTerminalMenuSplitRight, hitTerminalMenuSplitDown, hitTerminalMenuRename, hitTerminalMenuClosePane, hitTerminalMenuFolder, hitTerminalMenuFiles, hitTerminalMenuTransfer, hitTerminalMenuAsk, hitTerminalMenuExplain, hitTerminalMenuHistory, hitTerminalMenuSearch, hitTerminalMenuStats, hitTerminalMenuTools, hitTerminalMenuReconnect, hitTerminalMenuRestart, hitTerminalMenuDisconnect,
+		hitTerminalMenuBlockCommand, hitTerminalMenuBlockOutput, hitTerminalMenuBlockAll, hitTerminalMenuBlockFold,
+
 		hitSnippetMenuSend, hitSnippetMenuUp, hitSnippetMenuDown, hitSnippetMenuEdit, hitSnippetMenuDelete, hitWorkspaceTemplateMenuEdit, hitWorkspaceTemplateMenuDelete,
 		hitToolbarDockTop, hitToolbarDockSideTop, hitToolbarDockSideBottom, hitToolbarDockLeftTop, hitToolbarDockLeftBottom, hitToolbarDockBottom, hitToolbarDockBottomRight, hitToolbarDockHide, hitToolbarDockCustomize, hitToolbarDockReset,
 		hitTabMenuRename, hitTabMenuDuplicate, hitTabMenuEditHost, hitTabMenuNewWindow, hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuBrowserClose, hitTabMenuBrowserOpen, hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency, hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuReconnect, hitTabMenuRestart, hitTabMenuDisconnect, hitTabMenuSaveWorkspace, hitTabMenuLock, hitTabMenuCloseRight,
@@ -100,6 +102,17 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.NewGroup
 	case hitHostBlankPaste:
 		return m.PasteHost
+	case hitTerminalMenuBlockCommand:
+		return m.Blocks.CopyCommand
+	case hitTerminalMenuBlockOutput:
+		return m.Blocks.CopyOutput
+	case hitTerminalMenuBlockAll:
+		return m.Blocks.CopyBlock
+	case hitTerminalMenuBlockFold:
+		if menuHasRow(state, m.Blocks.Expand) {
+			return m.Blocks.Expand
+		}
+		return m.Blocks.Collapse
 	case hitTerminalMenuCopy:
 		return m.MenuCopy
 	case hitTerminalMenuPaste:
