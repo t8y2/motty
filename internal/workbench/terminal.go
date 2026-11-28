@@ -972,7 +972,11 @@ func (t *terminal) sendSecret(p []byte) bool {
 	accepted := t.writeShellInput(p)
 	t.inputSent = t.inputSent || accepted
 	if accepted {
-		t.noteShellInput(p)
+		// A secret answers the program at the current prompt; it is not a shell
+		// command line and must not increment submittedLines or dirty the shell
+		// integration's next-prompt state.
+		t.noteInput()
+		t.passwordHint = ""
 	}
 	return accepted
 }

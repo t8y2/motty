@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -12,6 +13,23 @@ import (
 
 // maxLoginCommand bounds the command text a host types after login.
 const maxLoginCommand = 1000
+
+var (
+	// loginPasswordPrompt matches an explicit password prompt, including the
+	// common OpenSSH "user@host's password:" and key passphrase forms. Other
+	// secret prompts, such as verification codes and tokens, remain blocked.
+	loginPasswordPrompt = regexp.MustCompile(`(?i)^\s*(?:\[sudo\]\s*)?(?:(?:(?:\|\s*)?\[[\w.-]+@[\w.:-]+\]|[\w.-]+@[\w.:-]+(?:['’]s)?)\s+)?(?:password|passwd|passphrase|passcode|(?:please\s+)?(?:enter|type|input)\s+(?:your\s+)?(?:password|passwd|passphrase|passcode)|(?:please\s+)?(?:请输入|输入)(?:登录)?(?:密码|口令)|密码|口令)(?:\s+for\b[^:：?？]*)?\s*[:：?？]\s*$`)
+
+	// These are REPL and database prompts where sending the next configured line
+	// is a valid handoff. Pager prompts and Vim's colon prompt are deliberately
+	// excluded: the next line would be treated as a program keystroke.
+	loginProgramPrompt = regexp.MustCompile(`(?i)^\s*(?:>{3}\s*|\.{3}>\s*|(?:mysql|mariadb|sqlite3?|psql|redis-cli|redis|mongo|mongosh|node|deno|irb|pry|julia|scala|ghci|cqlsh|hive|spark-sql|jshell|trino|presto|duckdb|sqlplus|sql)\s*>(?:\s|$)|irb\([^)]*\)[^>]*>(?:\s|$)|pry\([^)]*\)[^>]*>(?:\s|$)|mariadb\s*\[[^\]]*\]>(?:\s|$)|(?:postgres|cockroachdb|yugabyte)\s*(?:=#|[#>])\s*$)`)
+
+	// Match prompt-shaped lines, not arbitrary output that happens to mention a
+	// prompt word. In particular, the line must start like a question or an
+	// instruction and end with the actual reply cue.
+	loginInteractivePrompt = regexp.MustCompile(`(?i)^\s*(?:(?:please\s+)?press\s+(?:enter|return|any\s+key)(?:\s+to\s+(?:continue|proceed))?|(?:are you sure|do you want|would you like|continue|proceed|accept|trust)[^\r\n]{0,120}(?:yes/no|\[\s*y\s*/\s*n\s*\]|\(\s*y\s*/\s*n\s*\))|yes/no|\[\s*y\s*/\s*n\s*\]|\(\s*y\s*/\s*n\s*\)|按回车(?:键)?(?:继续)?|按任意键(?:继续)?|是否继续|请选择[^，。！？?？:：]{0,24}|请输入[^，。！？?？:：]{0,24})[ \t]*[)\]）】?？:：!！。]*$`)
+)
 
 // loginFailurePolicy says how multi-line post-login execution reacts when one
 // command exits with a non-zero status.
@@ -159,7 +177,7 @@ const (
 	loginCommandQuiet = 400 * time.Millisecond
 	// loginCommandGrace is how long a shell that should report its prompt is given
 	// to do so before it is treated like one that never will.
-	loginCommandGrace = 4 * time.Second
+	loginCommandGrace = time.Second
 	// loginCommandExecTimeout bounds how long one post-login command step may run
 	// without completing before remaining commands are aborted.
 	loginCommandExecTimeout = 30 * time.Second
@@ -189,18 +207,23 @@ type loginCommand struct {
 	local bool
 
 	// Active running post-login command tracking.
-	running        bool
-	activeIndex    int
-	activeLine     string
-	sentAt         time.Duration
-	commandStarted bool
-	hasExitCode    bool
-	exitCode       int
-	beforeLines    []string
-	beforePrompt   string
-	outputCaptured bool
-	capturedOutput string
-	results        []LoginCommandResult
+	running                bool
+	activeIndex            int
+	activeLine             string
+	sentAt                 time.Duration
+	commandStarted         bool
+	hasExitCode            bool
+	exitCode               int
+	beforeLines            []string
+	beforePrompt           string
+	outputCaptured         bool
+	capturedOutput         string
+	results                []LoginCommandResult
+	outputVersion          uint64
+	passwordPromptObserved bool
+	passwordPromptVersion  uint64
+	secretPromptReplies    map[string]uint64
+	secretLineIndices      map[int]struct{}
 }
 
 func (login *loginCommand) arm(line string) {
@@ -256,7 +279,24 @@ func (login *loginCommand) hasRemainingSteps() bool {
 func (login *loginCommand) output(now time.Duration) {
 	if login.line != "" || login.running {
 		login.last, login.seen = now, true
+		login.outputVersion++
 	}
+}
+
+func (login *loginCommand) redactedCommand(index int, command string) string {
+	if _, secret := login.secretLineIndices[index]; secret {
+		return "***"
+	}
+	return command
+}
+
+func (login *loginCommand) redactSecrets(text string) string {
+	for index := range login.secretLineIndices {
+		if index >= 0 && index < len(login.lines) && login.lines[index] != "" {
+			text = strings.ReplaceAll(text, login.lines[index], "***")
+		}
+	}
+	return text
 }
 
 // quietWait reports how long to wait before the quiet rule can apply, or zero when
@@ -367,15 +407,169 @@ func (state *State) loginQuiet(session *Session) time.Duration {
 	return loginCommandQuiet
 }
 
+// loginInteractivePromptReady reports that a command has stopped at a prompt
+// which cannot be completed by shell integration. These anchored prompts are
+// actionable as soon as they appear; in a multi-line login sequence, the next
+// configured line is the user's answer to that prompt.
+func (state *State) loginInteractivePromptReady(t *terminal) bool {
+	if t == nil || t.screen == nil || t.promptDirty || !t.login.seen {
+		return false
+	}
+	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
+	if rowText == "" {
+		return false
+	}
+	if loginPasswordPrompt.MatchString(rowText) {
+		return true
+	}
+	if cmdhistory.PasswordPrompt(rowText) {
+		return false
+	}
+	if loginProgramPrompt.MatchString(rowText) {
+		return true
+	}
+	return loginInteractivePrompt.MatchString(rowText)
+}
+
+func loginPasswordPromptText(t *terminal) string {
+	if t == nil || t.screen == nil || t.promptDirty || !t.login.seen {
+		return ""
+	}
+	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
+	if loginPasswordPrompt.MatchString(rowText) {
+		return rowText
+	}
+	return ""
+}
+
+func loginPromptKey(prompt string) string {
+	return strings.Join(strings.Fields(strings.ToLower(prompt)), " ")
+}
+
+// handleLoginPasswordPrompt sends at most one configured secret for each
+// stable password prompt while keeping the command that opened the prompt
+// active. A repeated prompt after new remote output means the reply was
+// rejected, so later configured lines must not be tried as more passwords.
+func (state *State) handleLoginPasswordPrompt(session *Session, prompt string, now time.Duration) bool {
+	if session == nil || session.term == nil || !session.term.login.running {
+		return false
+	}
+	t := session.term
+	login := &t.login
+	login.passwordPromptObserved = true
+	key := loginPromptKey(prompt)
+	if sentVersion, sent := login.secretPromptReplies[key]; sent {
+		if login.outputVersion > sentVersion {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return true
+		}
+		// The same static screen is not a second prompt. Let the ordinary command
+		// timeout remain active while waiting for new output or a new prompt.
+		return false
+	}
+	if login.line == "" || login.isWorkspaceStep || login.next >= len(login.lines) {
+		return true
+	}
+	secretIndex := login.next
+	if login.secretLineIndices == nil {
+		login.secretLineIndices = make(map[int]struct{})
+	}
+	login.secretLineIndices[secretIndex] = struct{}{}
+	if login.secretPromptReplies == nil {
+		login.secretPromptReplies = make(map[string]uint64)
+	}
+	// Record the attempt even if the shell refuses the write: a later redraw
+	// must not cause an automatic retry to consume another configured line.
+	login.secretPromptReplies[key] = login.outputVersion
+	login.passwordPromptVersion = t.promptVersion
+	wasPaused := login.paused
+	accepted := t.sendSecret([]byte(login.line + "\r"))
+	login.paused = wasPaused || !accepted
+	if !accepted {
+		state.showActionWarning(state.messages.Tools.LoginCommandField, state.messages.TerminalInput.SendFailed)
+		return true
+	}
+	login.last = now
+	login.next++
+	if login.next < len(login.lines) {
+		login.line = login.lines[login.next]
+		login.isWorkspaceStep = false
+	} else if login.workspace != "" && login.loginFirst {
+		login.line = login.workspace
+		login.isWorkspaceStep = true
+	} else {
+		login.line = ""
+		login.isWorkspaceStep = false
+	}
+	login.waitPrompt = true
+	return true
+}
+
+// completeLoginHandoff ends tracking for an interactive command that accepted
+// a configured password. It deliberately records no successful command result:
+// an interactive SSH/sudo child has not produced an exit code.
+func (state *State) completeLoginHandoff(session *Session) bool {
+	t := session.term
+	t.login.running = false
+	t.login.activeLine = ""
+	t.login.hasExitCode = false
+	t.login.exitCode = 0
+	t.login.outputCaptured = false
+	t.login.capturedOutput = ""
+	t.login.passwordPromptObserved = false
+	t.login.passwordPromptVersion = 0
+	t.login.secretPromptReplies = nil
+	// A successful interactive authentication takes over the submitted command
+	// without an OSC 133;D exit report. The new prompt is the readiness signal
+	// for any remaining configured login commands.
+	t.submittedLines = 0
+	if t.promptStarted && !t.promptDirty {
+		t.promptReady = true
+	}
+	if t.login.line == "" {
+		t.login = loginCommand{results: t.login.results}
+		return false
+	}
+	return true
+}
+
+// loginUnapprovedSecretPromptReady reports a stable secret prompt that is not
+// an explicitly supported password prompt. Login scripts stop before sending
+// the next configured line to verification-code, token, and similar prompts.
+func loginUnapprovedSecretPromptReady(t *terminal, now time.Duration) bool {
+	if t == nil || t.screen == nil || !t.login.seen || t.login.quietWait(now, loginCommandGrace) > 0 {
+		return false
+	}
+	rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
+	return rowText != "" && cmdhistory.PasswordPrompt(rowText) && !loginPasswordPrompt.MatchString(rowText)
+}
+
+// loginIncompletePromptReady preserves the shell-integration failure path: an
+// A marker without its matching B marker must not wait for the full command
+// timeout. A separately recognized interactive prompt may still hand off.
+func loginIncompletePromptReady(t *terminal, now time.Duration) bool {
+	return t != nil && t.screen != nil && t.promptStarted && !t.promptIdle() &&
+		t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0
+}
+
 func (state *State) loginStepFinished(session *Session, now time.Duration) bool {
 	t := session.term
 	if !t.login.running {
 		return false
 	}
+	if loginPasswordPromptText(t) != "" {
+		return false
+	}
+	if t.login.passwordPromptObserved && t.promptStarted && !t.promptDirty && t.promptVersion > t.login.passwordPromptVersion {
+		return true
+	}
 	if t.promptIdle() && !t.promptDirty && t.promptVersion > t.login.promptVersion {
 		return true
 	}
 	if t.login.hasExitCode && ((t.login.exitCode != 0 && t.login.policy == loginFailureStop) || (t.login.line == "" || t.login.isWorkspaceStep)) {
+		return true
+	}
+	if state.loginInteractivePromptReady(t) {
 		return true
 	}
 	if !t.folderIntegrationSeen && t.login.seen && t.login.quietWait(now, loginCommandQuiet) == 0 {
@@ -421,9 +615,9 @@ func (state *State) completeLoginStep(session *Session) bool {
 	if total == 0 {
 		total = 1
 	}
-	cmd := t.login.activeLine
+	cmd := t.login.redactedCommand(t.login.activeIndex, t.login.activeLine)
 	code := t.login.exitCode
-	output := t.login.finalOutput(t)
+	output := t.login.redactSecrets(t.login.finalOutput(t))
 	success := code == 0
 	result := LoginCommandResult{
 		Step:     step,
@@ -498,12 +692,15 @@ func (state *State) abortLoginCommands(session *Session, reason loginAbortReason
 	}
 	step := t.login.next + 1
 	cmd := t.login.line
+	commandIndex := t.login.next
 	output := ""
 	if t.login.running {
 		step = t.login.activeIndex + 1
 		cmd = t.login.activeLine
-		output = t.login.finalOutput(t)
+		commandIndex = t.login.activeIndex
+		output = t.login.redactSecrets(t.login.finalOutput(t))
 	}
+	cmd = t.login.redactedCommand(commandIndex, cmd)
 	total := len(t.login.lines)
 	if total == 0 {
 		total = 1
@@ -573,24 +770,31 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	if t.login.running {
+		if prompt := loginPasswordPromptText(t); prompt != "" && state.handleLoginPasswordPrompt(session, prompt, now) {
+			return
+		}
+		if t.login.hasRemainingSteps() && loginUnapprovedSecretPromptReady(t, now) {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return
+		}
+		if loginIncompletePromptReady(t, now) && !state.loginInteractivePromptReady(t) {
+			if t.login.hasRemainingSteps() {
+				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			} else {
+				t.login = loginCommand{results: t.login.results}
+			}
+			return
+		}
 		if state.loginStepFinished(session, now) {
-			if !state.completeLoginStep(session) {
+			if t.login.passwordPromptObserved && !t.login.hasExitCode {
+				if !state.completeLoginHandoff(session) {
+					return
+				}
+			} else if !state.completeLoginStep(session) {
 				return
 			}
 		} else {
 			if !t.login.isWorkspaceStep {
-				if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-					if t.login.hasRemainingSteps() {
-						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-					} else {
-						t.login = loginCommand{results: t.login.results}
-					}
-					return
-				}
-				if cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 && t.login.hasRemainingSteps() {
-					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-					return
-				}
 				if now-t.login.sentAt >= loginCommandExecTimeout {
 					if t.login.hasRemainingSteps() {
 						state.abortLoginCommands(session, loginAbortTimeout)
@@ -607,32 +811,30 @@ func (state *State) runLoginCommand(session *Session) {
 		return
 	}
 	if t.login.waitPrompt {
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginUnapprovedSecretPromptReady(t, now) {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return
+		}
+		if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginIncompletePromptReady(t, now) &&
+			!state.loginInteractivePromptReady(t) {
+			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			return
+		}
 		if t.login.isWorkspaceStep {
 			if !t.promptIdle() || t.promptDirty || t.promptVersion <= t.login.promptVersion {
 				return
 			}
 		} else if t.folderIntegrationSeen {
 			if !t.promptIdle() || t.promptDirty || t.promptVersion <= t.login.promptVersion {
-				if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-					if t.login.hasRemainingSteps() {
-						state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-					} else {
-						t.login = loginCommand{results: t.login.results}
-					}
+				if !state.loginInteractivePromptReady(t) {
+					return
 				}
-				return
 			}
 		} else {
 			if !t.login.seen || t.login.quietWait(now, loginCommandQuiet) > 0 {
 				return
 			}
 			rowText := strings.TrimSpace(t.screen.RowText(t.screen.Cursor().Y))
-			if cmdhistory.PasswordPrompt(rowText) {
-				if t.login.quietWait(now, loginCommandGrace) == 0 && t.login.hasRemainingSteps() {
-					state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-				}
-				return
-			}
 			if rowText == "" {
 				return
 			}
@@ -643,22 +845,22 @@ func (state *State) runLoginCommand(session *Session) {
 	switch {
 	case t.promptIdle() && !t.promptDirty:
 	case !t.login.seen || t.folderIntegrationSeen:
-		// Once hooks report, only their prompt end authorizes a command.
-		if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() {
-			if t.promptStarted && !t.promptIdle() && t.login.seen && t.login.quietWait(now, loginCommandGrace) == 0 {
-				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
-			} else if !t.login.seen && now-t.login.armedAt >= loginCommandExecTimeout {
+		// Wait for the shell's prompt marker, or a stable interactive prompt
+		// whose next answer is part of this configured sequence.
+		if !t.login.seen {
+			if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && now-t.login.armedAt >= loginCommandExecTimeout {
 				state.abortLoginCommands(session, loginAbortTimeout)
 			}
-		}
-		return
-	case t.login.quietWait(now, state.loginQuiet(session)) > 0:
-		return
-	default:
-		if !t.login.local && !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && cmdhistory.PasswordPrompt(t.screen.RowText(t.screen.Cursor().Y)) {
-			state.abortLoginCommands(session, loginAbortAbnormalPrompt)
 			return
 		}
+		if !state.loginInteractivePromptReady(t) {
+			if !t.login.isWorkspaceStep && t.login.hasRemainingSteps() && loginIncompletePromptReady(t, now) {
+				state.abortLoginCommands(session, loginAbortAbnormalPrompt)
+			}
+			return
+		}
+	case t.login.quietWait(now, state.loginQuiet(session)) > 0:
+		return
 	}
 	state.sendInitializationCommand(t)
 }
@@ -751,6 +953,9 @@ func (state *State) sendInitializationCommand(t *terminal) {
 	t.login.running = true
 	t.login.activeIndex = t.login.next
 	t.login.activeLine = login.line
+	t.login.passwordPromptObserved = false
+	t.login.passwordPromptVersion = 0
+	t.login.secretPromptReplies = nil
 	t.login.sentAt = state.now()
 	t.login.promptVersion = t.promptVersion
 	t.login.commandStarted = false
