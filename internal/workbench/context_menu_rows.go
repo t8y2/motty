@@ -240,9 +240,11 @@ func (rows *menuRows) declare(c ui.C, menu *ui.MenuItems, choose func(gfx.ID)) {
 		case components.ContextMenuRadio:
 			item = item.Chosen(row.Selected)
 		}
-		chosen := item.Clicked()
+		var chosen bool
 		if entry.stay {
 			chosen = item.Toggled()
+		} else {
+			chosen = item.Clicked()
 		}
 		if chosen {
 			id := row.ID
