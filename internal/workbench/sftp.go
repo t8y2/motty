@@ -1040,14 +1040,7 @@ func (view *sftpView) remember(remotePath string, entries []sftpclient.Entry) {
 	if len(entries) > maxSFTPListingEntries {
 		return
 	}
-	// A newer reading of a path replaces the older one, including its bytes.
-	for index := range view.listings {
-		if view.listings[index].path == remotePath {
-			view.listingBytes -= view.listings[index].bytes
-			view.listings = slices.Delete(view.listings, index, index+1)
-			break
-		}
-	}
+	view.forgetListing(remotePath)
 	size := sftpListingSize(entries)
 	limit := view.listingLimitBytes
 	if limit <= 0 {
@@ -1062,6 +1055,16 @@ func (view *sftpView) remember(remotePath string, entries []sftpclient.Entry) {
 	}
 	view.listings = append(view.listings, sftpListing{path: remotePath, entries: entries, bytes: size})
 	view.listingBytes += size
+}
+
+func (view *sftpView) forgetListing(remotePath string) {
+	for index := range view.listings {
+		if view.listings[index].path == remotePath {
+			view.listingBytes -= view.listings[index].bytes
+			view.listings = slices.Delete(view.listings, index, index+1)
+			return
+		}
+	}
 }
 
 // sftpListingSize estimates what a listing costs, so the cache can be bounded
@@ -1282,6 +1285,13 @@ func (state *State) finishSFTPPrefetch(view *sftpView, result sftpclient.Result)
 		view.busy = false
 	}
 	if result.Err != nil {
+		if !errors.Is(result.Err, sftpclient.ErrCanceled) {
+			view.forgetListing(result.Path)
+			if !waited && view.path == result.Path && !view.busy {
+				state.updateSFTPRows(view, nil)
+				view.errorText = state.formatSFTPError(result.Err)
+			}
+		}
 		if waited {
 			view.navigation = sftpNavigation{}
 			view.terminalPath, view.terminalLocate = "", false

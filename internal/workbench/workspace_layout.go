@@ -339,10 +339,12 @@ func (state *State) ensureContextSFTP() {
 	if !ok || !context.Open || context.Kind != layoutcore.ContextSFTP {
 		return
 	}
-	// A view whose worker a page switch suspended is opened again the same way:
-	// openSFTP reattaches the worker and keeps the listing on screen.
-	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && (session.files == nil || session.files.worker == nil) {
-		state.openSFTP(session) // a session that is not connected is left alone
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+		if view := session.files; view != nil && view.local {
+			_ = state.refreshLocalDirectory(view)
+		} else if session.files == nil || session.files.worker == nil {
+			state.openSFTP(session) // a session that is not connected is left alone
+		}
 	}
 }
 

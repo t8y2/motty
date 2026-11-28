@@ -408,6 +408,30 @@ func TestAPageSwitchSuspendsThePanelAndKeepsItsListing(t *testing.T) {
 	}
 }
 
+func TestAPageSwitchReportsFailedBackgroundRefresh(t *testing.T) {
+	state, session, fake, remote := openTestSFTP(t)
+	view := session.files
+	state.openSFTPDirectory(view, "/home/test/docs")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && view.path == "/home/test/docs" && len(view.rows) > 0 })
+	state.Click(hitHosts)
+	fake.mu.Lock()
+	fake.sftp = folderSyncErrorRemote{remote}
+	fake.mu.Unlock()
+
+	workspaceID := state.deck.ActiveWorkspace()
+	paneID := state.deck.ActivePane(workspaceID)
+	if !state.activatePane(workspaceID, paneID) {
+		t.Fatal("the tab did not come back")
+	}
+	waitSFTP(t, state, session, func(view *sftpView) bool { return len(view.prefetching) == 0 && view.errorText != "" })
+	if len(view.rows) != 0 {
+		t.Fatalf("failed refresh left %d stale rows", len(view.rows))
+	}
+	if _, cached := view.listing(view.path); cached {
+		t.Fatal("failed refresh left the unreadable directory in the cache")
+	}
+}
+
 // A panel with work under way keeps its worker over a page switch: the
 // suspension only takes an idle panel's.
 func TestABusyPanelKeepsItsWorkerOverAPageSwitch(t *testing.T) {
