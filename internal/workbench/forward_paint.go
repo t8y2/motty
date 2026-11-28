@@ -16,6 +16,9 @@ type forwardSectionUI struct {
 	// listScroll is the page list's scroll area, so a long list can be moved
 	// from elsewhere.
 	listScroll *ui.ScrollState
+	// listBox is the list's header and rows together, so a test can compare its
+	// edges with the other catalog pages.
+	listBox ui.Box
 	// draw is the page hook that paints the empty state. It is kept so a paint
 	// does not build a closure for the hook.
 	draw func(*ui.DrawContext)
@@ -102,7 +105,8 @@ func (state *State) declareForwardList(c ui.C, bounds gfx.Rect) {
 	theme := state.Theme()
 	headerHeight := components.TableHeaderHeight(theme)
 	headerPad := theme.Metrics.GapItem
-	ui.Column(c).Grow(1).Shrink(1).MinHeight(0).Children(func() {
+	listColumn := ui.Column(c).Grow(1).Shrink(1).MinHeight(0)
+	listColumn.Children(func() {
 		ui.Row(c).Height(headerHeight).Shrink(0).FillWidth().Gap(0).Items(ui.Center).Children(func() {
 			for column := range 5 {
 				width := state.forwardColumns[column].Width
@@ -122,6 +126,7 @@ func (state *State) declareForwardList(c ui.C, bounds gfx.Rect) {
 			state.takeForwardListSelection()
 		}
 	})
+	state.sectionBodies.forwards.listBox = listColumn
 }
 
 // fitForwardColumns fits the list's columns to the room its card has: the

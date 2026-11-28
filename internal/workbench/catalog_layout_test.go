@@ -68,7 +68,7 @@ func TestForwardsAndProxiesShareHeaderAndFooterGeometry(t *testing.T) {
 	state.activeSection = sectionForwards
 	forwardCanvas = paint()
 	forwardAdd = buttonBounds(forwardCanvas, hitForwardAdd)
-	forwardTable := state.sectionBodies.forwards.tableBox.Rect()
+	forwardTable := state.sectionBodies.forwards.listBox.Rect()
 
 	state.activeSection = sectionProxies
 	proxyCanvas = paint()
