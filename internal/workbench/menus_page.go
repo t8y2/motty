@@ -18,4 +18,5 @@ func (state *State) declareMenus(c ui.C) {
 	state.declareLocalShellPicker(c)
 	state.declareBroadcastMenu(c)
 	state.declareWorkspaceTemplateMenu(c)
+	state.declareAIMenu(c)
 }

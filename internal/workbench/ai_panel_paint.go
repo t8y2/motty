@@ -389,12 +389,16 @@ func (state *State) aiBuild(canvas *gfx.Canvas, view *aiRowView, item *aiItem, w
 	case aiReasoning:
 		view.height = aiReasonHeader
 		if view.expanded {
-			count := state.aiWrap(canvas, view, item.text, aiSizes.small, width-14)
-			view.height += aiReasonBody + float32(count)*aiSizes.smallLine
+			view.plain[aiTextPrimary].layoutBody(canvas, item.text, aiSizes.small, aiSizes.smallLine, max(width-14, 1), aiMaxLines)
+			view.lines = view.plain[aiTextPrimary].appendLines(view.lines)
+			view.height += aiReasonBody + float32(len(view.lines))*aiSizes.smallLine
+		} else {
+			view.plain[aiTextPrimary].reset("")
 		}
 	case aiNotice:
-		count := state.aiWrap(canvas, view, item.text, aiSizes.small, width-2*aiNoticePadX)
-		view.height = 2*aiNoticePadY + float32(count)*aiSizes.smallLine
+		view.plain[aiTextPrimary].layoutBody(canvas, item.text, aiSizes.small, aiSizes.smallLine, max(width-2*aiNoticePadX, 1), aiMaxLines)
+		view.lines = view.plain[aiTextPrimary].appendLines(view.lines)
+		view.height = 2*aiNoticePadY + float32(len(view.lines))*aiSizes.smallLine
 	case aiTool:
 		state.aiLayoutTool(view, item, width, cell, cellHeight)
 	}
@@ -749,6 +753,13 @@ func (state *State) paintAIPanelContent(d *ui.DrawContext) {
 	// A row that is gone takes the selection that pointed into it, whether the
 	// list paints rows at all: the empty state has no Draw to do it later.
 	panel.textSelect.Clamp(len(ai.items)*int(aiTextPartCount), panel.textLength)
+	if !panel.focusTarget.IsZero() {
+		target := panel.focusTarget
+		panel.focusTarget = gfx.ID{}
+		if canvas != nil {
+			canvas.RequestFocusOnce(target)
+		}
+	}
 	state.paintAIBottom(canvas, &panel.body)
 }
 
@@ -1374,16 +1385,28 @@ func (state *State) declareAIRow(root ui.Box, f aiRowFrame, index int, view *aiR
 				// The thread down the left side, and the thought beside it.
 				f.Row().MarginSides(2, 0, 0, 0).Children(func() {
 					f.Column().Width(1).MarginSides(0, 0, 4, 7).Background(pal.line)
-					f.Column().Grow(1).MarginSides(2, 0, 6, 6).Children(func() {
+					text := f.Column().Grow(1).MarginSides(2, 0, 6, 6).Children(func() {
 						aiTextLines(f, view.lines, aiSizes.small, aiSizes.smallLine, pal.muted)
 					})
+					view.textSlots[aiTextPrimary] = text
+					view.textSlotSet[aiTextPrimary] = true
+					if index < aiMaxRowHits {
+						text.HitWith(hitAIAnswerText.At(index), item.text, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
+					}
 				})
 			}
 		})
 	case aiNotice:
 		root.Children(func() {
 			f.Column().PadSides(aiNoticePadY, aiNoticePadX, aiNoticePadY, aiNoticePadX).Background(withAlpha(pal.danger, 0.12)).Radius(radius.control).Children(func() {
-				aiTextLines(f, view.lines, aiSizes.small, aiSizes.smallLine, pal.danger)
+				text := f.Column().Children(func() {
+					aiTextLines(f, view.lines, aiSizes.small, aiSizes.smallLine, pal.danger)
+				})
+				view.textSlots[aiTextPrimary] = text
+				view.textSlotSet[aiTextPrimary] = true
+				if index < aiMaxRowHits {
+					text.HitWith(hitAIAnswerText.At(index), item.text, gfx.HitOptions{Role: gfx.RoleGroup, SkipTab: true})
+				}
 			})
 		})
 	case aiTool:

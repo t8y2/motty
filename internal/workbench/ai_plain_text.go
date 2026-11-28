@@ -233,7 +233,7 @@ func (v *aiRowView) textLayout(part aiTextPart) aiTextLayout {
 		if part == aiTextPrimary {
 			return &v.md
 		}
-	case aiUser:
+	case aiUser, aiReasoning, aiNotice:
 		if part == aiTextPrimary {
 			return &v.plain[aiTextPrimary]
 		}
