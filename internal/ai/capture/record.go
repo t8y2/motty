@@ -190,11 +190,11 @@ func (r *recorder) commitLine() {
 
 func (r *recorder) emitLine(line []byte, nl bool) {
 	if r.echoIdx < len(r.echo) {
-		if len(r.echoPending) == 0 && matchEcho(line, r.echo[r.echoIdx]) {
+		if len(r.echoPending) == 0 && matchEchoRedraw(line, r.echo[r.echoIdx]) {
 			r.echoIdx++
 			return
 		}
-		if len(r.echo) > 1 && matchEcho(line, r.echo[len(r.echo)-1]) {
+		if len(r.echo) > 1 && matchEchoRedraw(line, r.echo[len(r.echo)-1]) {
 			r.echoIdx = len(r.echo)
 			r.echoPending = nil
 			return
@@ -232,6 +232,15 @@ func matchEcho(line, exp []byte) bool {
 		return true
 	}
 	return bytes.Equal(line, exp) || bytes.HasSuffix(line, exp)
+}
+
+// matchEchoRedraw also accepts a line editor's syntax-highlighting redraw,
+// which can append a second copy of the line after cursor movements instead of
+// overwriting it. The full expected echo must still appear; the unique wrapper
+// text keeps output lines from matching by accident.
+func matchEchoRedraw(line, exp []byte) bool {
+	line, exp = bytes.TrimSpace(line), bytes.TrimSpace(exp)
+	return matchEcho(line, exp) || len(exp) >= 8 && bytes.Contains(line, exp)
 }
 
 // put appends committed text to the bounded head/tail store.

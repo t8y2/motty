@@ -2,6 +2,8 @@ package capture
 
 import (
 	"bytes"
+	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -41,13 +43,15 @@ type Tap struct {
 	// The wrapper's echo is hidden from the terminal: the user sees the
 	// logical command once instead. All raw bytes stay in hidden so a mismatch
 	// can fall back to showing exactly what the shell sent.
-	displayOn  bool
-	displayCmd []byte
-	echoLines  [][]byte
-	echoIndex  int
-	echoScan   int
-	echoDone   bool
-	hidden     []byte
+	displayOn   bool
+	displayCmd  []byte
+	echoLines   [][]byte
+	echoIndex   int
+	echoScan    int
+	echoLead    int
+	echoLeadEnd int
+	echoDone    bool
+	hidden      []byte
 }
 
 // NewTap returns a Tap for one command wrapped with the same nonce. maxOutput
@@ -157,10 +161,13 @@ func (t *Tap) SetEcho(sent []byte) {
 // called first. The capture recorder still receives the raw echo, so its echo
 // matching and output result are unchanged.
 func (t *Tap) SetDisplay(command string) {
+	debugTap(fmt.Sprintf("SETDISPLAY command=%q echoLines=%q\n", command, t.echoLines))
 	t.displayCmd = append(t.displayCmd[:0], command...)
 	t.displayOn = len(t.echoLines) > 0
 	t.echoIndex = 0
 	t.echoScan = 0
+	t.echoLead = 0
+	t.echoLeadEnd = 0
 	t.echoDone = false
 	t.hidden = t.hidden[:0]
 }
@@ -262,8 +269,20 @@ func (t *Tap) display(b []byte) {
 		if i < 0 {
 			return
 		}
-		line := rest[:i]
-		if t.echoIndex >= len(t.echoLines) || !matchEcho(line, t.echoLines[t.echoIndex]) {
+		line := terminalLine(rest[:i])
+		if t.echoIndex >= len(t.echoLines) || !matchDisplayEcho(line, t.echoLines[t.echoIndex], t.echoIndex > 0) {
+			debugTap(fmt.Sprintf("MISMATCH idx=%d line=%q exp=%q raw=%q\n", t.echoIndex, line, t.echoLineAt(t.echoIndex), rest[:i]))
+
+			// A prompt redraw can be printed before the wrapper echo. It is not
+			// part of the wrapper, so show it and keep looking for the first echo
+			// line instead of flushing the whole raw wrapper.
+			if t.echoIndex == 0 && !t.echoDone && t.echoLead < 16 {
+				t.echoLead++
+				t.out = append(t.out, rest[:i+1]...)
+				t.echoScan += i + 1
+				t.echoLeadEnd = t.echoScan
+				continue
+			}
 			t.out = append(t.out, t.flushDisplay()...)
 			return
 		}
@@ -271,6 +290,7 @@ func (t *Tap) display(b []byte) {
 		t.echoScan += i + 1
 		if t.echoIndex == len(t.echoLines) {
 			t.echoDone = true
+			debugTap(fmt.Sprintf("ECHO_DONE command=%q trailing=%q\n", t.displayCmd, t.hidden[t.echoScan:]))
 			command := bytes.TrimRight(t.displayCmd, "\r\n")
 			if len(command) == 0 {
 				command = []byte(":")
@@ -289,6 +309,37 @@ func (t *Tap) display(b []byte) {
 	}
 }
 
+// terminalLine returns the plain text a terminal line shows once the escape
+// sequences, backspaces and carriage-return redraws a line editor emits are
+// applied. It runs the recorder's normalizer, so display matching sees the text
+// a person sees rather than the raw pty bytes.
+func terminalLine(raw []byte) []byte {
+	var r recorder
+	r.write(raw)
+	return r.cur
+}
+
+// minScrolledEcho is the shortest visible tail of an echoed line that still
+// identifies it. zsh's line editor scrolls a line wider than the terminal and
+// redraws only this tail, so an exact match is impossible there.
+const minScrolledEcho = 8
+
+// matchDisplayEcho reports whether the normalized terminal line is the echo of
+// exp. Besides the recorder's prompt-tolerant match, a continuation line may be
+// a proper suffix of exp: zsh's line editor scrolls a line wider than the
+// terminal and redraws only that tail. The opening wrapper line is matched
+// exactly, so a shell that echoes nothing cannot lose its first output line.
+func matchDisplayEcho(line, exp []byte, continuation bool) bool {
+	line = bytes.TrimSpace(line)
+	if matchEcho(line, exp) {
+		return true
+	}
+	if len(exp) >= 8 && bytes.Contains(line, exp) {
+		return true
+	}
+	return continuation && len(line) >= minScrolledEcho && bytes.HasSuffix(exp, line)
+}
+
 // flushDisplay returns everything still held for the display filter unchanged.
 // The terminal then looks exactly as it did before SetDisplay; the AI card
 // remains the place where the command is summarized.
@@ -297,7 +348,7 @@ func (t *Tap) flushDisplay() []byte {
 		return nil
 	}
 	t.echoDone = true
-	out := append([]byte(nil), t.hidden...)
+	out := append([]byte(nil), t.hidden[t.echoLeadEnd:]...)
 	t.hidden = t.hidden[:0]
 	t.echoScan = 0
 	return out
@@ -392,4 +443,23 @@ func (t *Tap) Result() Result {
 		}
 	}
 	return result
+}
+
+func (t *Tap) echoLineAt(index int) []byte {
+	if index < 0 || index >= len(t.echoLines) {
+		return nil
+	}
+	return t.echoLines[index]
+}
+
+func debugTap(report string) {
+	if os.Getenv("MOTTY_TAP_DEBUG") == "" {
+		return
+	}
+	f, err := os.OpenFile("/tmp/motty-tap-debug.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.WriteString(report)
 }
