@@ -104,14 +104,19 @@ func TestDroppedFilesOnAFolderRowGoIntoThatFolder(t *testing.T) {
 
 func TestDropIsRefusedOutsideThePanelAndLeaveClearsTheHighlight(t *testing.T) {
 	state, session, _, panel, paths := dropFixture(t)
+	// The window bar takes a file the drop could play back as a recording, so
+	// what a drop outside the panel must not do is aim the panel at it or start
+	// an upload.
 	outside := gfx.FileDropEvent{X: panel.X - 50, Y: 4, Paths: paths}
 	outside.Phase = gfx.FileDropOver
-	if result := state.FileDrop(outside); result.Handled {
-		t.Fatalf("the window bar accepted the hover: %+v", result)
+	state.FileDrop(outside)
+	if session.files.dropping {
+		t.Fatal("the window bar showed the panel's drop target")
 	}
 	outside.Phase = gfx.FileDropDrop
-	if result := state.FileDrop(outside); result.Handled || len(session.files.transfers) != 0 {
-		t.Fatalf("a drop outside the panel was taken: %+v, %d transfers", result, len(session.files.transfers))
+	state.FileDrop(outside)
+	if len(session.files.transfers) != 0 {
+		t.Fatalf("a drop outside the panel started %d transfers", len(session.files.transfers))
 	}
 
 	over := gfx.FileDropEvent{X: panel.X + 40, Y: panel.Y + 60}
@@ -224,8 +229,11 @@ func TestDropOnATerminalWhoseFolderIsUnknownIsRefused(t *testing.T) {
 	x, y := terminalPoint(panel)
 	event := gfx.FileDropEvent{X: x, Y: y, Paths: paths[:1]}
 	event.Phase = gfx.FileDropOver
-	if result := state.FileDrop(event); result.Handled {
-		t.Fatalf("a terminal with no known folder accepted the hover: %+v", result)
+	state.FileDrop(event)
+	// The window takes a file that could be a recording anywhere, so what the
+	// terminal without a folder must not do is offer itself as the upload target.
+	if state.terminalDrop != (terminalDrop{}) {
+		t.Fatalf("a terminal with no known folder took the hover: %+v", state.terminalDrop)
 	}
 }
 
