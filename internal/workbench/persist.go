@@ -265,6 +265,9 @@ type savedState struct {
 	CommandsSort            string   `json:"commands_sort,omitempty"`
 	// CommandsWidth is the width the sidebar was dragged to; zero is the default.
 	CommandsWidth float32 `json:"commands_width,omitempty"`
+	// CommandsRows is how many chip rows the bottom bar was dragged to; below
+	// two is the single strip.
+	CommandsRows int `json:"commands_rows,omitempty"`
 }
 
 type savedOutboundProxy struct {
@@ -738,6 +741,7 @@ func (state *State) snapshot() savedState {
 	saved.CommandsSidebarLeft = state.commands.sidebarLeft
 	saved.CommandsSort = state.commands.sort.String()
 	saved.CommandsWidth = state.commands.width
+	saved.CommandsRows = state.commands.rows
 	for key, hidden := range state.commands.hiddenGroups {
 		if hidden {
 			saved.CommandsHiddenGroups = append(saved.CommandsHiddenGroups, key)

@@ -2021,7 +2021,8 @@ var englishTools = ToolsMessages{
 	// The saved commands shown under the terminal.
 	CommandsAdd:         "Add command",
 	CommandsClose:       "Hide snippets (tick the box in the Snippets picker to show them again)",
-	CommandsResize:      "Drag to resize the snippets sidebar",
+	CommandsResize:      "Drag to resize the snippets bar, double-click to reset",
+	CommandsEmpty:       "No commands yet. Use + to add one",
 	CommandsMoveLeft:    "Move snippets sidebar left",
 	CommandsMoveRight:   "Move snippets sidebar right",
 	CommandsBarHidden:   "Snippets hidden",
