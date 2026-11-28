@@ -92,7 +92,9 @@ func (t *terminal) ensureFolds() {
 		return
 	}
 	epoch := t.screen.ReflowEpoch()
-	if t.foldsValid && t.foldsBase == base && t.foldsEpoch == epoch {
+	if t.foldsValid && t.foldsBase == base && t.foldsEpoch == epoch &&
+		t.foldsPrompt == t.blockPrompt && t.foldsCommand == t.blockCommand &&
+		t.foldsBlockActive == t.blockActive {
 		return
 	}
 	t.folds = t.folds[:0]
@@ -136,6 +138,7 @@ func (t *terminal) ensureFolds() {
 	}
 	t.foldsBase = base
 	t.foldsEpoch = epoch
+	t.foldsPrompt, t.foldsCommand, t.foldsBlockActive = t.blockPrompt, t.blockCommand, t.blockActive
 	t.foldsValid = true
 }
 

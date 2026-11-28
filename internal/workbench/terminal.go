@@ -238,6 +238,11 @@ type terminal struct {
 	foldsBase  uint64
 	foldsEpoch uint64
 	foldRows   int
+	// Anchor state changes the prompt boundary without a reflow. It is part of
+	// the fold cache key, so a rebuilt range can never reuse the old boundary.
+	foldsPrompt      blockAnchor
+	foldsCommand     blockAnchor
+	foldsBlockActive int
 	// lineIndex is reused by remapBlocks so a window resize does not allocate a
 	// new map of every retained line identity each frame.
 	lineIndex map[uint64]uint64
