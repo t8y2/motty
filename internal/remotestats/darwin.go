@@ -301,7 +301,75 @@ now=$(date +%s)
 printf 'info\t%s\t%s\t%s\t%s\n' "$cores" "$load" "$((now - boot))" "$(uname -r 2>/dev/null)"
 { mount 2>/dev/null; printf '__MOTTY_DF__\n'; df -Pk -l 2>/dev/null; } | awk '` + darwinDiskAwk + `'
 netstat -ibn 2>/dev/null | awk '` + darwinInterfaceAwk + `'
-` + loginsCommand + `
+# The addresses of those interfaces: ifconfig prints one block per interface,
+# the name at the start of the unindented line that opens it.
+ifconfig -a 2>/dev/null | awk '
+    /^[^ \t]/ { name = $1; sub(/:$/, "", name) }
+    name ~ /^lo/ { next }
+    $1 == "inet" || $1 == "inet6" {
+        address = $2; sub(/^addr:/, "", address); sub(/\/.*/, "", address); sub(/%.*/, "", address)
+        printf "netaddr\t%s\t%s\n", name, address
+    }
+'
+# The sockets macOS is listening on: netstat's LISTEN rows, whose local address
+# ends in .port. Ownership needs lsof, which an unprivileged reader cannot use
+# for another user's socket, so the process is left to the row.
+netstat -an -p tcp 2>/dev/null | awk '
+    $6 == "LISTEN" {
+        proto = $1; local = $4
+        host = local; sub(/\.[^.]*$/, "", host)
+        port = local; sub(/.*\./, "", port)
+        if (port !~ /^[0-9]+$/) next
+        if (host == "" || host == "*") host = "0.0.0.0"
+        printf "listen\t%s\t%s\t%s\t-\t0\n", proto, host, port
+        if (++count >= 64) exit
+    }'
+` + loginsCommand + darwinProcessesCommand + `
+`
+
+// darwinProcessesCommand is processesCommand for a Mac: top's neighbours in ps,
+// ordered by CPU, and the memory pools vm_stat counts. macOS keeps no buffer
+// cache of its own, so the page cache is the inactive and purgeable pages and
+// the buffers are zero; the free pages, that cache and nothing else are what the
+// host can hand out, which is the available figure. The page size comes from
+// vm_stat's own header, for the reason darwinMemoryAwk gives.
+const darwinProcessesCommand = `
+ps -Ao pid,pcpu,pmem,rss,comm -r 2>/dev/null | awk '
+	NR > 1 {
+		name = $5
+		for (i = 6; i <= NF; i++) name = name " " $i
+		printf "proc\t%s\t%s\t%s\t%s\t%s\n", $1, $2, $3, $4, name
+	}'
+procmem=$(sysctl -n hw.memsize 2>/dev/null)
+set -- $(sysctl -n vm.swapusage 2>/dev/null | awk '
+function kb(v,   n, u) {
+    n = v + 0; u = substr(v, length(v), 1)
+    if (u == "G") return n * 1024 * 1024
+    if (u == "M") return n * 1024
+    return n
+}
+{
+    for (i = 1; i <= NF; i++) {
+        if ($i == "total") total = kb($(i + 2))
+        if ($i == "free") free = kb($(i + 2))
+    }
+    printf "%d %d", total, free
+}')
+vm_stat 2>/dev/null | awk -v total="$procmem" -v swaptotal="${1:-0}" -v swapfree="${2:-0}" '
+	NR == 1 {
+		for (i = 1; i < NF; i++) if ($i == "of" && $(i + 1) ~ /^[0-9]+$/) page = $(i + 1) + 0
+		next
+	}
+	/^Pages free:/ { idle = $3 + 0 }
+	/^Pages inactive:/ { inactive = $3 + 0 }
+	/^Pages purgeable:/ { purgeable = $3 + 0 }
+	END {
+		if (page > 0 && total > 0) {
+			available = (idle + inactive + purgeable) * page
+			if (available > total) available = total
+			printf "mem\t%d\t%d\t%d\t0\t%d\t%d\t%d\n", total / 1024, available / 1024, idle * page / 1024, (inactive + purgeable) * page / 1024, swaptotal, swapfree
+		}
+	}'
 `
 
 func darwinScript(seconds int) string {
