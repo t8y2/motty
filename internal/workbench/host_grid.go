@@ -42,6 +42,18 @@ type hostGridDrag struct {
 	drop   func(source, target gfx.ID)
 }
 
+// hostGridDropShare is the part of a group header's height that orders the group
+// beside the target instead of inside it: its top and bottom quarters, as a Tree
+// row's top and bottom quarters insert beside it.
+const hostGridDropShare = float32(0.25)
+
+// The wash and edge that mark a group the drag would join: the share of the
+// accent mixed into the row behind the group, and the alpha of its edge.
+const (
+	hostGridDropWash = float32(0.10)
+	hostGridDropEdge = float32(0.5)
+)
+
 // ensureHostGridDrag makes the callbacks the DragState keeps, once.
 func (state *State) ensureHostGridDrag() *hostGridDrag {
 	drag := &state.hostGridDrag
@@ -67,11 +79,35 @@ func (state *State) ensureHostGridPaint() *hostGridPaintState {
 	return paint
 }
 
-// hostGroupOpenHit maps a grid group header's hit identity back to its group.
+// hostGroupOpenHit maps a grid group header's identity back to its group. It is
+// the drag's source, and the drop that puts a group inside another.
 func (state *State) hostGroupOpenHit(id gfx.ID) (int, bool) {
 	if id.Scope() != hitHostGroupOpenList {
 		return 0, false
 	}
+	return state.hostGroupHeaderIndex(id)
+}
+
+// hostGridDropTarget maps an identity in a group header's drop area back to its
+// group and where a drop there lands: its middle joins the group, its top and
+// bottom strips place the dragged group before or after it.
+func (state *State) hostGridDropTarget(id gfx.ID) (int, ui.TreeDrop, bool) {
+	where := ui.TreeDropInside
+	switch id.Scope() {
+	case hitHostGroupOpenList:
+	case hitHostGroupDropBeforeList:
+		where = ui.TreeDropBefore
+	case hitHostGroupDropAfterList:
+		where = ui.TreeDropAfter
+	default:
+		return 0, 0, false
+	}
+	index, ok := state.hostGroupHeaderIndex(id)
+	return index, where, ok
+}
+
+// hostGroupHeaderIndex is the group a numbered group header identity names.
+func (state *State) hostGroupHeaderIndex(id gfx.ID) (int, bool) {
 	index := item(id)
 	if index < 0 || index >= len(state.hostGroups) {
 		return 0, false
@@ -79,9 +115,10 @@ func (state *State) hostGroupOpenHit(id gfx.ID) (int, bool) {
 	return index, true
 }
 
-// hostGridDragAccept takes a group header only where the list view would: the
-// destination is another group, not the source or what is inside it, and the
-// move does not meet a group of its own name.
+// hostGridDragAccept takes a group header only where the list view would: inside
+// another group, not into the source or what is inside it, and not beside a group
+// of its own name. A drop beside the target's top or bottom edge is accepted only
+// when the manual order can place the group there.
 func (state *State) hostGridDragAccept(source, target gfx.ID) bool {
 	if state.activeSection != sectionHosts || state.modal != modalNone ||
 		state.hostSort.enabled || state.hostView != hostViewGrid {
@@ -91,14 +128,18 @@ func (state *State) hostGridDragAccept(source, target gfx.ID) bool {
 	if !ok {
 		return false
 	}
-	to, ok := state.hostGroupOpenHit(target)
+	to, where, ok := state.hostGridDropTarget(target)
 	if !ok {
 		return false
 	}
-	return state.hostGroupMoveAllowed(from, to)
+	if where == ui.TreeDropInside {
+		return state.hostGroupMoveAllowed(from, to)
+	}
+	return state.hostGroupMoveBesideAllowed(from, to)
 }
 
-// hostGridDragDrop moves the dragged group under the group it was let go on.
+// hostGridDragDrop moves the dragged group under the group it was let go on, or,
+// in the strips at that group's edges, beside it in the target's folder.
 func (state *State) hostGridDragDrop(source, target gfx.ID) {
 	if state.activeSection != sectionHosts || state.modal != modalNone || state.hostSort.enabled {
 		return
@@ -107,13 +148,56 @@ func (state *State) hostGridDragDrop(source, target gfx.ID) {
 	if !ok {
 		return
 	}
-	to, ok := state.hostGroupOpenHit(target)
-	if !ok || !state.hostGroupMoveAllowed(from, to) {
+	to, where, ok := state.hostGridDropTarget(target)
+	if !ok {
 		return
 	}
-	if !state.moveHostGroup(state.hostGroups[from].Name, state.hostGroups[to].Name) {
+	var moved bool
+	switch where {
+	case ui.TreeDropInside:
+		if !state.hostGroupMoveAllowed(from, to) {
+			return
+		}
+		moved = state.moveHostGroup(state.hostGroups[from].Name, state.hostGroups[to].Name)
+	case ui.TreeDropBefore, ui.TreeDropAfter:
+		if !state.hostGroupMoveBesideAllowed(from, to) {
+			return
+		}
+		moved = state.moveHostGroupBeside(from, to, where == ui.TreeDropAfter)
+	default:
+		return
+	}
+	if !moved {
 		state.status, state.dialogError = state.dialogError, ""
 	}
+}
+
+// hostGridDropZones is where a group header's top and bottom strips are: the
+// shares of its cell that order the group beside the header. The rest of the
+// cell joins the group.
+func hostGridDropZones(cell gfx.Rect) (before, after gfx.Rect) {
+	height := cell.Height * hostGridDropShare
+	before = gfx.Rect{X: cell.X, Y: cell.Y, Width: cell.Width, Height: height}
+	after = gfx.Rect{X: cell.X, Y: cell.Y + cell.Height - height, Width: cell.Width, Height: height}
+	return before, after
+}
+
+// paintHostGridDrop marks where a dragged group would land: a line at the edge it
+// would be inserted at, or a wash and edge around the group it would join, as the
+// list's Tree marks its rows.
+func (state *State) paintHostGridDrop(canvas *gfx.Canvas, cell gfx.Rect, where ui.TreeDrop) {
+	if where == ui.TreeDropInside {
+		// The row's wash is painted opaque under a translucent edge: a filled
+		// translucent border would fill the whole cell with its border colour.
+		wash := mixColor(state.pal.surfaceSoft, state.pal.accent, hostGridDropWash)
+		canvas.RoundedBorder(cell, radius.control, 2, withAlpha(state.pal.accent, hostGridDropEdge), wash)
+		return
+	}
+	y := cell.Y - 1
+	if where == ui.TreeDropAfter {
+		y = cell.Y + cell.Height - 1
+	}
+	canvas.Fill(gfx.Rect{X: cell.X + 8, Y: y, Width: max(cell.Width-16, 0), Height: 2}, state.pal.accent)
 }
 
 func hostViewFromString(value string) hostViewMode {
@@ -268,7 +352,8 @@ func (state *State) drawHostGrid(d *ui.DrawContext) {
 		if rows[index].Kind == hostTreeGroup {
 			// Its text sits on the same line as a group row's in the list view.
 			if y+hostGridHeader > viewport.Y {
-				// The header's cell is the drag source and drop target; its name
+				// The header's cell is the drag source; its middle joins the group
+				// and the strips at its edges order the group beside it. Its name
 				// toggles the group on a click, as the list's group row does.
 				groupIndex := rows[index].GroupIndex
 				group := state.hostGroups[groupIndex]
@@ -281,11 +366,17 @@ func (state *State) drawHostGrid(d *ui.DrawContext) {
 					Role: gfx.RoleButton, Expanded: group.Expanded, Hint: group.Name,
 				})
 				d.DragSource(&drag.state, id, cell)
+				// The cell is the fallback drop, declared first so the edge strips
+				// are asked before it: a drop that cannot order the group there
+				// still joins it.
 				d.DropTarget(&drag.state, id, cell, drag.accept, drag.drop)
-				state.paintHostGridHeader(canvas, cell, groupIndex, rows[index].Depth)
-				if drag.state.Target() == id {
-					canvas.Fill(gfx.Rect{X: cell.X, Y: cell.Y, Width: cell.Width, Height: 2}, state.pal.accent)
+				before, after := hostGridDropZones(cell)
+				d.DropTarget(&drag.state, hitHostGroupDropBeforeList.At(groupIndex), before, drag.accept, drag.drop)
+				d.DropTarget(&drag.state, hitHostGroupDropAfterList.At(groupIndex), after, drag.accept, drag.drop)
+				if target, where, ok := state.hostGridDropTarget(drag.state.Target()); ok && target == groupIndex {
+					state.paintHostGridDrop(canvas, cell, where)
 				}
+				state.paintHostGridHeader(canvas, cell, groupIndex, rows[index].Depth)
 			}
 			y += hostGridHeader
 			index++

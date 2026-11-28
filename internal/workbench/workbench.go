@@ -165,6 +165,10 @@ var (
 	hitHostFilterList     = tree.Sub(shellHits, tree.Name("host-filter"))
 	hitHostFilterMenuList = tree.Sub(shellHits, tree.Name("host-filter-menu-item"))
 	hitHostGroupOpenList  = tree.Sub(shellHits, tree.Name("host-group-open"))
+	// The top and bottom strips of a card grid group header order the group
+	// beside the one it is let go on instead of inside it.
+	hitHostGroupDropBeforeList = tree.Sub(shellHits, tree.Name("host-group-drop-before"))
+	hitHostGroupDropAfterList  = tree.Sub(shellHits, tree.Name("host-group-drop-after"))
 	// A top-level chip's chevron opens the menu of its nested groups.
 	hitHostFilterChevronList = tree.Sub(shellHits, tree.Name("host-filter-chevron"))
 	hitHostChipMenuList      = tree.Sub(shellHits, tree.Name("host-chip-menu-item"))
