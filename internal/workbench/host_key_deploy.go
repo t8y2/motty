@@ -328,8 +328,13 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 	}
 	verified, err := task.connect(ctx, config, true)
 	if err != nil {
+		code, detail := hostKeyDeployFailureDetails(err)
+		if code == hostKeyDeployErrorCanceled {
+			out.Error, out.Detail = hostKeyDeployErrorCanceled, detail
+			return out
+		}
 		out.Error = hostKeyDeployErrorInstalledBut
-		out.Cause, out.Detail = hostKeyDeployFailureDetails(err)
+		out.Cause, out.Detail = code, detail
 		return out
 	}
 	verified.Cancel()
