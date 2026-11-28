@@ -1,5 +1,5 @@
 <div align="center">
-  <p><a href="README.md">English</a> | 简体中文 | <a href="README.ja.md">日本語</a></p>
+  <p><a href="README.md">English</a> | 简体中文 | <a href="README.ja.md">日本語</a> | <a href="README.tr.md">Türkçe</a></p>
 
   <p>
     <a href="assets/readme-hero.svg"><img src="assets/readme-hero.svg" width="100%" alt="Motty —— 桌面 SSH 客户端：shell、文件、隧道、远程桌面与助手，都在一个窗口里" /></a>
