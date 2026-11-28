@@ -7,12 +7,13 @@ import (
 )
 
 var (
-	hitSnippetMenuDismiss = tree.ID(snippetsHits, "snippet-menu-dismiss")
-	hitSnippetMenuSend    = tree.ID(snippetsHits, "snippet-menu-send")
-	hitSnippetMenuEdit    = tree.ID(snippetsHits, "snippet-menu-edit")
-	hitSnippetMenuDelete  = tree.ID(snippetsHits, "snippet-menu-delete")
-	hitSnippetMenuUp      = tree.ID(snippetsHits, "snippet-menu-up")
-	hitSnippetMenuDown    = tree.ID(snippetsHits, "snippet-menu-down")
+	hitSnippetMenuDismiss     = tree.ID(snippetsHits, "snippet-menu-dismiss")
+	hitSnippetMenuSend        = tree.ID(snippetsHits, "snippet-menu-send")
+	hitSnippetMenuEdit        = tree.ID(snippetsHits, "snippet-menu-edit")
+	hitSnippetMenuRemoveGroup = tree.ID(snippetsHits, "snippet-menu-remove-group")
+	hitSnippetMenuDelete      = tree.ID(snippetsHits, "snippet-menu-delete")
+	hitSnippetMenuUp          = tree.ID(snippetsHits, "snippet-menu-up")
+	hitSnippetMenuDown        = tree.ID(snippetsHits, "snippet-menu-down")
 )
 
 // snippetMenu is the right-click menu of a row of the Snippets page: which
@@ -94,6 +95,9 @@ func (state *State) snippetActionRows(rows *menuRows, moves bool) {
 	rows.add(components.ContextMenuItem{ID: hitSnippetMenuSend, Label: m.SnippetSend, Icon: icon(iconPlay)})
 	if moves {
 		rows.separate()
+		if idx := state.snippetMenu.index; idx >= 0 && idx < len(state.snippets.list) && state.snippets.list[idx].Group != "" {
+			rows.add(components.ContextMenuItem{ID: hitSnippetMenuRemoveGroup, Label: state.messages.MoveGroupNone, Icon: icon(iconFolderOpen)})
+		}
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuUp, Label: m.SnippetMoveUp, Icon: icon(iconArrowUp), Disabled: state.snippetNeighbor(state.snippetMenu.index, -1) < 0})
 		rows.add(components.ContextMenuItem{ID: hitSnippetMenuDown, Label: m.SnippetMoveDown, Icon: icon(iconChevronDown), Disabled: state.snippetNeighbor(state.snippetMenu.index, 1) < 0})
 	}
@@ -125,6 +129,8 @@ func (state *State) chooseSnippetMenu(id gfx.ID) {
 		}
 	case hitSnippetMenuEdit:
 		state.focusInlineSnippet(index)
+	case hitSnippetMenuRemoveGroup:
+		state.removeSnippetFromGroup(index)
 	case hitSnippetMenuUp:
 		state.moveSnippet(index, -1)
 	case hitSnippetMenuDown:
