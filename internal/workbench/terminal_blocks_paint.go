@@ -154,6 +154,22 @@ func blockActionLabel(state *State, action blockAction, block *commandBlock) str
 // The buttons are control parts, declared after the grid, so the page's own
 // routing makes them real buttons for hover, press and accessibility while the
 // grid keeps the rest of the pointer.
+func blockToolbarActions(block *commandBlock) []blockAction {
+	actions := []blockAction{blockCopyCommand, blockCopyOutput, blockCopyAll}
+	if blockFoldLines(block) > 0 {
+		actions = append(actions, blockToggleFold)
+	}
+	return actions
+}
+
+// blockToolbarVisible is the paint's own gate, reused by the keyboard path so a
+// focused button cannot outlive the toolbar.
+func (t *terminal) blockToolbarVisible() bool {
+	index := t.blockSelected
+	return t.blocksEnabled && index >= 0 && index < len(t.blocks) && !t.selection.dragging &&
+		t.screen.Modes().Mouse == term.MouseOff
+}
+
 func (state *State) paintBlockToolbar(canvas *gfx.Canvas, session *Session, geometry terminalGeometry, rows int, cellHeight float32) {
 	terminal := session.term
 	index := terminal.blockSelected
@@ -196,10 +212,7 @@ func (state *State) paintBlockToolbar(canvas *gfx.Canvas, session *Session, geom
 	if label != "" {
 		labelWidth = canvas.TextWidthWeight(label, size, gfx.WeightMedium)
 	}
-	actions := []blockAction{blockCopyCommand, blockCopyOutput, blockCopyAll}
-	if blockFoldLines(block) > 0 {
-		actions = append(actions, blockToggleFold)
-	}
+	actions := blockToolbarActions(block)
 	warning := terminal.blockTruncated(block)
 	gap, pad, dot := float32(3), float32(5), float32(10)
 	width := pad*2 + labelWidth + dot + gap + float32(len(actions))*height + float32(len(actions)-1)*gap
@@ -293,6 +306,84 @@ func (state *State) paintBlockToolbar(canvas *gfx.Canvas, session *Session, geom
 		})
 		buttonX += height + gap
 	}
+}
+
+// terminalBlockToolbarKey gives the floating toolbar a real keyboard path. Tab
+// enters it while a block is selected, Tab/Shift+Tab move between its buttons,
+// Enter or Space activates one, and Escape returns to the terminal grid.
+func (state *State) terminalBlockToolbarKey(event gfx.KeyEvent) (gfx.EventResult, bool) {
+	if event.Release || state.modal != modalNone {
+		return gfx.EventResult{}, false
+	}
+	session := state.terminalPageSession(event.Target)
+	if session == nil || session.term == nil {
+		return gfx.EventResult{}, false
+	}
+	terminal := session.term
+	if !terminal.blockToolbarVisible() {
+		return gfx.EventResult{}, false
+	}
+	block := &terminal.blocks[terminal.blockSelected]
+	actions := blockToolbarActions(block)
+	if len(actions) == 0 {
+		return gfx.EventResult{}, false
+	}
+	parts := make([]gfx.ID, len(actions))
+	for index, action := range actions {
+		parts[index] = terminal.parts.At(blockCopyPart(action))
+	}
+	focus := func(index int) gfx.EventResult {
+		return gfx.EventResult{Focus: parts[index], FocusVisible: true, Handled: true, Repaint: true}
+	}
+	leave := func() gfx.EventResult {
+		terminal.blockSelected = -1
+		return gfx.EventResult{Focus: terminal.controlID, FocusVisible: true, Handled: true, Repaint: true}
+	}
+
+	if part, ok := event.Target.In(terminal.parts); ok {
+		current := -1
+		for index, action := range actions {
+			if blockCopyPart(action) == part {
+				current = index
+				break
+			}
+		}
+		if current < 0 {
+			return gfx.EventResult{}, false
+		}
+		switch event.Key {
+		case gfx.KeyEnter, gfx.KeySpace:
+			repaint := false
+			if actions[current] == blockToggleFold {
+				repaint = state.toggleHoveredBlockFold(session)
+			} else {
+				repaint = state.copyHoveredBlock(session, actions[current])
+			}
+			return gfx.EventResult{Handled: true, Repaint: repaint}, true
+		case gfx.KeyTab:
+			next := current + 1
+			if event.Modifiers&gfx.ModifierShift != 0 {
+				next = current - 1
+			}
+			if next < 0 || next >= len(parts) {
+				return leave(), true
+			}
+			return focus(next), true
+		case gfx.KeyEscape:
+			return leave(), true
+		}
+		return gfx.EventResult{}, false
+	}
+
+	// Tab from the terminal grid enters the toolbar only while a block is
+	// selected; ordinary shell completion keeps its Tab when it is not.
+	if event.Target == terminal.controlID && event.Key == gfx.KeyTab {
+		if event.Modifiers&gfx.ModifierShift != 0 {
+			return focus(len(parts) - 1), true
+		}
+		return focus(0), true
+	}
+	return gfx.EventResult{}, false
 }
 
 func (state *State) terminalBlockPointer(session *Session, action blockAction, event gfx.PointerEvent) gfx.EventResult {

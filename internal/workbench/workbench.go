@@ -3239,6 +3239,9 @@ func (state *State) Key(event gfx.KeyEvent) (outcome gfx.EventResult) {
 		return state.noteExitKey(event)
 	}
 	defer state.afterEvent(&outcome)
+	if result, handled := state.terminalBlockToolbarKey(event); handled {
+		return result
+	}
 	// The resource monitor's process details are layered over the terminal page
 	// without a modal behind them: take the keys the dialog owns, and nothing
 	// else, so the shell underneath does not read them.
