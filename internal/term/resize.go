@@ -374,6 +374,7 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 	}
 
 	from := 0
+	logical := r.run[0].logical
 	for k, to := range r.ends {
 		var l *line
 		if k < len(r.run) {
@@ -383,6 +384,7 @@ func (t *Terminal) rewrap(first, last int, anchors *[3]reflowAnchor) {
 			t.nextID++
 			l = &line{id: t.nextID, at: r.run[0].at}
 		}
+		l.logical = logical
 		need := to - from
 		if cap(l.cells) < need {
 			l.cells = make([]Cell, need)

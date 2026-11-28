@@ -251,24 +251,31 @@ type Terminal struct {
 	promptSaved   []*line
 	promptCol     int
 
-	inputEnvironmentFn func(InputEnvironment)
-	homeDirectoryFn    func(string)
-	commandStartFn     func()
-	commandFinishedFn  func(int)
-	syncFn             func(bool)
-	cwd                Cwd
-	kittyNotes         []kittyPending // OSC 99 notifications still waiting for chunks
-	defFG, defBG       [3]uint8
-	haveDefaults       bool
+	inputEnvironmentFn  func(InputEnvironment)
+	homeDirectoryFn     func(string)
+	commandStartFn      func()
+	commandFinishedFn   func(int)
+	screenClearedFn     func()
+	scrollbackClearedFn func()
+	syncFn              func(bool)
+	cwd                 Cwd
+	kittyNotes          []kittyPending // OSC 99 notifications still waiting for chunks
+	defFG, defBG        [3]uint8
+	haveDefaults        bool
 
 	lastRune rune   // for REP
 	runBuf   []rune // text decoded for the run path, reused across writes
 	nextID   uint64
-	version  uint64
+	// nextLogical allocates the identity of each new logical line; it is never
+	// reset, so a live identity is never reused.
+	nextLogical uint64
+	version     uint64
 	// generation counts the structural changes that make line numbers name
 	// other text; see BufferGeneration.
 	generation uint64
-	reflow     reflow
+	// reflowEpoch counts resizes that change the grid size; see ReflowEpoch.
+	reflowEpoch uint64
+	reflow      reflow
 
 	parser
 }
@@ -375,6 +382,9 @@ func (t *Terminal) ClearScrollback() {
 	}
 	t.clearHistory()
 	t.version++
+	if t.scrollbackClearedFn != nil {
+		t.scrollbackClearedFn()
+	}
 }
 
 // ClearScreen drops the history and erases every row except the one the cursor
@@ -414,6 +424,9 @@ func (t *Terminal) ClearScreen() bool {
 	t.cy = 0
 	t.generation++
 	t.version++
+	if t.screenClearedFn != nil {
+		t.screenClearedFn()
+	}
 	return true
 }
 
@@ -652,6 +665,9 @@ func (t *Terminal) Reset() {
 	t.title = ""
 	t.generation++
 	t.resetState()
+	if t.screenClearedFn != nil {
+		t.screenClearedFn()
+	}
 }
 
 // resetState sets modes, cursor, margins and tabs to their defaults.
@@ -765,6 +781,8 @@ func (t *Terminal) recycle(l *line) *line {
 	l.at = 0
 	t.nextID++
 	l.id = t.nextID
+	t.nextLogical++
+	l.logical = t.nextLogical
 	l.version = 0
 	return l
 }
@@ -898,7 +916,7 @@ func (t *Terminal) pushHistory(l *line) {
 	} else {
 		dst.hyperlinks = nil
 	}
-	dst.wrapped, dst.id, dst.version, dst.at = l.wrapped, l.id, l.version, l.at
+	dst.wrapped, dst.id, dst.logical, dst.version, dst.at = l.wrapped, l.id, l.logical, l.version, l.at
 	t.hist[(t.histHead+t.histCount)%t.histMax] = dst
 	t.histCount++
 	t.histBytes += lineHistoryBytes(dst)
@@ -923,7 +941,7 @@ func (t *Terminal) popHistory() *line {
 		t.histHead = 0
 	}
 	l := &line{cells: append([]Cell(nil), h.cells...), marks: append([]Mark(nil), h.marks...),
-		wrapped: h.wrapped, id: h.id, version: h.version, at: h.at}
+		wrapped: h.wrapped, id: h.id, logical: h.logical, version: h.version, at: h.at}
 	if h.hyperlinks != nil {
 		links := append([]uint32(nil), (*h.hyperlinks)...)
 		l.hyperlinks = &links
@@ -1035,6 +1053,7 @@ func (t *Terminal) Resize(cols, rows int) {
 	t.pend = false
 	t.view = min(t.view, t.histCount)
 	t.version++
+	t.reflowEpoch++
 }
 
 // resizeLines adapts one buffer to the new row count (and the already updated
