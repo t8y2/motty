@@ -450,31 +450,28 @@ func (t *terminal) blockPromptBoundary(index int, block *commandBlock) (uint64, 
 // blockRange is the block's owned physical row range. start includes the
 // prompt/command; stop is exclusive and leaves D's next-prompt row to the next
 // block. A running block owns the live screen below its start.
-func (t *terminal) blockRange(index int, block *commandBlock) (rangeStart, rangeStop uint64, rangeOK bool) {
+func (t *terminal) blockRange(index int, block *commandBlock) (uint64, uint64, bool) {
 	if block == nil || !block.exec.ok {
 		return 0, 0, false
 	}
-	rangeStart = t.blockDisplayStartAt(index)
+	first := t.blockDisplayStartAt(index)
 	if block.status == blockRunning {
-		return rangeStart, ^uint64(0), true
+		return first, ^uint64(0), true
 	}
 	if !block.end.ok {
 		return 0, 0, false
 	}
-	// The next prompt owns the bottom boundary. D's line can drift when a
-	// reflow merges or rewraps rows after it was captured; the prompt boundary
-	// is the invariant that separates commands.
-	rangeStop = block.end.line
+	last := block.end.line
 	if block.end.column > 0 {
-		rangeStop++
+		last++
 	}
-	if line, ok := t.blockPromptBoundary(index, block); ok {
-		rangeStop = line
-		if block.end.column > 0 && line == block.end.line {
-			rangeStop++
+	if boundary, ok := t.blockPromptBoundary(index, block); ok {
+		last = boundary
+		if block.end.column > 0 && boundary == block.end.line {
+			last++
 		}
 	}
-	return rangeStart, rangeStop, rangeStop >= rangeStart
+	return first, last, last >= first
 }
 
 // blockCommandBounds is the prompt/command part of a block: from its physical

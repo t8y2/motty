@@ -110,11 +110,8 @@ func (t *terminal) ensureFolds() {
 			continue
 		}
 		summary := t.blockFoldSummaryLine(block, base)
-		end := block.end.line
-		if block.end.column > 0 {
-			end++
-		}
-		if end <= summary {
+		_, foldEnd, foldOK := t.blockRange(index, block)
+		if !foldOK || foldEnd <= summary {
 			continue
 		}
 		summaryIndex := 0
@@ -122,14 +119,14 @@ func (t *terminal) ensureFolds() {
 			summaryIndex = int(summary - base)
 		}
 		endIndex := count
-		if end < base+uint64(count) {
-			endIndex = int(end - base)
+		if foldEnd < base+uint64(count) {
+			endIndex = int(foldEnd - base)
 		}
 		if endIndex < summaryIndex+1 {
 			endIndex = min(summaryIndex+1, count)
 		}
 		fold := foldRange{
-			block: index, summary: summary, end: end, lines: lines,
+			block: index, summary: summary, end: foldEnd, lines: lines,
 			startIndex: summaryIndex + 1,
 			endIndex:   endIndex,
 		}
