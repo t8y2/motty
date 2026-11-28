@@ -161,11 +161,12 @@ func TestTabMenuPlacesConnectionCopiesBelowDuplicate(t *testing.T) {
 	host, hostOK := menuHit(&canvas, state, hitTabMenuCopyHost)
 	address, addressOK := menuHit(&canvas, state, hitTabMenuCopyAddress)
 	name, nameOK := menuHit(&canvas, state, hitTabMenuCopyName)
-	if !duplicateOK || !hostOK || !addressOK || !nameOK {
-		t.Fatalf("menu items: duplicate=%v host=%v address=%v name=%v", duplicateOK, hostOK, addressOK, nameOK)
+	copyInfo, copyInfoOK := menuHit(&canvas, state, hitTabMenuCopyInfo)
+	if !duplicateOK || !hostOK || !addressOK || !nameOK || !copyInfoOK {
+		t.Fatalf("menu items: duplicate=%v host=%v address=%v name=%v copyInfo=%v", duplicateOK, hostOK, addressOK, nameOK, copyInfoOK)
 	}
-	if !(duplicate.Bounds.Y < host.Bounds.Y && host.Bounds.Y < address.Bounds.Y && address.Bounds.Y < name.Bounds.Y) {
-		t.Fatalf("row order duplicate=%+v host=%+v address=%+v name=%+v", duplicate.Bounds, host.Bounds, address.Bounds, name.Bounds)
+	if !(duplicate.Bounds.Y < host.Bounds.Y && host.Bounds.Y < address.Bounds.Y && address.Bounds.Y < name.Bounds.Y && name.Bounds.Y < copyInfo.Bounds.Y) {
+		t.Fatalf("row order duplicate=%+v host=%+v address=%+v name=%+v copyInfo=%+v", duplicate.Bounds, host.Bounds, address.Bounds, name.Bounds, copyInfo.Bounds)
 	}
 }
 
@@ -174,7 +175,7 @@ func TestTabMenuDisablesConnectionCopyOnAnEmptyTab(t *testing.T) {
 	rightClickTab(state, hitTabList.At(int(tabs[0])))
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	for _, id := range []gfx.ID{hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuEditHost} {
+	for _, id := range []gfx.ID{hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuCopyInfo, hitTabMenuEditHost} {
 		if hit, ok := hitByID(&canvas, id); !ok || !hit.Disabled {
 			t.Fatalf("item %d: found=%v disabled=%v, want disabled", id, ok, hit.Disabled)
 		}

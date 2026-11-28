@@ -27,7 +27,7 @@ func TestRightClickOnAHostOpensItsMenuWithoutChangingWhatIsChecked(t *testing.T)
 		t.Fatalf("selection = %v selected %d, want the original check and the pointed host highlighted", state.hostSelections, state.selectedHostID)
 	}
 	canvas, _ := paintedTexts(state)
-	for _, id := range []gfx.ID{hitHostMenuConnect, hitHostMenuAddress, hitHostMenuName, hitHostMenuEdit, hitHostMenuCopy, hitHostMenuMove, hitHostMenuDelete} {
+	for _, id := range []gfx.ID{hitHostMenuConnect, hitHostMenuAddress, hitHostMenuName, hitHostMenuCopyInfo, hitHostMenuEdit, hitHostMenuCopy, hitHostMenuMove, hitHostMenuDelete} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled {
 			t.Errorf("menu item %d: %+v found=%v", id, hit, ok)
 		}
@@ -101,13 +101,12 @@ func TestAFailedConnectionCopyIsReported(t *testing.T) {
 	}
 }
 
-// The connection copies read as one group: a separator between the address, the
-// name and the host would say they are different kinds of action.
+// The connection copy rows and Copy Info submenu sit together above Edit.
 func TestHostMenuKeepsTheConnectionCopyRowsTogether(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	rightClickHost(state, state.hosts[1].ID)
 	canvas, _ := paintedTexts(state)
-	order := []gfx.ID{hitHostMenuAddress, hitHostMenuName, hitHostMenuCopy, hitHostMenuEdit}
+	order := []gfx.ID{hitHostMenuAddress, hitHostMenuName, hitHostMenuCopyInfo, hitHostMenuCopy, hitHostMenuEdit}
 	previous := float32(0)
 	for index, id := range order {
 		hit, ok := hitByID(canvas, id)
@@ -177,7 +176,7 @@ func TestRightClickInsideSeveralCheckedHostsKeepsThemAndDisablesTheSingleOnes(t 
 		t.Fatalf("selection = %v, want both kept", state.hostSelections)
 	}
 	canvas, _ := paintedTexts(state)
-	for id, disabled := range map[gfx.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuEdit: true, hitHostMenuCopyEdit: true, hitHostMenuCopy: false, hitHostMenuCopyTo: false, hitHostMenuMove: false, hitHostMenuDelete: false} {
+	for id, disabled := range map[gfx.ID]bool{hitHostMenuConnect: true, hitHostMenuAddress: true, hitHostMenuName: true, hitHostMenuCopyInfo: true, hitHostMenuEdit: true, hitHostMenuCopyEdit: true, hitHostMenuCopy: false, hitHostMenuCopyTo: false, hitHostMenuMove: false, hitHostMenuDelete: false} {
 		if hit, ok := hitByID(canvas, id); !ok || hit.Disabled != disabled {
 			t.Errorf("item %d: found=%v disabled=%v, want disabled=%v", id, ok, hit.Disabled, disabled)
 		}
@@ -201,7 +200,7 @@ func TestHostMenuIsAsWideAsItsLabelsAskInBothLanguages(t *testing.T) {
 			t.Fatal("no menu")
 		}
 		widest := float32(0)
-		for _, label := range []string{state.messages.Connect, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName, state.messages.EditHost, state.messages.CopyHost, state.messages.PasteHost, state.messages.CopyHostTo, state.messages.CopyHostAndEdit, state.messages.MoveHostGroup, state.messages.DeleteHost} {
+		for _, label := range []string{state.messages.Connect, state.messages.CopyAddressAndPort, state.messages.CopyConnectionName, state.messages.CopyInfo, state.messages.EditHost, state.messages.CopyHost, state.messages.PasteHost, state.messages.CopyHostTo, state.messages.CopyHostAndEdit, state.messages.MoveHostGroup, state.messages.DeleteHost} {
 			widest = max(widest, canvas.TextWidth(label, 13))
 		}
 		// A context menu is never narrower than Vega's 9rem, whatever its labels.

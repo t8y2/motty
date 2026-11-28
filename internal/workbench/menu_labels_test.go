@@ -16,14 +16,14 @@ var menuRowIDs = map[gfx.ID]bool{}
 
 func init() {
 	for _, id := range []gfx.ID{
-		hitHostMenuConnect, hitHostMenuSFTP, hitHostMenuAddress, hitHostMenuName, hitHostMenuCopy, hitHostMenuPaste, hitHostMenuCopyTo,
+		hitHostMenuConnect, hitHostMenuSFTP, hitHostMenuAddress, hitHostMenuName, hitHostMenuCopyInfo, hitHostMenuCopy, hitHostMenuPaste, hitHostMenuCopyTo,
 		hitHostMenuEdit, hitHostMenuCopyEdit, hitHostMenuSetJump, hitHostMenuMove, hitHostMenuDelete,
 		hitGroupNewHost, hitGroupNewChild, hitGroupPaste, hitGroupRename, hitGroupMove, hitGroupPin, hitGroupUp, hitGroupDown, hitGroupDelete,
 		hitHostBlankNewHost, hitHostBlankNewGroup, hitHostBlankPaste,
 		hitTerminalMenuCopy, hitTerminalMenuPaste, hitTerminalMenuPasteSelection, hitTerminalMenuSelectAll, hitTerminalMenuClearScreen, hitTerminalMenuClear, hitTerminalMenuSave, hitTerminalMenuSplitRight, hitTerminalMenuSplitDown, hitTerminalMenuRename, hitTerminalMenuClosePane, hitTerminalMenuFolder, hitTerminalMenuFiles, hitTerminalMenuTransfer, hitTerminalMenuAsk, hitTerminalMenuExplain, hitTerminalMenuHistory, hitTerminalMenuSearch, hitTerminalMenuStats, hitTerminalMenuTools, hitTerminalMenuReconnect, hitTerminalMenuRestart, hitTerminalMenuDisconnect,
 		hitSnippetMenuSend, hitSnippetMenuUp, hitSnippetMenuDown, hitSnippetMenuEdit, hitSnippetMenuDelete, hitWorkspaceTemplateMenuEdit, hitWorkspaceTemplateMenuDelete,
 		hitToolbarDockTop, hitToolbarDockSideTop, hitToolbarDockSideBottom, hitToolbarDockLeftTop, hitToolbarDockLeftBottom, hitToolbarDockBottom, hitToolbarDockBottomRight, hitToolbarDockHide, hitToolbarDockCustomize, hitToolbarDockReset,
-		hitTabMenuRename, hitTabMenuDuplicate, hitTabMenuEditHost, hitTabMenuNewWindow, hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuBrowserClose, hitTabMenuBrowserOpen, hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency, hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuReconnect, hitTabMenuRestart, hitTabMenuDisconnect, hitTabMenuSaveWorkspace, hitTabMenuLock, hitTabMenuCloseRight,
+		hitTabMenuRename, hitTabMenuDuplicate, hitTabMenuEditHost, hitTabMenuNewWindow, hitTabMenuCopyHost, hitTabMenuCopyAddress, hitTabMenuCopyName, hitTabMenuCopyInfo, hitTabMenuBrowserClose, hitTabMenuBrowserOpen, hitTabMenuFit, hitTabMenuActual, hitTabMenuCtrlAltDel, hitTabMenuHideBars, hitTabMenuFullscreen, hitTabMenuLatency, hitTabMenuClose, hitTabMenuCloseOthers, hitTabMenuReconnect, hitTabMenuRestart, hitTabMenuDisconnect, hitTabMenuSaveWorkspace, hitTabMenuLock, hitTabMenuCloseRight,
 		hitSFTPMenuOpen, hitSFTPMenuDownload, hitSFTPMenuDownloadHere, hitSFTPMenuSend, hitSFTPMenuInsertPath, hitSFTPMenuEdit, hitSFTPMenuReveal, hitSFTPMenuOpenFolder, hitSFTPMenuRename, hitSFTPMenuMove, hitSFTPMenuChmod, hitSFTPMenuChown, hitSFTPMenuExtract, hitSFTPMenuCompress, hitSFTPMenuDelete, hitSFTPMenuSudo, hitSFTPMenuCopyFiles, hitSFTPMenuPasteFiles,
 	} {
 		menuRowIDs[id] = true
@@ -60,6 +60,8 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.CopyAddressAndPort
 	case hitHostMenuName:
 		return m.CopyConnectionName
+	case hitHostMenuCopyInfo:
+		return m.CopyInfo
 	case hitHostMenuCopy:
 		return m.CopyHost
 	case hitHostMenuPaste:
@@ -206,6 +208,8 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.CopyAddressAndPort
 	case hitTabMenuCopyName:
 		return m.CopyConnectionName
+	case hitTabMenuCopyInfo:
+		return m.CopyInfo
 	case hitTabMenuBrowserClose:
 		return m.MenuCloseSSHBrowser
 	case hitTabMenuBrowserOpen:

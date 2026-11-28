@@ -25,6 +25,7 @@ var (
 	hitTabMenuCopyHost      = tree.ID(tabMenuHits, "tab-menu-copy-host")
 	hitTabMenuCopyAddress   = tree.ID(tabMenuHits, "tab-menu-copy-address")
 	hitTabMenuCopyName      = tree.ID(tabMenuHits, "tab-menu-copy-name")
+	hitTabMenuCopyInfo      = tree.ID(tabMenuHits, "tab-menu-copy-info")
 	hitTabMenuReconnect     = tree.ID(tabMenuHits, "tab-menu-reconnect")
 	hitTabMenuRestart       = tree.ID(tabMenuHits, "tab-menu-restart")
 	hitTabMenuDisconnect    = tree.ID(tabMenuHits, "tab-menu-disconnect")
@@ -135,11 +136,16 @@ func (state *State) declareTabMenu(c ui.C) {
 	icon := func(kind uint8) gfx.Icon { return lucideIcons[kind] }
 	var rows menuRows
 	address, hostAddress, name := "", "", ""
+	var copyHost Host
+	hasHost := false
 	if hasSession {
 		address, name = connectionAddressAndPort(session.host), session.host.Label
 		hostAddress = connectionHostAddress(session.host)
+		copyHost = session.host
+		if saved, ok := state.tabMenuHost(session); ok {
+			copyHost, hasHost = saved, true
+		}
 	}
-	_, hasHost := state.tabMenuHost(session)
 	rows.add(components.ContextMenuItem{ID: hitTabMenuRename, Label: messages.MenuRenameTab, Icon: icon(iconPencil)})
 	lockLabel := messages.MenuLockTab
 	if state.deck.Locked(state.tabMenu.workspace) {
@@ -153,6 +159,7 @@ func (state *State) declareTabMenu(c ui.C) {
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyHost, Label: messages.CopyHostAddress, Icon: icon(iconCopy), Disabled: hostAddress == ""})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyAddress, Label: messages.CopyAddressAndPort, Icon: icon(iconCopy), Disabled: address == ""})
 	rows.add(components.ContextMenuItem{ID: hitTabMenuCopyName, Label: messages.CopyConnectionName, Icon: icon(iconCopy), Disabled: name == ""})
+	state.addCopyInfoSubmenu(c, &rows, hitTabMenuCopyInfo, copyHost, !hasSession)
 	if hasSession && session.canOpenSSHBrowser() {
 		if session.browser != nil && session.browser.Running() {
 			rows.add(components.ContextMenuItem{ID: hitTabMenuBrowserClose, Label: messages.MenuCloseSSHBrowser, Icon: icon(iconGlobe)})
