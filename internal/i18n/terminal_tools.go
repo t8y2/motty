@@ -118,9 +118,14 @@ type ToolsMessages struct {
 	SnippetSortDescending     string
 	SnippetExpand             string
 	SnippetCollapse           string
+	SnippetMoveToGroup        string
+	SnippetMoveGroupTitle     string
+	SnippetMoveGroupField     string
+	SnippetMoveGroupRoot      string
+	SnippetMoveGroupConfirm   string
+	StatusSnippetMovedFmt     string
 	SnippetMoveUp             string
 	SnippetMoveDown           string
-	StatusSnippetUngroupedFmt string
 	StatusSnippetRemovedFmt   string
 	SnippetAdd                string
 	SnippetEdit               string

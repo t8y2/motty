@@ -2046,6 +2046,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalSnippetGroups:
 		state.clickSnippetGroups(id)
 		return
+	case modalSnippetMoveGroup:
+		state.clickSnippetMoveGroupDialog(id)
+		return
 	case modalSnippetGroupRename, modalSnippetGroupDelete:
 		state.clickSnippetGroupDialog(id)
 		return

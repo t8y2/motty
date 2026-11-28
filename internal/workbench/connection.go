@@ -574,6 +574,7 @@ const (
 	modalRuleManager
 	modalSnippetDelete
 	modalSnippetGroups
+	modalSnippetMoveGroup
 	modalSnippetGroupRename
 	modalSnippetGroupDelete
 	modalSnippetVariables
@@ -1510,6 +1511,9 @@ func (state *State) closeModal() {
 	}
 	if state.modal == modalSnippetGroups {
 		state.snippetGroups = snippetGroupsUI{}
+	}
+	if state.modal == modalSnippetMoveGroup {
+		state.snippets.moveModal = snippetMoveGroupModal{}
 	}
 	if state.modal == modalSnippetVariables {
 		state.snippetPrompt = snippetPromptState{}

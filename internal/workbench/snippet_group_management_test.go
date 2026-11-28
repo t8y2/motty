@@ -377,7 +377,7 @@ func TestDeletingASnippetGroupWithSnippetsRemovesAllSubtreeCommands(t *testing.T
 }
 
 // Dragging a grouped snippet before/after its top-level folder or choosing
-// "Remove from group" from its context menu ungroups it without leaving behind
+// Ungrouped in the Move to group dialog ungroups it without leaving behind
 // an implicit empty group.
 func TestMovingSnippetToRootViaDropAndContextMenu(t *testing.T) {
 	options := freshOptions(t)
@@ -422,9 +422,14 @@ func TestMovingSnippetToRootViaDropAndContextMenu(t *testing.T) {
 		t.Fatalf("implicit emptied group Ops remained: groups=%v", state.snippets.groups)
 	}
 
-	// Remove a nested snippet from its group via its context menu.
+	// Move a nested snippet to root through its context menu and dialog.
 	state.snippetMenu = snippetMenu{open: true, index: 1, name: "devcmd", at: gfx.Point{X: 100, Y: 100}}
-	state.chooseSnippetMenu(hitSnippetMenuRemoveGroup)
+	state.chooseSnippetMenu(hitSnippetMenuMoveGroup)
+	if state.modal != modalSnippetMoveGroup {
+		t.Fatalf("move to group opened modal %d", state.modal)
+	}
+	state.snippets.moveModal.targetGroup = ""
+	state.Click(hitSnippetMoveGroupConfirm)
 	if state.snippets.list[1].Group != "" {
 		t.Fatalf("snippet group after remove from group = %q, want empty", state.snippets.list[1].Group)
 	}
@@ -471,5 +476,44 @@ func TestSnippetGroupDialogSeparatesParentFromLeafName(t *testing.T) {
 	state.Click(hitSnippetGroupRenameSubmit)
 	if state.modal != modalNone || state.snippets.list[0].Group != "Ops/Prod/Edge" {
 		t.Fatalf("rename nested failed: modal=%d err=%q group=%q", state.modal, state.snippetGroups.error, state.snippets.list[0].Group)
+	}
+}
+
+// The Move to group dialog moves a command to another group or to root
+// (ungrouped) while preserving the existing implicit empty-group semantics.
+func TestSnippetMoveToGroupDialogMovesBetweenGroupsAndRoot(t *testing.T) {
+	options := freshOptions(t)
+	state := newTestState(t, options)
+	state.activeSection = sectionSnippets
+	addTestSnippets(state,
+		snippet{Name: "deploy", Command: "echo deploy", Group: "Ops"},
+		snippet{Name: "editor", Command: "code .", Group: "Dev"},
+	)
+
+	// Open via context menu and move "deploy" from Ops into Dev.
+	state.snippetMenu = snippetMenu{open: true, index: 0, name: "deploy", at: gfx.Point{X: 100, Y: 100}}
+	state.chooseSnippetMenu(hitSnippetMenuMoveGroup)
+	if state.modal != modalSnippetMoveGroup || state.snippets.moveModal.targetGroup != "Ops" {
+		t.Fatalf("move dialog opened modal=%d target=%q", state.modal, state.snippets.moveModal.targetGroup)
+	}
+	state.snippets.moveModal.targetGroup = "Dev"
+	state.Click(hitSnippetMoveGroupConfirm)
+	if state.modal != modalNone || state.snippets.list[0].Group != "Dev" {
+		t.Fatalf("after move to Dev: modal=%d group=%q", state.modal, state.snippets.list[0].Group)
+	}
+	if slices.Contains(state.snippets.groups, "Ops") {
+		t.Fatalf("implicit emptied group Ops remained: groups=%v", state.snippets.groups)
+	}
+
+	// Move "deploy" to root (ungrouped) and verify persistence.
+	state.openSnippetMoveGroup(0)
+	state.snippets.moveModal.targetGroup = ""
+	state.Click(hitSnippetMoveGroupConfirm)
+	if state.snippets.list[0].Group != "" {
+		t.Fatalf("after move to root: group=%q, want empty", state.snippets.list[0].Group)
+	}
+	restored := newTestState(t, options)
+	if restored.snippets.list[0].Group != "" || restored.snippets.list[1].Group != "Dev" {
+		t.Fatalf("restored groups = %+v", restored.snippets.list)
 	}
 }

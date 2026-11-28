@@ -86,6 +86,10 @@ var (
 	hitSnippetBlankMenuDismiss   = tree.ID(snippetsHits, "snippet-blank-menu-dismiss")
 	hitSnippetBlankNewGroup      = tree.ID(snippetsHits, "snippet-blank-new-group")
 	hitSnippetBlankNewSnippet    = tree.ID(snippetsHits, "snippet-blank-new-snippet")
+	hitSnippetMoveGroupClose     = tree.ID(snippetsHits, "snippet-move-group-close")
+	hitSnippetMoveGroupCancel    = tree.ID(snippetsHits, "snippet-move-group-cancel")
+	hitSnippetMoveGroupConfirm   = tree.ID(snippetsHits, "snippet-move-group-confirm")
+	hitSnippetMoveGroupDismiss   = tree.ID(snippetsHits, "snippet-move-group-dismiss")
 
 	// Inline editor controls on the Snippets page.
 	hitSnippetInlineName         = tree.ID(snippetsHits, "snippet-inline-name")
@@ -129,7 +133,8 @@ type snippetsUI struct {
 	sendAt gfx.Point
 	// deleting is the snippet index plus one the delete confirmation asks about;
 	// zero means no confirmation is open.
-	deleting int
+	deleting  int
+	moveModal snippetMoveGroupModal
 
 	// Directory-tree browser state on the Snippets page.
 	tree                ui.TreeState
@@ -407,24 +412,6 @@ func (state *State) moveSnippet(index, direction int) bool {
 	form.resetSnippetPreview()
 	state.refreshSnippets()
 	state.save()
-	return true
-}
-
-// removeSnippetFromGroup clears the snippet's group so it becomes ungrouped.
-func (state *State) removeSnippetFromGroup(index int) bool {
-	state.flushInlineSnippetSave()
-	form := &state.snippets
-	if index < 0 || index >= len(form.list) || form.list[index].Group == "" {
-		return false
-	}
-	name := form.list[index].Name
-	form.list[index].Group = ""
-	form.selected = index
-	form.selectedFolder = ""
-	form.resetSnippetPreview()
-	state.refreshSnippets()
-	state.save()
-	state.status = fmt.Sprintf(state.messages.Tools.StatusSnippetUngroupedFmt, name)
 	return true
 }
 
