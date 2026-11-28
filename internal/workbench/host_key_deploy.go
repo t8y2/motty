@@ -95,6 +95,8 @@ const (
 	hostKeyDeployErrorCertificate     hostKeyDeployErrorCode = "certificate"
 	hostKeyDeployErrorNotVerified     hostKeyDeployErrorCode = "not-verified"
 	hostKeyDeployErrorCanceled        hostKeyDeployErrorCode = "canceled"
+	hostKeyDeployErrorCanceledBefore  hostKeyDeployErrorCode = "canceled-before-install"
+	hostKeyDeployErrorInstalledBut    hostKeyDeployErrorCode = "installed-but"
 	hostKeyDeployErrorHostChanged     hostKeyDeployErrorCode = "host-changed"
 	hostKeyDeployErrorRouteChanged    hostKeyDeployErrorCode = "route-changed"
 	hostKeyDeployErrorSave            hostKeyDeployErrorCode = "save-failed"
@@ -128,6 +130,7 @@ type hostKeyDeployResult struct {
 	Imported bool
 	Switched bool
 	Error    hostKeyDeployErrorCode
+	Cause    hostKeyDeployErrorCode
 	Detail   string
 	host     Host
 	login    string
@@ -325,10 +328,8 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 	}
 	verified, err := task.connect(ctx, config, true)
 	if err != nil {
-		out.Error, out.Detail = hostKeyDeployFailureDetails(err)
-		if out.Error == hostKeyDeployErrorOther {
-			out.Detail = "Public key installed, but key-only login was not verified: " + err.Error()
-		}
+		out.Error = hostKeyDeployErrorInstalledBut
+		out.Cause, out.Detail = hostKeyDeployFailureDetails(err)
 		return out
 	}
 	verified.Cancel()
@@ -338,7 +339,7 @@ func (task hostKeyDeployTask) deploy(ctx context.Context, public []byte, keyRef,
 
 func (task hostKeyDeployTask) connect(ctx context.Context, config sshconn.Config, verify bool) (*sshconn.Conn, error) {
 	if ctx.Err() != nil {
-		return nil, &hostKeyDeployFailure{code: hostKeyDeployErrorCanceled, detail: "Canceled before connecting."}
+		return nil, &hostKeyDeployFailure{code: hostKeyDeployErrorCanceledBefore, detail: "Canceled before connecting."}
 	}
 	ticks := make(chan struct{}, 1)
 	config.Notify = func() {

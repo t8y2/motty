@@ -127,7 +127,7 @@ func (state *State) hostKeyDeployKey(event gfx.KeyEvent) gfx.EventResult {
 	}
 	state.closeModal()
 	state.hostKeyDeployView = hostKeyDeployView{}
-	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitKeysDeploy}
+	return gfx.EventResult{Handled: true, Repaint: true, Focus: hitKeysExport}
 }
 
 func (state *State) declareHostKeyDeployment(c ui.C) {
@@ -220,6 +220,19 @@ func (state *State) declareHostKeyDeployment(c ui.C) {
 func (state *State) hostKeyDeployError(result hostKeyDeployResult) string {
 	m := state.messages
 	switch result.Error {
+	case hostKeyDeployErrorCanceledBefore:
+		return m.KeyDeployCanceled
+	case hostKeyDeployErrorInstalledBut:
+		return fmt.Sprintf(m.KeyDeployInstalledButFmt, state.hostKeyDeployReason(result.Cause))
+	}
+	return state.hostKeyDeployReason(result.Error)
+}
+
+// hostKeyDeployReason is the localized reason without any claim about whether
+// the key reached the server. Callers add the installed-but prefix when needed.
+func (state *State) hostKeyDeployReason(code hostKeyDeployErrorCode) string {
+	m := state.messages
+	switch code {
 	case hostKeyDeployErrorKeyUnavailable:
 		return m.KeyDeployKeyUnavailable
 	case hostKeyDeployErrorUnsupportedHost:

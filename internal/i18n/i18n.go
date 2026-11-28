@@ -982,6 +982,8 @@ type Messages struct {
 	KeyDeployClose              string
 	KeyDeployStop               string
 	KeyDeployWaiting            string
+	KeyDeployCanceled           string
+	KeyDeployInstalledButFmt    string
 	KeyDeployInstalled          string
 	KeyDeploySwitched           string
 	KeyDeployHostUnsupported    string

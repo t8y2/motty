@@ -20,11 +20,12 @@ func TestTheKeychainOpensADeploymentDialogForAStoredKey(t *testing.T) {
 	}
 	var canvas gfx.Canvas
 	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 900})
-	if _, ok := hitByID(&canvas, hitKeysDeploy); !ok {
-		t.Fatal("the keychain has no Deploy button for a stored key")
+	if _, ok := hitByID(&canvas, hitKeysExport); !ok {
+		t.Fatal("the keychain has no Export button for a stored key")
 	}
 
-	state.Click(hitKeysDeploy)
+	state.Click(hitKeysExport)
+	clickPageMenuRow(t, state, state.messages.KeyDeploy)
 	if state.modal != modalHostKeyDeploy {
 		t.Fatalf("modal = %v, want the deployment dialog", state.modal)
 	}
@@ -84,6 +85,22 @@ func TestDeploymentErrorsUseLocalizedCopyInsteadOfTheServerDetail(t *testing.T) 
 	}
 	if got := state.hostKeyDeployError(hostKeyDeployResult{Error: hostKeyDeployErrorHostKey}); !strings.Contains(got, "正常连接") {
 		t.Fatalf("host-key error has no next step: %q", got)
+	}
+}
+
+func TestDeploymentStatusSeparatesCancellationAndInstalledButFailed(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	state.setLanguage(i18n.Chinese)
+	if got := state.hostKeyDeployError(hostKeyDeployResult{Error: hostKeyDeployErrorCanceledBefore}); got != state.messages.KeyDeployCanceled {
+		t.Fatalf("pre-install cancellation = %q, want %q", got, state.messages.KeyDeployCanceled)
+	}
+	for _, cause := range []hostKeyDeployErrorCode{
+		hostKeyDeployErrorAuth, hostKeyDeployErrorHostKey, hostKeyDeployErrorTimeout, hostKeyDeployErrorConnection,
+	} {
+		got := state.hostKeyDeployError(hostKeyDeployResult{Imported: true, Error: hostKeyDeployErrorInstalledBut, Cause: cause})
+		if !strings.Contains(got, "已写入") {
+			t.Fatalf("post-install %s = %q, want an installed-but message", cause, got)
+		}
 	}
 }
 

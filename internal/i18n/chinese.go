@@ -971,6 +971,8 @@ var ChineseMessages = Messages{
 	KeyDeployClose:              "关闭",
 	KeyDeployStop:               "停止剩余操作",
 	KeyDeployWaiting:            "等待中",
+	KeyDeployCanceled:           "已取消。",
+	KeyDeployInstalledButFmt:    "公钥已写入，但%s",
 	KeyDeployInstalled:          "公钥已写入",
 	KeyDeploySwitched:           "已写入，登录已切换",
 	KeyDeployHostUnsupported:    "主机不支持",

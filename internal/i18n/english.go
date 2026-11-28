@@ -971,6 +971,8 @@ var EnglishMessages = Messages{
 	KeyDeployClose:              "Close",
 	KeyDeployStop:               "Stop remaining",
 	KeyDeployWaiting:            "Waiting",
+	KeyDeployCanceled:           "Canceled.",
+	KeyDeployInstalledButFmt:    "Public key installed, but %s",
 	KeyDeployInstalled:          "Public key installed",
 	KeyDeploySwitched:           "Installed; login switched",
 	KeyDeployHostUnsupported:    "Unsupported host",

@@ -971,6 +971,8 @@ var TraditionalMessages = Messages{
 	KeyDeployClose:              "關閉",
 	KeyDeployStop:               "停止剩餘操作",
 	KeyDeployWaiting:            "等待中",
+	KeyDeployCanceled:           "已取消。",
+	KeyDeployInstalledButFmt:    "公開金鑰已寫入，但%s",
 	KeyDeployInstalled:          "公開金鑰已寫入",
 	KeyDeploySwitched:           "已寫入，登入已切換",
 	KeyDeployHostUnsupported:    "主機不支援",
