@@ -28,6 +28,7 @@ func (state *State) MenuBar() []app.Menu {
 			item(shortcutNewWindow, false),
 			item(shortcutNewTab, false),
 			item(shortcutLocalTerminal, false),
+			item(shortcutAddLocalTerminal, false),
 			{Separator: true},
 			item(shortcutCloseTab, !hasSession),
 			{Separator: true},

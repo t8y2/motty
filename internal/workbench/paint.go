@@ -764,6 +764,7 @@ func (state *State) declareShell(c ui.C) {
 	state.declareAIPanel(c)
 	// The command palette is a dialog of the window's own page: its search field,
 	// its list and its sort switch are page elements.
+	state.declareLocalDirectoryPicker(c)
 	state.declareCommandPalette(c)
 	// The command-history picker is a dialog of the same page.
 	state.declareHistory(c)

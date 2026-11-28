@@ -565,6 +565,7 @@ const (
 	modalPassword
 	modalRemoteClipboard
 	modalCommandPalette
+	modalLocalDirectory
 	modalShortcutCapture
 	modalStateNotice
 	modalDevelopmentImport

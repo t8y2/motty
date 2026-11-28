@@ -176,6 +176,7 @@ func (state *State) rebuildCommandPalette() {
 		palette.add(messages.NewWindow, hitNewWindow)
 	}
 	palette.add(messages.LocalTerminal, hitLocalTerminal)
+	palette.add(messages.AddLocalTerminal, hitLocalDirectoryOpen)
 	palette.add(messages.NewHost, hitAddHost)
 	palette.add(messages.SSHConfigImport, hitImportSSHConfig)
 	palette.add(messages.Tools.ImportSessions, hitImportSessions)

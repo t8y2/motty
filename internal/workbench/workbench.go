@@ -538,28 +538,30 @@ type State struct {
 	tabNumbers             bool // each tab shows its place number next to the name
 	// hiddenNav is the set of page rows the sidebar leaves out. Hiding is the
 	// entry only: the page keeps its section, shortcuts and command entry.
-	hiddenNav          navHidden
-	sidebarEditor      sidebarSettingsUI
-	verticalTabs       verticalTabs
-	tabMenu            tabMenu
-	hostMenu           hostMenu
-	hostPrivacy        hostPrivacyState
-	localShellPicker   localShellPicker
-	snippetMenu        snippetMenu
-	sftpMenu           sftpMenu
-	sftpHeaderMenu     sftpHeaderMenuRequest
-	fileProperties     sftpFileProperties
-	popups             popupMenus
-	selectedHostID     uint32
-	hostRevealID       uint32
-	activeSessionID    uint32
-	nextSessionID      uint32
-	nextHostID         uint32
-	nextIdentityID     uint32
-	nextForwardID      uint32
-	nextForwardStartID uint64
-	nextProxyID        uint32
-	forwards           []forwardRecord
+	hiddenNav             navHidden
+	sidebarEditor         sidebarSettingsUI
+	verticalTabs          verticalTabs
+	tabMenu               tabMenu
+	hostMenu              hostMenu
+	hostPrivacy           hostPrivacyState
+	localDirectoryPicker  localDirectoryPicker
+	localDirectoryHistory []string
+	localShellPicker      localShellPicker
+	snippetMenu           snippetMenu
+	sftpMenu              sftpMenu
+	sftpHeaderMenu        sftpHeaderMenuRequest
+	fileProperties        sftpFileProperties
+	popups                popupMenus
+	selectedHostID        uint32
+	hostRevealID          uint32
+	activeSessionID       uint32
+	nextSessionID         uint32
+	nextHostID            uint32
+	nextIdentityID        uint32
+	nextForwardID         uint32
+	nextForwardStartID    uint64
+	nextProxyID           uint32
+	forwards              []forwardRecord
 	// forwardTunnels are the SSH transports forwards use when no open tab
 	// carries one. They have no terminal and are never saved.
 	forwardTunnels     []*forwardTunnel
@@ -1781,6 +1783,10 @@ func (state *State) EditorFor(hit gfx.ID) *text.Editor {
 		if idx, ok := hit.In(hitSnippetVarList); ok && idx >= 0 && idx < len(state.snippetPrompt.editors) {
 			return &state.snippetPrompt.editors[idx]
 		}
+	case modalLocalDirectory:
+		if hit == hitLocalDirectorySearch {
+			return &state.localDirectoryPicker.search
+		}
 	case modalCommandPalette:
 		if hit == hitCommandPaletteSearch {
 			return &state.commandPalette.search
@@ -2104,6 +2110,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 	case modalFileProperties:
 		state.clickFileProperties(id)
 		return
+	case modalLocalDirectory:
+		state.clickLocalDirectory(id)
+		return
 	case modalCommandPalette:
 		state.clickCommandPalette(id)
 		return
@@ -2260,6 +2269,8 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.openHostDialog()
 	case id == hitImportSSHConfig:
 		state.importSSHConfig()
+	case id == hitLocalDirectoryOpen:
+		state.openLocalDirectoryPicker()
 	case id == hitLocalTerminal || id == hitWindowLocalTerminal:
 		state.openLocalTerminal()
 	case id == hitGitHub:
@@ -3414,6 +3425,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.localProxyKey(event); handled {
+		return result
+	}
+	if result, handled := state.localDirectoryKey(event); handled {
 		return result
 	}
 	if result, handled := state.commandPaletteKey(event); handled {

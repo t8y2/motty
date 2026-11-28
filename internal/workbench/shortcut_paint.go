@@ -11,6 +11,8 @@ func (state *State) shortcutActionLabel(action shortcutAction) string {
 	switch action {
 	case shortcutCommandPalette:
 		return messages.ShortcutCommandPalette
+	case shortcutAddLocalTerminal:
+		return messages.AddLocalTerminal
 	case shortcutNewWindow:
 		return messages.NewWindow
 	case shortcutFind:

@@ -27,6 +27,12 @@ const (
 	commandPaletteSortGap = 8
 )
 
+// pickerListScroll 复用选择列表的细滚动条，并为内容预留独立的滚动条区域。
+func pickerListScroll(c ui.C) ui.Box {
+	return ui.Scroll(c).PadSides(0, commandPaletteBarGap+commandPaletteBarWidth, 0, 0).
+		AlwaysScrollbars().ScrollbarSize(commandPaletteBarWidth)
+}
+
 // declareCommandPalette declares the palette in the workbench page: the page's
 // Dialog, with the search field, the sort switch and the list as page elements.
 // The palette keeps its own keyboard and pointer gestures for the rows it names
@@ -141,10 +147,8 @@ func (state *State) declareCommandPaletteBody(c ui.C) {
 			// The list is the page's scroll area: the rows are page controls, and
 			// the bar beside them is the page's. The choice the keyboard made is
 			// applied before the rows are declared.
-			list := ui.Scroll(c).Width(palette.bodyWidth+commandPaletteBarGap+commandPaletteBarWidth).
-				Height(commandPaletteListHeight).Shrink(0).MarginSides(12, 0, 0, 0).
-				PadSides(0, commandPaletteBarGap+commandPaletteBarWidth, 0, 0).
-				AlwaysScrollbars().ScrollbarSize(commandPaletteBarWidth)
+			list := pickerListScroll(c).Width(palette.bodyWidth+commandPaletteBarGap+commandPaletteBarWidth).
+				Height(commandPaletteListHeight).Shrink(0).MarginSides(12, 0, 0, 0)
 			palette.scrollState = list.ScrollState()
 			// The bar the page owns wrote the offset since the last paint; the
 			// keyboard wrote palette.scroll through the same state.

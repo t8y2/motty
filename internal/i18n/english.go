@@ -167,6 +167,13 @@ var EnglishMessages = Messages{
 	CommandPalettePlaceholder: "Type a command…",
 	CommandPaletteEmpty:       "No matching commands",
 	CommandSwitchSessionFmt:   "Switch to %s",
+	AddLocalTerminal:          "Open local terminal in folder",
+	LocalDirectoryTitle:       "Choose working directory",
+	LocalDirectorySearch:      "Search directory history…",
+	LocalDirectoryBrowse:      "Browse folders…",
+	LocalDirectoryEmpty:       "No matching directories",
+	LocalDirectoryRemove:      "Remove from history",
+	LocalDirectoryUnavailable: "Cannot open this directory.",
 	NewWindow:                 "New Window",
 
 	WorkspaceLibraryTitle:                 "Workspaces",
