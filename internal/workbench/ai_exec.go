@@ -26,6 +26,8 @@ type aiExec struct {
 	// has returned.
 	consolePrompt string
 	consoleRow    uint64
+	// pending is a wrapper waiting for the shell's prompt to become ready.
+	pending []byte
 }
 
 // execEnd is why a command stopped being the one the assistant waits on.
@@ -153,12 +155,29 @@ func (state *State) beginExec(args tools.TerminalExecArgs) (*aiExec, error) {
 	}
 	t.aiFront = t.cursorLine()
 	t.aiGeneration = t.screen.BufferGeneration()
+	if kind != shellkind.Console && t.folderToken != "" &&
+		(t.promptStarted || !t.folderIntegrationSeen) && !t.promptReady {
+		t.exec.pending = append([]byte(nil), wrapped...)
+		return t.exec, nil
+	}
 	if !t.sendAssistant(wrapped) {
 		delete(t.aiRows, line)
 		t.exec = nil
 		return nil, errExecRefuse
 	}
 	return t.exec, nil
+}
+
+// flushPendingExec sends a command that waited for the shell's prompt.
+func (state *State) flushPendingExec(t *terminal) {
+	if t == nil || t.exec == nil || len(t.exec.pending) == 0 {
+		return
+	}
+	p := t.exec.pending
+	t.exec.pending = nil
+	if !t.sendAssistant(p) {
+		t.finishExec(endStop)
+	}
 }
 
 // cursorLine is the number of the screen line the cursor is on, in the numbering

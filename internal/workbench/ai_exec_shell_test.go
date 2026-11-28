@@ -167,3 +167,22 @@ func TestConsoleExecRefusesToTypeWithoutAPromptToWaitFor(t *testing.T) {
 		t.Fatalf("typed %q into a terminal with no prompt", typed)
 	}
 }
+
+func TestAssistantExecutionWaitsForAPendingPrompt(t *testing.T) {
+	state, shell := assistantTestSession(t, &scriptedModel{turn: func(int, llm.Request) []llm.Event { return textTurn("ok") }})
+	term := state.sessions[0].term
+	term.promptStarted = true
+	term.promptReady = false
+	exec, err := state.beginExec(tools.TerminalExecArgs{Command: "free -h"})
+	if err != nil || exec == nil {
+		t.Fatalf("beginExec = %v, %v", exec, err)
+	}
+	if typed := shell.typed(); typed != "" {
+		t.Fatalf("the command was typed before the prompt was ready: %q", typed)
+	}
+	term.promptReady = true
+	state.flushPendingExec(term)
+	if typed := shell.typed(); !strings.Contains(typed, "free -h") || !strings.Contains(typed, "GOPAI_") {
+		t.Fatalf("the waiting command was not sent: %q", typed)
+	}
+}

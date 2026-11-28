@@ -59,6 +59,12 @@ func assistantTestSession(t *testing.T, model llm.Provider) (*State, *fakeShell)
 	shell := fake.shell(t)
 	shell.say("\x1b[0m")
 	state.Wake()
+	// The capture tests start at a ready prompt; prompt ordering itself is
+	// covered by the terminal/startup tests.
+	term := state.sessions[0].term
+	term.folderIntegrationSeen = true
+	term.promptStarted = true
+	term.promptReady = true
 
 	db, err := state.aiStore()
 	if err != nil {

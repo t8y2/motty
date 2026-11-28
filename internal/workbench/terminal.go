@@ -586,6 +586,8 @@ func (state *State) configureTerminal(session *Session) {
 			t.keyedSincePrompt = false
 			t.inputLine = false
 			current.outputAlert.promptSeen = true
+			state.blockPromptStart(current)
+			state.flushPendingExec(current.term)
 		}
 	})
 	session.term.screen.SetPromptReady(func() {
@@ -602,6 +604,8 @@ func (state *State) configureTerminal(session *Session) {
 			}
 			t.inputLine = true
 			t.prediction.newPrompt()
+			state.blockPromptReady(current)
+			state.flushPendingExec(t)
 		}
 	})
 	session.term.screen.SetCommandFinished(func(code int) {
