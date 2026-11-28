@@ -76,7 +76,7 @@ func (b *aiBackend) TransferRZSZ(ctx context.Context, req tools.RZSZRequest) (ga
 	}
 	timer := time.NewTimer(execTimeout(req.TimeoutSeconds))
 	defer timer.Stop()
-	ticker := time.NewTicker(rzszProgressEvery)
+	ticker := time.NewTicker(rzszProgressEvery) //appaudit:allow progress of a running transfer, ended with it
 	defer ticker.Stop()
 	var sent float64
 	reported := false

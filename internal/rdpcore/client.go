@@ -2734,7 +2734,7 @@ func (c *Client) keepAliveLoop() {
 	c.closeMu.Lock()
 	done := c.done
 	c.closeMu.Unlock()
-	ticker := time.NewTicker(c.opts.HeartbeatTimeout / 2)
+	ticker := time.NewTicker(c.opts.HeartbeatTimeout / 2) //appaudit:allow RDP keepalive while the session is connected
 	defer ticker.Stop()
 	for {
 		select {
@@ -2765,7 +2765,7 @@ func (c *Client) heartbeatLoop() {
 	c.closeMu.Lock()
 	done := c.done
 	c.closeMu.Unlock()
-	ticker := time.NewTicker(c.opts.HeartbeatTimeout / 2)
+	ticker := time.NewTicker(c.opts.HeartbeatTimeout / 2) //appaudit:allow RDP heartbeat check while the session is connected
 	defer ticker.Stop()
 	for {
 		select {

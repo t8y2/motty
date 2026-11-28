@@ -240,7 +240,7 @@ func (conn *Conn) startCountKeepAlive(client *ssh.Client, socket *aliveSocket, c
 }
 
 func (conn *Conn) keepAlive(client *ssh.Client, stop <-chan struct{}) {
-	ticker := time.NewTicker(conn.config.KeepAlive.Interval)
+	ticker := time.NewTicker(conn.config.KeepAlive.Interval) //appaudit:allow SSH keepalive the user configured, while connected
 	defer ticker.Stop()
 	for {
 		select {

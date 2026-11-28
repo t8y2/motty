@@ -1,4 +1,4 @@
-.PHONY: dev run head gtk check test-dev race race-workbench race-heavy race-rest
+.PHONY: dev run head gtk check test-dev race race-workbench race-heavy race-rest audit
 
 RACE_PACKAGES = \
 	./cmd/motty \
@@ -88,6 +88,7 @@ gtk:
 check:
 	test -z "$$(gofmt -l .)"
 	go vet ./...
+	$(MAKE) audit
 	go vet -tags dev ./internal/workbench
 	go test ./... -count=1
 	cd third_party/golang.org/x/crypto && go test ./ssh -count=1
@@ -128,3 +129,8 @@ race-heavy:
 
 race-rest:
 	go test -race -p 1 -count=1 -timeout 20m $(RACE_REST)
+
+# Points at what keeps the app busy when idle or stalls its window thread (see
+# ../viva/tools/appaudit); a line that needs one says why with //appaudit:allow.
+audit:
+	go run github.com/vivaui/viva/tools/appaudit ./cmd/... ./internal/...

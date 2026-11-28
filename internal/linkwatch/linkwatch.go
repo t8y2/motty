@@ -115,7 +115,7 @@ func watch(read func() Snapshot, interval time.Duration, report func(Change)) fu
 func tick(interval time.Duration, done <-chan struct{}) <-chan struct{} {
 	signals := make(chan struct{}, 1)
 	go func() {
-		ticker := time.NewTicker(interval)
+		ticker := time.NewTicker(interval) //appaudit:allow the fallback for a system that gives no change notification
 		defer ticker.Stop()
 		for {
 			select {
