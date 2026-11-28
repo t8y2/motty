@@ -534,9 +534,10 @@ func TestSFTPWindowExternalEditorSendsEverySaveBack(t *testing.T) {
 	})
 }
 
-// The system's "one screen at a time" wheel setting moves the file list by the
-// rows it shows. The window is taller than the list, so a notch that moved the
-// window's screen would skip files without ever showing them.
+// The system's "one screen at a time" wheel setting moves the file list by a
+// page of the rows it shows, keeping the last of them in view. The window is
+// taller than the list, so a notch that moved the window's screen would skip
+// files without ever showing them.
 func TestSFTPWindowWheelPageMovesOneScreenOfRows(t *testing.T) {
 	_, w, _, host, _ := dualSFTPFixture(t, 1.5)
 	entries := make([]sftpclient.Entry, 1000)
@@ -553,8 +554,8 @@ func TestSFTPWindowWheelPageMovesOneScreenOfRows(t *testing.T) {
 	}
 	window := gfx.Size{Width: 1400, Height: 900}
 	w.scroll(gfx.ScrollEvent{X: list.X + 20, Y: list.Y + 20, DeltaY: float32(window.Height), Pages: 1, Viewport: window})
-	if got := w.folder(true).first; got != visible {
-		t.Fatalf("one page notch moved the list to row %d, want one screen of %d", got, visible)
+	if got := w.folder(true).first; got >= visible || got < visible/2 {
+		t.Fatalf("one page notch moved the list to row %d, want most of a screen of %d with an overlap", got, visible)
 	}
 	if int(window.Height)/int(sftpRowHeight) <= visible {
 		t.Fatalf("the window's screen (%d rows) is not taller than the list's (%d), so the page cannot tell them apart", int(window.Height)/int(sftpRowHeight), visible)

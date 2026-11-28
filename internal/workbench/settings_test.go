@@ -616,9 +616,10 @@ func TestSettingsScrollDoesNotOverlapWorkspaceBorder(t *testing.T) {
 	}
 }
 
-// The system's "one screen at a time" wheel setting moves the page by the room
-// it shows, not by the window: the page under the window bar is shorter than
-// the window, and a notch that moved the window's screen would skip content.
+// The system's "one screen at a time" wheel setting moves the page by a page of
+// the room it shows, not of the window: the page under the window bar is
+// shorter than the window, and a notch that moved the window's screen would
+// skip content.
 func TestSettingsWheelPageMovesOneScreenOfThePage(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.Click(hitSettings)
@@ -634,8 +635,8 @@ func TestSettingsWheelPageMovesOneScreenOfThePage(t *testing.T) {
 		t.Fatalf("page content %v is too short to scroll a page of %v", state.settingsContent, page)
 	}
 	state.Scroll(gfx.ScrollEvent{DeltaY: float32(size.Height), Pages: 1, Viewport: size})
-	if math.Abs(float64(state.settingsScroll-page)) > 1 {
-		t.Fatalf("one page notch moved the page to %v, want its own screen of %v", state.settingsScroll, page)
+	if want := gfx.ScrollPage(page); math.Abs(float64(state.settingsScroll-want)) > 1 {
+		t.Fatalf("one page notch moved the page to %v, want a page %v of its own screen %v", state.settingsScroll, want, page)
 	}
 	if state.settingsScroll >= float32(size.Height) {
 		t.Fatalf("the notch moved the window's screen %v", state.settingsScroll)

@@ -914,7 +914,8 @@ func TestEscapeOutsideThePanelStillClosesIt(t *testing.T) {
 
 // The system's "one screen at a time" wheel setting asks for a screen of what
 // the wheel is over. A terminal shows its own rows, not the window's: one notch
-// replaces the visible screen and leaves the rows above it for the next.
+// moves most of the visible screen and keeps its edge rows in view, so a reader
+// does not lose their place.
 func TestTheWheelPageScrollsOneScreenOfTheTerminal(t *testing.T) {
 	state, _, _, shell := liveSession(t)
 	var output strings.Builder
@@ -939,8 +940,8 @@ func TestTheWheelPageScrollsOneScreenOfTheTerminal(t *testing.T) {
 	if !result.Handled || !result.Repaint {
 		t.Fatalf("page scroll: %+v", result)
 	}
-	if got := t0.screen.ViewOffset(); got != rows {
-		t.Fatalf("one page notch showed offset %d, want one screen of %d rows", got, rows)
+	if got := t0.screen.ViewOffset(); got >= rows || got < rows/2 {
+		t.Fatalf("one page notch showed offset %d, want most of a screen of %d rows with an overlap", got, rows)
 	}
 	state.terminalScroll(&state.sessions[0], gfx.ScrollEvent{DeltaY: float32(size.Height), Pages: 1, Viewport: size})
 	if got := t0.screen.ViewOffset(); got != 0 {
