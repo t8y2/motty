@@ -139,9 +139,12 @@ func followStateOf(t *testing.T, scale float32, can bool, size gfx.Size, host Ho
 	return state, session, server, &asked, screen
 }
 
+// A host that follows this display is asked for the pane's device pixels at the
+// display's scale, and shows them pixel for pixel.
 func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.T) {
 	size := gfx.Size{Width: 1400, Height: 900}
-	state, session, server, request, screen := followState(t, 1.25, true, size)
+	host := Host{Label: "Win", Address: "win.example.com", User: "alice", Protocol: protocolRDP, DesktopScale: desktopScaleDisplay}
+	state, session, server, request, screen := followStateOf(t, 1.25, true, size, host)
 
 	area := desktopLayout(size, false).area
 	wantWidth, wantHeight := int(math.Floor(float64(area.Width)*1.25))&^1, int(math.Floor(float64(area.Height)*1.25))
@@ -207,6 +210,90 @@ func TestRDPDesktopIsAskedForThePanesPixelsAndFollowsItOnceItSettles(t *testing.
 	screen.paint(gfx.Size{Width: 800, Height: 600}, 4*time.Second+desktopResizeDelay)
 	if got := server.asked(); len(got) != 2 || got[1].scale != 2 || got[1].width != int(math.Floor(float64(settled.Width)*2))&^1 {
 		t.Fatalf("a new display scale asked for %v", got)
+	}
+}
+
+// By default the server is asked for 100%, whatever this display's scale: its
+// interface scale is the remote session's DPI, and a Retina display asking for
+// 200% rearranged the taskbar and fonts of a shared Windows session (#1465).
+// The desktop is the pane's logical size, drawn scaled up to it on a scaled
+// display and pixel for pixel on one at 100%; another display scale asks the
+// server for nothing.
+func TestRDPDesktopIsAskedForOneHundredPercentByDefault(t *testing.T) {
+	size := gfx.Size{Width: 1400, Height: 900}
+	state, session, server, request, screen := followState(t, 2, true, size)
+
+	area := desktopLayout(size, false).area
+	want := desktopTargetFor(area, 1)
+	if request.Width != want.width || request.Height != want.height || request.Scale != 1 {
+		t.Fatalf("the server was asked for %dx%d at %v, want the pane's logical %dx%d at 1", request.Width, request.Height, request.Scale, want.width, want.height)
+	}
+	screen.paint(size, 10*time.Millisecond)
+	tiles := pictureTiles(&screen.canvas)
+	if len(tiles) == 0 {
+		t.Fatal("the picture was not painted")
+	}
+	for _, image := range tiles {
+		if image.DevicePixels {
+			t.Fatal("a picture at 100% on a 2x display was drawn as device pixels, a quarter of the pane")
+		}
+	}
+	origin, scale := session.desk.place(area)
+	if scale != 1 || origin.X != area.X || origin.Y != area.Y {
+		t.Fatalf("the picture is placed at %v at %v logical pixels per pixel, want the pane's corner at 1", origin, scale)
+	}
+	if shown := float32(session.desk.width) * scale; shown > area.Width || area.Width-shown >= 2 {
+		t.Fatalf("the picture is %v wide in a pane %v wide", shown, area.Width)
+	}
+	pointer(state, gfx.PointerEvent{Kind: gfx.PointerMove, X: origin.X + 100, Y: origin.Y + 50, Target: hitTerminalList.At(int(session.ID)), Viewport: size})
+	waitUntil(t, state, "the pointer", func() bool { server.mu.Lock(); defer server.mu.Unlock(); return len(server.pointer) > 0 })
+	if got := server.pointer[len(server.pointer)-1]; got != [2]int{100, 50} {
+		t.Fatalf("the press reached the remote at %v, want 100,50", got)
+	}
+
+	// Another display scale is not a new desktop.
+	for _, displayScale := range []float32{1, 1.5} {
+		screen.canvas.SetPixelScale(displayScale)
+		screen.paint(size, time.Second)
+		screen.paint(size, time.Second+desktopResizeDelay)
+		if got := server.asked(); len(got) != 0 {
+			t.Fatalf("a display at %v asked the server for %v", displayScale, got)
+		}
+	}
+	// At 1x the picture's pixels are the display's, so it is not resampled.
+	screen.canvas.SetPixelScale(1)
+	screen.canvas.Reset()
+	screen.paint(size, 2*time.Second)
+	for _, image := range pictureTiles(&screen.canvas) {
+		if !image.DevicePixels {
+			t.Fatal("a picture at 100% on a 1x display is resampled")
+		}
+	}
+
+	// A pane that settles at another size asks for its logical size at 100%.
+	smaller := gfx.Size{Width: 900, Height: 700}
+	screen.canvas.SetPixelScale(2)
+	screen.paint(smaller, 3*time.Second)
+	screen.paint(smaller, 3*time.Second+desktopResizeDelay)
+	if got, want := server.asked(), desktopTargetFor(desktopLayout(smaller, false).area, 1); len(got) != 1 || got[0] != want {
+		t.Fatalf("the settled pane asked for %v, want exactly %v", got, want)
+	}
+}
+
+// The remote scale is chosen on an open session from the quality menu: it is
+// saved with the host and asks to connect again, as the handshake fixes it.
+func TestRemoteScaleChosenOnAnOpenSessionIsSavedAndReconnects(t *testing.T) {
+	size := gfx.Size{Width: 1400, Height: 900}
+	state, session, server, _, _ := followState(t, 2, true, size)
+	state.setDesktopQuality(session, func(host *Host) { host.DesktopScale = desktopScaleDisplay })
+	if state.modal != modalSessionLink {
+		t.Fatalf("a new remote scale did not ask to connect again: modal %v", state.modal)
+	}
+	if index := state.hostIndex(session.HostID); index < 0 || state.hosts[index].DesktopScale != desktopScaleDisplay {
+		t.Fatalf("the remote scale was not saved with the host: %+v", state.hosts)
+	}
+	if session.desk.remoteScale() != 1 || len(server.asked()) != 0 {
+		t.Fatal("the open connection changed its scale before connecting again")
 	}
 }
 

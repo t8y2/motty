@@ -46,6 +46,9 @@ type DesktopMessages struct {
 	ResolutionApply           string
 	ResolutionCustomField     string
 	ErrResolution             string
+	RemoteScaleField          string
+	RemoteScaleStandard       string
+	RemoteScaleDisplay        string
 	EncodingPreferenceField   string
 	EncodingAuto              string
 	EncodingZRLE              string

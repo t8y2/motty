@@ -233,6 +233,9 @@ type savedTransport struct {
 	// DesktopWidth and DesktopHeight are an RDP host's fixed remote resolution.
 	DesktopWidth  int `json:"desktop_width,omitempty"`
 	DesktopHeight int `json:"desktop_height,omitempty"`
+	// DesktopScale is an RDP host's remote interface scale: "display" to follow
+	// this computer's display, omitted for 100%.
+	DesktopScale string `json:"desktop_scale,omitempty"`
 }
 
 func (host Host) transport() savedTransport {
@@ -273,6 +276,7 @@ func (host Host) transport() savedTransport {
 		transport.ColorDepth = host.ColorDepth
 		transport.Effects = host.Effects
 		transport.DesktopWidth, transport.DesktopHeight = savedDesktopSize(host.DesktopWidth, host.DesktopHeight)
+		transport.DesktopScale = host.DesktopScale.saved()
 		return transport
 	case protocolWSL:
 		return savedTransport{Protocol: "wsl", WSLDirectory: host.WSLDirectory, WSLNoGUI: host.WSLNoGUI,
@@ -396,6 +400,7 @@ func (host *Host) applyTransport(transport savedTransport) bool {
 		host.ColorDepth = rdpColorDepth(transport.ColorDepth)
 		host.Effects = transport.Effects
 		host.DesktopWidth, host.DesktopHeight = savedDesktopSize(transport.DesktopWidth, transport.DesktopHeight)
+		host.DesktopScale = parseDesktopScale(transport.DesktopScale)
 	case "wsl":
 		host.Protocol = protocolWSL
 		host.WSLDirectory, host.WSLNoGUI = transport.WSLDirectory, transport.WSLNoGUI

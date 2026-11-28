@@ -76,3 +76,28 @@ func TestHostEditorResolution(t *testing.T) {
 		t.Fatal("a custom resolution that is not a size was accepted")
 	}
 }
+
+// A host at 100% is saved as it always was; following the display survives the
+// round trip, and a fixed resolution is at 100% whatever the choice.
+func TestDesktopScaleIsSavedOnlyWhenChosen(t *testing.T) {
+	host := Host{Label: "h", Address: "h.example.com", Protocol: protocolRDP}
+	encoded, _ := json.Marshal(host.transport())
+	if strings.Contains(string(encoded), "desktop_scale") {
+		t.Fatalf("a host that never chose is saved with a scale: %s", encoded)
+	}
+	if got := host.remoteScale(2); got != 1 {
+		t.Fatalf("a host that never chose asks for %v on a 2x display, want 1", got)
+	}
+	host.DesktopScale = desktopScaleDisplay
+	var restored Host
+	if !restored.applyTransport(host.transport()) || restored.DesktopScale != desktopScaleDisplay {
+		t.Fatalf("restored = %+v", restored)
+	}
+	if got := restored.remoteScale(2); got != 2 {
+		t.Fatalf("a host that follows the display asks for %v on a 2x display, want 2", got)
+	}
+	restored.DesktopWidth, restored.DesktopHeight = 1920, 1080
+	if got := restored.remoteScale(2); got != 1 {
+		t.Fatalf("a fixed resolution asks for %v, want 1", got)
+	}
+}

@@ -153,6 +153,8 @@ type hostEditor struct {
 	// resolutionCustom the size typed when the choice is a custom one.
 	resolution       desktopSize
 	resolutionCustom text.Editor
+	// desktopScale is the remote interface scale choice of an RDP host.
+	desktopScale desktopScale
 	// ports are the serial ports found when the picker was last opened.
 	ports []serial.Port
 }
@@ -427,12 +429,12 @@ func (editor *hostEditor) load(host Host) {
 	editor.standardSecurity = host.Protocol == protocolRDP && host.StandardSecurity
 	editor.legacyTLS = host.Protocol == protocolRDP && host.LegacyTLS
 	editor.colorDepth, editor.desktopEncoding, editor.effects = 0, desktop.EncodingAuto, desktop.DefaultEffects()
-	editor.resolution, editor.resolutionCustom = desktopSize{}, text.Editor{}
+	editor.resolution, editor.resolutionCustom, editor.desktopScale = desktopSize{}, text.Editor{}, desktopScaleStandard
 	switch host.Protocol {
 	case protocolVNC:
 		editor.colorDepth, editor.desktopEncoding = host.ColorDepth, host.PreferredEncoding
 	case protocolRDP:
-		editor.colorDepth, editor.effects = host.ColorDepth, host.desktopEffects()
+		editor.colorDepth, editor.effects, editor.desktopScale = host.ColorDepth, host.desktopEffects(), host.DesktopScale
 		if size, fixed := host.fixedDesktopSize(); fixed {
 			editor.resolution = desktopSizeChoice(size)
 			if editor.resolution == customDesktopSize {
@@ -504,6 +506,9 @@ func (editor *hostEditor) host(id uint32) Host {
 		if size, ok := editor.resolutionSize(); ok {
 			host.DesktopWidth, host.DesktopHeight = savedDesktopSize(size.width, size.height)
 		}
+		// A fixed resolution is at 100% whatever the choice; it is kept for
+		// when the host follows its pane again.
+		host.DesktopScale = editor.desktopScale
 		if editor.effects != desktop.DefaultEffects() {
 			effects := editor.effects
 			host.Effects = &effects

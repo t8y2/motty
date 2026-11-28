@@ -96,6 +96,11 @@ type desktopView struct {
 	// resizer is the session when its server can change the picture's size to
 	// follow the pane, nil for one that cannot (VNC).
 	resizer desktop.Resizer
+	// followScale says the server is asked for the display's scale, not 100%:
+	// the host chose to follow this display (desktopScaleDisplay). It is fixed
+	// when the connection opens, so the size the handshake asked for and every
+	// resize after it are at the same scale.
+	followScale bool
 	// pointerKind, pointerShape and pointerVersion are what the remote last
 	// said about its pointer; cursorImage is the shape made for the system to
 	// draw as the pointer, at cursorScale. A session that names no shape
@@ -141,13 +146,14 @@ type desktopView struct {
 type imageDigest [sha256.Size]byte
 
 // desktopTarget is the desktop a pane wants of a server that follows it: as
-// many pixels as the pane has, and the scale of the display they are on.
+// many pixels as the pane has at the scale the server is asked for, and that
+// scale.
 type desktopTarget struct {
 	width, height int
 	scale         float32
 }
 
-// desktopTargetFor is the desktop that fills area exactly at a display scale.
+// desktopTargetFor is the desktop that fills area exactly at an interface scale.
 // The width is even, as a server's display channel needs it.
 func desktopTargetFor(area gfx.Rect, scale float32) desktopTarget {
 	if scale <= 0 {
@@ -221,28 +227,57 @@ func applyDesktopMemoryLimit() {
 	memlimit.Apply(memlimit.ForDesktops(sizes))
 }
 
-// pixelPerfect reports whether the picture is shown pixel for pixel: the server
-// can change its size, so the picture is made the size of the pane and scaling
-// it would only blur it.
-func (view *desktopView) pixelPerfect() bool {
+// follows reports whether the server can change its desktop's size, so in Fit
+// mode the picture is made the size of the pane instead of scaled to it.
+func (view *desktopView) follows() bool {
 	return view.resizer != nil && view.resizer.CanResize()
+}
+
+// following reports whether the picture is the pane's own: Fit mode on a server
+// that follows the pane. It is shown at its own scale from the pane's top left.
+func (view *desktopView) following() bool {
+	return view.fit && view.follows()
+}
+
+// displayScale is the device pixels per logical pixel as last painted.
+func (view *desktopView) displayScale() float32 {
+	if view.pixelScale <= 0 {
+		return 1
+	}
+	return view.pixelScale
+}
+
+// remoteScale is the interface scale the server is asked for: the display's
+// when the host follows it, 100% otherwise.
+func (view *desktopView) remoteScale() float32 {
+	if view.followScale {
+		return view.displayScale()
+	}
+	return 1
 }
 
 // logicalPerPixel is the logical size of one picture pixel shown pixel for pixel.
 func (view *desktopView) logicalPerPixel() float32 {
-	if view.pixelScale <= 0 {
-		return 1
-	}
-	return 1 / view.pixelScale
+	return 1 / view.displayScale()
 }
 
 // oneToOne reports whether the picture is drawn one picture pixel to one device
-// pixel: at 100% whatever the server's size is, and in Fit mode for the picture a
-// resizing server makes the size of the pane. That is the size of the server's
-// own screen; on a scaled display, drawing the picture on logical pixels instead
-// magnified it and its edges fell outside the pane.
+// pixel: at 100% whatever the server's size is, and in Fit mode for the pane's
+// own picture when its scale is the display's (a display at 100%, or a host that
+// follows the display). On a scaled display a picture at 100% is the pane's
+// logical size, and is drawn scaled up to it.
 func (view *desktopView) oneToOne() bool {
-	return !view.fit || view.pixelPerfect()
+	return !view.fit || (view.follows() && view.remoteScale() == view.displayScale())
+}
+
+// pointerScale is the image pixels per logical pixel of the remote's pointer
+// shapes: the pane's own picture's scale, as the server draws its pointer for
+// the interface scale it was asked for, and a device pixel otherwise.
+func (view *desktopView) pointerScale() float32 {
+	if view.following() {
+		return view.remoteScale()
+	}
+	return view.displayScale()
 }
 
 func (view *desktopView) close() {
@@ -304,8 +339,8 @@ func pointerShapeInverts(kind desktop.PointerKind, shape desktop.PointerShape) b
 // its own, and shows the ordinary one where the remote asks for it. The
 // crosshair stays for a remote that has named nothing. An inverting shape goes
 // through cursorImageAt instead, because its body takes its colour from the
-// picture under it. scale is the device pixels per logical pixel the shape is
-// made for: the remote's pixels are the screen's.
+// picture under it. scale is the image pixels per logical pixel the shape is
+// made for (pointerScale).
 func (view *desktopView) pointerCursor(scale float32) (gfx.PointerCursor, *gfx.CursorImage) {
 	if view.ended {
 		return gfx.PointerCursorDefault, nil
@@ -332,8 +367,8 @@ func (view *desktopView) pointerCursor(scale float32) (gfx.PointerCursor, *gfx.C
 
 // cursorImageAt is the system pointer over the remote's picture at at: the
 // remote's shape, with each pixel that shows the picture through it the
-// inverse of the picture under it there. One image pixel is one device pixel,
-// so the pointer is the size of every other shape the remote names, and the
+// inverse of the picture under it there. The image is at pointerScale, so the
+// pointer is the size of every other shape the remote names, and the
 // system draws and moves it like any pointer. The same image comes back while
 // the pixels it would show do not change: a pointer over one surface costs no
 // new cursor, and moving it costs no repaint. A new position over other pixels,
@@ -349,17 +384,14 @@ func (view *desktopView) cursorImageAt(at gfx.Point) *gfx.CursorImage {
 	if pictureWidth < 1 || pictureHeight < 1 {
 		return nil
 	}
-	pixelScale := view.pixelScale
-	if pixelScale <= 0 {
-		pixelScale = 1
-	}
+	pixelScale := view.pointerScale()
 	origin, scale := view.place(view.area)
 	if scale <= 0 {
 		scale = 1
 	}
 	hotX, hotY := min(max(shape.HotX, 0), shape.Width-1), min(max(shape.HotY, 0), shape.Height-1)
-	// One image pixel is one device pixel below the shape's hotspot, so the
-	// picture is read at the centre of each pixel the pointer covers.
+	// Each image pixel is read from the picture at its centre, measured from the
+	// shape's hotspot.
 	needed := shape.Width * shape.Height * 4
 	slot := view.cursorPixelSlot
 	if cap(view.cursorPixels[slot]) < needed {
@@ -453,14 +485,18 @@ func (view *desktopView) place(area gfx.Rect) (origin gfx.Point, scale float32) 
 	if width <= 0 || height <= 0 || area.Width <= 0 || area.Height <= 0 {
 		return gfx.Point{X: area.X, Y: area.Y}, 1
 	}
-	oneToOne := view.oneToOne()
-	scale = view.logicalPerPixel()
-	if !oneToOne {
+	oneToOne, following := view.oneToOne(), view.following()
+	switch {
+	case following:
+		scale = 1 / view.remoteScale()
+	case oneToOne:
+		scale = view.logicalPerPixel()
+	default:
 		scale = min(area.Width/width, area.Height/height, desktopMaxScale)
 	}
 	shownWidth, shownHeight := width*scale, height*scale
 	axis := func(start, room, shown, pointer float32) float32 {
-		if oneToOne && view.fit {
+		if following {
 			return start
 		}
 		if shown <= room {
@@ -475,7 +511,7 @@ func (view *desktopView) place(area gfx.Rect) (origin gfx.Point, scale float32) 
 		X: axis(area.X, area.Width, shownWidth, view.pointer.X),
 		Y: axis(area.Y, area.Height, shownHeight, view.pointer.Y),
 	}
-	if oneToOne && view.pixelScale > 0 {
+	if (oneToOne || following) && view.pixelScale > 0 {
 		snap := func(value float32) float32 {
 			return float32(math.Floor(float64(value)*float64(view.pixelScale)+0.5)) / view.pixelScale
 		}
@@ -547,6 +583,7 @@ func (state *State) openDesktop(session *Session) {
 		// to follow the pane, so the picture is scaled to the pane instead.
 		session.desk.resizer = nil
 	}
+	session.desk.followScale = session.host.DesktopScale == desktopScaleDisplay
 	session.desk.chromeless = session.host.Chromeless
 	session.term.ended = false
 	session.desk.active = state.desktopVisible(session)
@@ -1579,7 +1616,7 @@ func (state *State) paintDesktopPicture(d *ui.DrawContext, session *Session) {
 	canvas.Unclip()
 
 	name := fmt.Sprintf(m.Desktop.AccessibleFmt, session.Address)
-	cursor, cursorImage := view.pointerCursor(view.pixelScale)
+	cursor, cursorImage := view.pointerCursor(view.pointerScale())
 	var cursorAt gfx.CursorImageFunc
 	if view.inverted {
 		// The remote's shape takes its colour from the picture under it, so the
@@ -1618,18 +1655,21 @@ func (state *State) paintDesktopCaptureNote(canvas *gfx.Canvas, view *desktopVie
 	canvas.HitWithOptions(state.paneIdentity(session, hitDesktopCapture), pill, hint, gfx.HitOptions{Role: gfx.RoleButton, Hint: hint})
 }
 
-// desktopTargetFor is the desktop a session's pane can show pixel for pixel: the
-// picture area of the page it is on, at the display scale last painted.
+// desktopTargetFor is the desktop a session's pane asks for when it connects:
+// the picture area of the page it is on, at the interface scale its host asks
+// for on the display last painted. followDesktop asks for later sizes by the
+// same rule.
 func (state *State) desktopTargetFor(session *Session) desktopTarget {
 	bounds := state.desktopBounds(session)
+	scale := session.host.remoteScale(state.pixelScale)
 	if session.desk != nil && session.desk.fullscreen {
-		return desktopTargetFor(gfx.Rect{Width: bounds.Width, Height: bounds.Height}, state.pixelScale)
+		return desktopTargetFor(gfx.Rect{Width: bounds.Width, Height: bounds.Height}, scale)
 	}
 	chromeless := session.host.Chromeless
 	if session.desk != nil {
 		chromeless = session.desk.chromeless
 	}
-	return desktopTargetFor(desktopGeometryAt(bounds, chromeless).area, state.pixelScale)
+	return desktopTargetFor(desktopGeometryAt(bounds, chromeless).area, scale)
 }
 
 // setDesktopChromeless turns a session's bars off or on, from its tab's menu: the
@@ -1664,13 +1704,16 @@ func (state *State) setDesktopChromeless(session *Session, chromeless bool) {
 // is asked, and a frame is requested for the end of the wait, so a settled pane
 // costs nothing and a dragged window asks once.
 func (state *State) followDesktop(canvas *gfx.Canvas, view *desktopView) {
-	if view.resizer == nil || view.ended || !view.active || !view.fit || view.width <= 0 || !view.resizer.CanResize() {
+	if view.ended || !view.active || !view.following() || view.width <= 0 {
 		return
 	}
+	scale := view.remoteScale()
 	if view.asked == (desktopTarget{}) {
-		view.asked = desktopTarget{width: view.width, height: view.height, scale: view.pixelScale}
+		view.asked = desktopTarget{width: view.width, height: view.height, scale: scale}
 	}
-	target := desktopTargetFor(view.area, view.pixelScale)
+	// A display of another scale is a new target only for a host that follows
+	// it; at 100% the pane's logical size is what the server is given.
+	target := desktopTargetFor(view.area, scale)
 	if target.width <= 0 || target.height <= 0 || target == view.asked {
 		view.settling = false
 		return
