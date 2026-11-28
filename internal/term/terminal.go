@@ -251,15 +251,17 @@ type Terminal struct {
 	promptSaved   []*line
 	promptCol     int
 
-	inputEnvironmentFn func(InputEnvironment)
-	homeDirectoryFn    func(string)
-	commandStartFn     func()
-	commandFinishedFn  func(int)
-	syncFn             func(bool)
-	cwd                Cwd
-	kittyNotes         []kittyPending // OSC 99 notifications still waiting for chunks
-	defFG, defBG       [3]uint8
-	haveDefaults       bool
+	inputEnvironmentFn  func(InputEnvironment)
+	homeDirectoryFn     func(string)
+	commandStartFn      func()
+	commandFinishedFn   func(int)
+	screenClearedFn     func()
+	scrollbackClearedFn func()
+	syncFn              func(bool)
+	cwd                 Cwd
+	kittyNotes          []kittyPending // OSC 99 notifications still waiting for chunks
+	defFG, defBG        [3]uint8
+	haveDefaults        bool
 
 	lastRune rune   // for REP
 	runBuf   []rune // text decoded for the run path, reused across writes
@@ -380,6 +382,9 @@ func (t *Terminal) ClearScrollback() {
 	}
 	t.clearHistory()
 	t.version++
+	if t.scrollbackClearedFn != nil {
+		t.scrollbackClearedFn()
+	}
 }
 
 // ClearScreen drops the history and erases every row except the one the cursor
@@ -419,6 +424,9 @@ func (t *Terminal) ClearScreen() bool {
 	t.cy = 0
 	t.generation++
 	t.version++
+	if t.screenClearedFn != nil {
+		t.screenClearedFn()
+	}
 	return true
 }
 
@@ -657,6 +665,9 @@ func (t *Terminal) Reset() {
 	t.title = ""
 	t.generation++
 	t.resetState()
+	if t.screenClearedFn != nil {
+		t.screenClearedFn()
+	}
 }
 
 // resetState sets modes, cursor, margins and tabs to their defaults.
