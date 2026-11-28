@@ -58,6 +58,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 	canCopy := hasSelection && selected.Error == ""
 	canCopyPrivate := canCopy && !selected.SecurityKey
 	canEdit := canCopyPrivate && selected.Stored
+	canDeploy := hasSelection && usableDeployIdentity(selected)
 	canCertify := canCopy && selected.Stored
 	view := &state.sectionBodies.keys
 	draw := view.draw
@@ -81,6 +82,7 @@ func (state *State) declareKeysWorkspace(c ui.C) {
 			view.copyPrivateButton = state.declareButtonSized(c, hitKeysCopyPrivate, messages.KeyCopyPrivate, copyPrivateIcon, false, false, canCopyPrivate, toolbarFont, condensed).Size(copyPrivateWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.editButton = state.declareButtonSized(c, hitKeysEdit, messages.KeyEdit, editIcon, false, false, canEdit, toolbarFont, condensed).Size(editWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.exportButton = state.declareButtonSized(c, hitKeysExport, messages.KeyExport, exportIcon, false, false, canCopy, toolbarFont, condensed).Size(exportWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
+			state.declareKeysExportMenu(c, view.exportButton, canDeploy)
 			view.passphraseButton = state.declareButtonSized(c, hitKeysPassphrase, messages.KeySavePassphrase, passphraseIcon, false, false, selectedEncrypted, toolbarFont, condensed).Size(passphraseWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.certificateButton = state.declareButtonSized(c, hitKeysCertificate, messages.KeyCertificate, certificateIcon, false, false, canCertify, toolbarFont, condensed).Size(certificateWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
 			view.removeButton = state.declareButtonSized(c, hitKeysRemove, messages.KeyRemove, removeIcon, false, false, state.selectedIdentityID != 0, toolbarFont, condensed).Size(removeWidth, toolbarHeight).MarginSides(0, gap, 0, 0).Shrink(0)
@@ -148,6 +150,31 @@ func (state *State) declareKeysMenu(c ui.C, anchor ui.Box) {
 			if menu.Item(way.label).Clicked() {
 				c.After(func() { state.click(way.id, true) })
 			}
+		}
+	})
+}
+
+// declareKeysExportMenu puts the two export choices under the keychain's
+// Export button: the private half to a file, or the public half to hosts.
+func (state *State) declareKeysExportMenu(c ui.C, anchor ui.Box, canDeploy bool) {
+	if !state.keysExportMenu {
+		return
+	}
+	m := state.messages
+	ui.PopupLayer(c, dialogLayer)
+	ui.Menu(c, anchor, &state.keysExportMenu, func(menu *ui.MenuItems) {
+		menu.WidthRange(220, 220)
+		if menu.Item(m.KeyExport).Clicked() {
+			c.After(func() {
+				state.keysExportMenu = false
+				state.exportSelectedKey()
+			})
+		}
+		if menu.Item(m.KeyDeploy).Disabled(!canDeploy).Clicked() {
+			c.After(func() {
+				state.keysExportMenu = false
+				state.openHostKeyDeployment()
+			})
 		}
 	})
 }

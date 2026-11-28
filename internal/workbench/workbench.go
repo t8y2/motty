@@ -574,9 +574,13 @@ type State struct {
 	forwardList        ui.ListState
 	forwardRowDecl     func(ui.ListRow)
 	keysTable          ui.TableState
-	proxyList          ui.ListState
-	proxyRowDecl       func(ui.ListRow)
-	keysRows           keyTableSource
+	// hostKeyDeploy runs one batch of public-key installs; its view is the
+	// dialog's selection and results.
+	hostKeyDeploy     hostKeyDeployment
+	hostKeyDeployView hostKeyDeployView
+	proxyList         ui.ListState
+	proxyRowDecl      func(ui.ListRow)
+	keysRows          keyTableSource
 	// forwardColumns are the row's five data columns and the one its actions
 	// keep at the end.
 	forwardColumns         [6]components.TableColumn
@@ -653,7 +657,10 @@ type State struct {
 	hostGroupMenu   bool
 	importMenu      bool
 	// keysMenu is the open menu under the Keychain page's Add Key button.
-	keysMenu          bool
+	keysMenu bool
+	// keysExportMenu is the open menu under the Keychain page's Export button:
+	// exporting the private half or deploying its public half to hosts.
+	keysExportMenu    bool
 	hostsBounds       gfx.Rect // the hosts page as last painted; the menus anchor to it
 	hostsGridViewport gfx.Rect // the card grid's absolute viewport as last painted
 	terminalMenu      terminalMenu
@@ -2009,6 +2016,9 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		return
 	case modalHostKey:
 		state.clickHostKey(id)
+		return
+	case modalHostKeyDeploy:
+		state.clickHostKeyDeployment(id)
 		return
 	case modalPassword:
 		state.clickPassword(id)
@@ -3472,6 +3482,9 @@ func (state *State) key(event gfx.KeyEvent) gfx.EventResult {
 		return result
 	}
 	if result, handled := state.hostManagementKey(event); handled {
+		return result
+	}
+	if result := state.hostKeyDeployKey(event); result.Handled {
 		return result
 	}
 	if state.modal == modalNewHost && event.Key == gfx.KeyEnter && event.Modifiers == 0 && event.Target != hitDialogLoginCommand && state.EditorFor(event.Target) != nil {
