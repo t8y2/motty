@@ -11,6 +11,47 @@ import (
 // terminalBarLinger is how long the scrollbar stays after the view last moved.
 const terminalBarLinger = 1000 * time.Millisecond
 
+type scrollbarSize uint8
+
+const (
+	scrollbarWide scrollbarSize = iota
+	scrollbarMedium
+	scrollbarThin
+)
+
+func (s scrollbarSize) String() string {
+	switch s {
+	case scrollbarThin:
+		return "thin"
+	case scrollbarMedium:
+		return "medium"
+	default:
+		return ""
+	}
+}
+
+func scrollbarSizeFromString(value string) scrollbarSize {
+	switch value {
+	case "thin":
+		return scrollbarThin
+	case "medium":
+		return scrollbarMedium
+	default:
+		return scrollbarWide
+	}
+}
+
+func (s scrollbarSize) pixels() float32 {
+	switch s {
+	case scrollbarThin:
+		return 4
+	case scrollbarMedium:
+		return 6
+	default:
+		return base.ScrollAreaBarSize
+	}
+}
+
 // terminalScrollbarShown reports whether the terminal has history to scroll
 // through. The alternate screen has none, and a synchronized update is a frozen
 // picture of the screen, not a place to move in.
@@ -73,7 +114,7 @@ func (state *State) terminalScrollGeometry(session *Session, area gfx.Rect) base
 	return base.LayoutScrollArea(area, gfx.Size{Width: area.Width, Height: area.Height + history},
 		base.ScrollAreaLayout{
 			OffsetY: float32(screen.Scrollback()-screen.ViewOffset()) * state.cellHeight,
-			BarSize: base.ScrollAreaBarSize,
+			BarSize: state.terminalScrollbarSize.pixels(),
 		})
 }
 
