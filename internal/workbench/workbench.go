@@ -2492,7 +2492,18 @@ func (state *State) closeSession(id uint32) {
 	state.activeSessionID = state.sessions[min(index, len(state.sessions)-1)].ID
 }
 
+// closeActivePane is what Close Pane does to the pane in front. The settings
+// page stands where the panes would, as a tab of its own, so the command takes
+// that page away there; any other page in front leaves no pane to close, and
+// the terminal tab kept behind it must not be reached from there.
 func (state *State) closeActivePane() {
+	if state.activeSection == sectionSettings {
+		state.closeSettingsTab()
+		return
+	}
+	if !state.terminalPage() {
+		return
+	}
 	workspaceID := state.deck.ActiveWorkspace()
 	if state.deck.Locked(workspaceID) && len(state.deck.Panes(workspaceID, nil)) == 1 {
 		state.closeWorkspace(workspaceID)

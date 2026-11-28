@@ -1,0 +1,31 @@
+# lang: zh-CN
+# End to end: Close Pane on the settings page closes that page, not the terminal
+# tab kept behind it, and a page with no pane of its own closes nothing (issue
+# 1775). Run:
+#   go build -tags vivahead -o /tmp/motty-head-1775 ./cmd/motty
+#   MOTTY_HEAD=/tmp/motty-head-1775 python3 tools/headless_drive.py "$(mktemp -d)" tools/e2e/settings_close_pane_e2e.txt
+click "本地终端"
+settle 800
+click "设置"
+settle 800
+expect state id:file-tabs/settings-tab selected
+expect text "通用"
+shot /tmp/issue1775-settings-open.png
+# Close Pane takes the settings page away; the terminal tab behind it stays,
+# prompt and all.
+key cmd+alt+w
+settle 800
+expect absent id:file-tabs/settings-tab
+expect no-text "通用"
+expect text "本机"
+shot /tmp/issue1775-settings-closed.png
+# A hosts page in front has no pane of its own: Close Pane leaves it and the
+# terminal tab alone.
+click "主机"
+settle 500
+expect text "添加你的主机"
+key cmd+alt+w
+settle 500
+expect text "添加你的主机"
+shot /tmp/issue1775-hosts-untouched.png
+layout

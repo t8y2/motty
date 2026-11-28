@@ -96,6 +96,51 @@ func (state *State) activateTop(index int, t *testing.T) {
 	}
 }
 
+// Close Pane acts on the pane area, so on the settings page it closes that page
+// (issue 1775) and the terminal tab behind it keeps its session.
+func TestClosePaneClosesTheSettingsPageNotTheTabBehindIt(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	session := state.sessions[0].ID
+	workspace := state.deck.ActiveWorkspace()
+	state.Click(hitSettings)
+	if !state.settingsTabActive() {
+		t.Fatal("settings did not open as the page in front")
+	}
+	chord := state.shortcuts.chords.Chord(shortcutPaneClose)
+	result := state.Shortcut(gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
+	if !result.Handled {
+		t.Fatalf("close pane was not handled: %+v", result)
+	}
+	if state.settingsTab || state.activeSection != sectionTerminal {
+		t.Fatalf("after close pane: section %d, settings tab open %t", state.activeSection, state.settingsTab)
+	}
+	if len(state.sessions) != 1 || state.sessions[0].ID != session || state.deck.ActiveWorkspace() != workspace {
+		t.Fatalf("close pane took the terminal behind settings: %d sessions", len(state.sessions))
+	}
+}
+
+// A page with no pane of its own leaves Close Pane nothing to close: it must
+// not reach the terminal tab kept behind the host list.
+func TestClosePaneLeavesAHiddenTerminalAloneOnAnotherPage(t *testing.T) {
+	state := newTestState(t, testOptions(t))
+	openHost(state)
+	session := state.sessions[0].ID
+	workspace := state.deck.ActiveWorkspace()
+	state.Click(hitHosts)
+	if state.activeSection != sectionHosts {
+		t.Fatalf("hosts page not in front: section %d", state.activeSection)
+	}
+	chord := state.shortcuts.chords.Chord(shortcutPaneClose)
+	state.Shortcut(gfx.KeyEvent{Modifiers: chord.Modifiers, Text: string([]byte{chord.Char})})
+	if state.activeSection != sectionHosts {
+		t.Fatalf("close pane left the hosts page: section %d", state.activeSection)
+	}
+	if len(state.sessions) != 1 || state.sessions[0].ID != session || state.deck.ActiveWorkspace() != workspace {
+		t.Fatalf("close pane reached the terminal behind the hosts page: %d sessions", len(state.sessions))
+	}
+}
+
 // Switching away from an open settings tab to Hosts or another tab and returning
 // preserves the page's scroll offset, category list scroll, and view state.
 // Explicitly closing the settings tab and opening settings anew starts at the top.
