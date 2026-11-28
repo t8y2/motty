@@ -1,0 +1,310 @@
+package workbench
+
+import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/vivaui/viva/app"
+	"github.com/vivaui/viva/gfx"
+	"motty/internal/backup"
+	"motty/internal/keyidentity"
+)
+
+func TestABackupCarriesPrivateKeyFilesOnlyWhenAsked(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+
+	document, _, err := state.backupDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Keys) != 0 {
+		t.Fatalf("a backup carried %d keys without being asked", len(document.Keys))
+	}
+
+	state.Click(hitBackupKeys)
+	if state.backupKeys || state.modal != modalForm {
+		t.Fatalf("the row did not ask before carrying keys: backupKeys=%v modal=%v", state.backupKeys, state.modal)
+	}
+	state.Click(hitFormSubmit)
+	if !state.backupKeys {
+		t.Fatal("the row did not turn carrying keys on")
+	}
+	document, _, err = state.backupDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Keys) != 1 {
+		t.Fatalf("keys in the backup: %d", len(document.Keys))
+	}
+	key := document.Keys[0]
+	if key.Fingerprint != state.identities[0].Fingerprint || key.Name != "id_ed25519" || len(key.Data) == 0 {
+		t.Fatalf("the key in the backup: %+v", key)
+	}
+}
+
+func TestRestoringABackupWritesItsKeyFilesWhereTheHostsFindThem(t *testing.T) {
+	source, _, file := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "secret")
+	source.restoreIdentities([]string{path})
+	fingerprint := source.identities[0].Fingerprint
+	if err := source.secrets.vault.Set(passphraseSecretName(path), "secret"); err != nil {
+		t.Fatal(err)
+	}
+	source.backupKeys = true
+	source.save()
+	exportBackup(t, source)
+
+	_, targetOptions := newWorld(t)
+	targetOptions.OpenFiles = func(app.OpenFileOptions) ([]string, error) { return []string{file}, nil }
+	target := newTestState(t, targetOptions)
+	target.activeSection, target.settingsCategory = sectionSettings, settingsBackup
+
+	target.Click(hitBackupRestore)
+	if target.modal != modalForm {
+		t.Fatal("the restore form did not open")
+	}
+	fillForm(target, testBackupPassword)
+	target.Click(hitFormSubmit)
+	if target.modal != modalNone {
+		t.Fatalf("restore refused: %q", target.form.dialogError)
+	}
+
+	restored := filepath.Join(filepath.Dir(targetOptions.StatePath), "keys", "id_ed25519")
+	data, err := os.ReadFile(restored)
+	if err != nil {
+		t.Fatalf("the key was not written: %v", err)
+	}
+	if info, err := keyidentity.Inspect(restored); err != nil || info.Fingerprint != fingerprint {
+		t.Fatalf("the written key: %+v %v", info, err)
+	}
+	if len(data) == 0 {
+		t.Fatal("the written key is empty")
+	}
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(restored); err != nil || info.Mode().Perm()&0o077 != 0 {
+			t.Fatalf("the written key's mode: %v %v", info.Mode(), err)
+		}
+	}
+	if _, ok := target.hostCatalog.identityForFingerprint(fingerprint); !ok {
+		t.Fatal("the restored key is not in the keys page, so a host naming it would not find it")
+	}
+	value, found, err := target.secrets.vault.Get(passphraseSecretName(restored))
+	if err != nil || !found || value != "secret" {
+		t.Fatalf("the passphrase under its new path: %q %v %v", value, found, err)
+	}
+}
+
+func TestASyncedComputerWithoutTheKeyToggleOnlyPassesTheServerKeysOn(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := keyidentity.Inspect(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := backup.Key{Fingerprint: info.Fingerprint, Name: "id_ed25519", Data: data}
+
+	outgoing, err := state.mergeRemote(backup.Document{Keys: []backup.Key{remote}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outgoing == nil || len(outgoing.Keys) != 1 || outgoing.Keys[0].Fingerprint != info.Fingerprint {
+		t.Fatalf("what goes back: %+v", outgoing)
+	}
+	if len(state.identities) != 0 {
+		t.Fatalf("a computer that did not ask for keys registered %d", len(state.identities))
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(state.options.StatePath), "keys", "id_ed25519")); err == nil {
+		t.Fatal("a computer that did not ask for keys wrote one")
+	}
+}
+
+func TestASyncedComputerWithTheKeyToggleWritesTheServerKeys(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	state.backupKeys = true
+	state.syncDelay = 0
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := keyidentity.Inspect(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := backup.Key{Fingerprint: info.Fingerprint, Name: "id_ed25519", Data: data}
+
+	outgoing, err := state.mergeRemote(backup.Document{Keys: []backup.Key{remote}}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outgoing == nil || len(outgoing.Keys) != 1 {
+		t.Fatalf("what goes back: %+v", outgoing)
+	}
+	written := filepath.Join(filepath.Dir(state.options.StatePath), "keys", "id_ed25519")
+	if _, err := os.Stat(written); err != nil {
+		t.Fatalf("the key from the server was not written: %v", err)
+	}
+	if _, ok := state.hostCatalog.identityForFingerprint(info.Fingerprint); !ok {
+		t.Fatal("the key from the server is not in the keys page")
+	}
+}
+
+func TestBackupKeysAreTheSameWhenTheirFingerprintsMatch(t *testing.T) {
+	a := []backup.Key{{Fingerprint: "SHA256:one", Name: "id_one", Data: []byte("one\n")}}
+	b := []backup.Key{{Fingerprint: "SHA256:one", Name: "renamed", Path: "/other/path", Data: []byte("one with a different comment\n")}}
+	if !sameBackupKeys(a, b) {
+		t.Fatal("the same key was treated as changed because its bytes differ")
+	}
+	if sameBackupKeys(a, []backup.Key{{Fingerprint: "SHA256:two", Name: "id_one", Data: a[0].Data}}) {
+		t.Fatal("different fingerprints were treated as the same key")
+	}
+}
+
+func TestARestoredKeyAlreadyOnThisComputerIsNotDuplicated(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	fingerprint := state.identities[0].Fingerprint
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault, false)
+	if written != 0 || failed != 0 {
+		t.Fatalf("written=%d failed=%d", written, failed)
+	}
+	if len(state.identities) != 1 {
+		t.Fatalf("the key was registered %d times", len(state.identities))
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(state.options.StatePath), "keys", "id_ed25519")); err == nil {
+		t.Fatal("a second copy of the key was written under keys/")
+	}
+}
+
+func TestARemovedFileKeyIsNotBroughtBackBySync(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	state.selectedIdentityID = state.identities[0].ID
+	fingerprint := state.identities[0].Fingerprint
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state.removeSelectedIdentity()
+	if len(state.identities) != 0 || !state.keyFileTombstoned(fingerprint) {
+		t.Fatalf("remove did not leave a tombstone: identities=%d tombstone=%v", len(state.identities), state.keyFileTombstoned(fingerprint))
+	}
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault, false)
+	if written != 0 || failed != 0 || len(state.identities) != 0 {
+		t.Fatalf("the removed key came back: written=%d failed=%d identities=%d", written, failed, len(state.identities))
+	}
+}
+
+func TestExplicitRestoreCanBringBackARemovedKey(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	state.selectedIdentityID = state.identities[0].ID
+	fingerprint := state.identities[0].Fingerprint
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.removeSelectedIdentity()
+
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault, true)
+	if written != 1 || failed != 0 || len(state.identities) != 1 {
+		t.Fatalf("explicit restore did not bring the key back: written=%d failed=%d identities=%d", written, failed, len(state.identities))
+	}
+}
+
+func TestRestoringFilesKeepsKeysStoredInTheVault(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	if message := state.addStoredKey("Vault key", []byte(identityPEM(t, "")), func(identityRecord) {}); message != "" {
+		t.Fatalf("the vault key was not stored: %s", message)
+	}
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := keyidentity.InspectData("id_ed25519", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	written, failed := state.applyBackupKeys([]backup.Key{{
+		Fingerprint: info.Fingerprint,
+		Name:        "id_ed25519",
+		Data:        data,
+	}}, state.secrets.vault, true)
+	if written != 1 || failed != 0 {
+		t.Fatalf("written=%d failed=%d", written, failed)
+	}
+	foundStored := false
+	for _, identity := range state.identities {
+		if identity.Stored {
+			foundStored = true
+		}
+	}
+	if !foundStored {
+		t.Fatal("restoring file keys dropped the key kept in the vault")
+	}
+}
+
+func TestSyncDoneReportsPrivateKeyFilesLeftOut(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	state.sync.keysLeftOut = 2
+	state.syncDone("tag", "")
+	if !strings.Contains(state.status, "2") {
+		t.Fatalf("sync completion did not report the keys left out: %q", state.status)
+	}
+}
+
+func TestImportingAKeyAgainClearsItsRemovalTombstone(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	path := writeWorkbenchIdentity(t, "id_ed25519", "")
+	state.restoreIdentities([]string{path})
+	fingerprint := state.identities[0].Fingerprint
+	state.selectedIdentityID = state.identities[0].ID
+	state.removeSelectedIdentity()
+	state.importKeyFiles([]string{path})
+	if state.keyFileTombstoned(fingerprint) {
+		t.Fatal("re-importing the key kept the removal tombstone")
+	}
+}
+
+func TestTheSyncPageOffersPrivateKeyFilesOffByDefault(t *testing.T) {
+	state, _, _ := backupTestState(t)
+	var canvas gfx.Canvas
+	state.Paint(&canvas, gfx.Size{Width: 1400, Height: 6000})
+	if _, ok := hitByID(&canvas, hitBackupKeys); !ok {
+		t.Fatal("the sync page has no switch for private key files")
+	}
+	if state.backupKeys {
+		t.Fatal("private key files start on")
+	}
+}

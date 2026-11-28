@@ -235,7 +235,14 @@ type savedState struct {
 	// SyncExcluded is this computer's selection of what cloud sync exchanges,
 	// stored as the closed categories. It is device-local: it never becomes a
 	// shared record, and a computer without it syncs everything.
-	SyncExcluded           []syncCategory   `json:"sync_excluded,omitempty"`
+	SyncExcluded []syncCategory `json:"sync_excluded,omitempty"`
+	// BackupKeys includes this computer's private key files in backups and sync.
+	// It is device-local and off unless the user turns it on.
+	BackupKeys bool `json:"backup_keys,omitempty"`
+	// KeyFileTombstones are fingerprints of file keys removed on this computer.
+	// They keep a synced key from being restored here; they do not delete the
+	// cloud copy.
+	KeyFileTombstones      []string         `json:"key_file_tombstones,omitempty"`
 	HostView               string           `json:"host_view,omitempty"`
 	HostOrder              string           `json:"host_order,omitempty"`
 	HostSideWidth          float32          `json:"host_side_width,omitempty"`
@@ -864,6 +871,14 @@ func (state *State) snapshot() savedState {
 	saved.AICLIProviders = state.savedAICLIProviders()
 	saved.Sync = state.savedSyncValue()
 	saved.SyncExcluded = state.syncScope.excludedCopy()
+	saved.BackupKeys = state.backupKeys
+	if len(state.keyFileTombstones) > 0 {
+		saved.KeyFileTombstones = make([]string, 0, len(state.keyFileTombstones))
+		for fingerprint := range state.keyFileTombstones {
+			saved.KeyFileTombstones = append(saved.KeyFileTombstones, fingerprint)
+		}
+		slices.Sort(saved.KeyFileTombstones)
+	}
 	saved.HostView = state.hostView.saved()
 	saved.HostOrder = state.hostOrder.saved()
 	saved.HostSideWidth = state.hostSide.width
@@ -1227,6 +1242,11 @@ func (state *State) restoreLocal(saved savedState) {
 	state.agentHostMode = agentHostModeFromSaved(saved.AgentHostMode)
 	state.restoreSync(saved.Sync)
 	state.syncScope = newSyncScope(saved.SyncExcluded)
+	state.backupKeys = saved.BackupKeys
+	state.keyFileTombstones = make(map[string]bool, len(saved.KeyFileTombstones))
+	for _, fingerprint := range saved.KeyFileTombstones {
+		state.keyFileTombstones[fingerprint] = true
+	}
 	state.hostView = hostViewFromString(saved.HostView)
 	if saved.HostSideWidth >= hostSideMinWidth && saved.HostSideWidth <= hostSideMaxWidth {
 		state.hostSide.width = saved.HostSideWidth

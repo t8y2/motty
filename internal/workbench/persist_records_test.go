@@ -95,6 +95,10 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// hides or excludes: restoreLocal applies both, and the sync scope test
 		// holds that one computer's selection never reaches another.
 		"hidden_nav": true, "sync_excluded": true,
+		// Whether this computer puts its private key files into backups and sync
+		// is its own choice, like the sync categories beside it. The tombstones
+		// of keys removed here are local too.
+		"backup_keys": true, "key_file_tombstones": true,
 		// The multi-line paste confirmation belongs to this computer. Its
 		// absence in a saved state means on, which a shared setting could not
 		// express when another device turns it back on.

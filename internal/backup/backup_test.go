@@ -100,3 +100,68 @@ func TestAShortPasswordIsRefusedAtSealing(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+func TestPrivateKeyFilesTravelInABackupAndComeBack(t *testing.T) {
+	document := sample()
+	document.Keys = []Key{{Fingerprint: "SHA256:abc", Name: "id_ed25519", Path: "/home/me/.ssh/id_ed25519", Data: []byte("private")}}
+	sealed, err := Seal(document, "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file envelope
+	if err := json.Unmarshal(sealed, &file); err != nil || file.Version != version {
+		t.Fatalf("a backup with keys has version %d: %v", file.Version, err)
+	}
+	if bytes.Contains(sealed, []byte("private")) {
+		t.Fatal("the sealed file shows the private key")
+	}
+	opened, err := Open(sealed, "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(opened.Keys, document.Keys) {
+		t.Fatalf("keys = %+v", opened.Keys)
+	}
+}
+
+func TestABackupWithoutKeyFilesStaysReadableByOlderVersions(t *testing.T) {
+	sealed, err := Seal(sample(), "correct horse")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var file envelope
+	if err := json.Unmarshal(sealed, &file); err != nil {
+		t.Fatal(err)
+	}
+	if file.Version != 2 {
+		t.Fatalf("a backup without keys has version %d, want 2", file.Version)
+	}
+	if _, err := Open(sealed, "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestABackupRefusesKeyFilesItCouldNotWrite(t *testing.T) {
+	for name, keys := range map[string][]Key{
+		"no fingerprint": {{Name: "id_ed25519", Data: []byte("key")}},
+		"no name":        {{Fingerprint: "SHA256:abc", Data: []byte("key")}},
+		"path as name":   {{Fingerprint: "SHA256:abc", Name: "sub/id_ed25519", Data: []byte("key")}},
+		"parent":         {{Fingerprint: "SHA256:abc", Name: "..", Data: []byte("key")}},
+		"empty data":     {{Fingerprint: "SHA256:abc", Name: "id_ed25519"}},
+		"oversized":      {{Fingerprint: "SHA256:abc", Name: "id_ed25519", Data: bytes.Repeat([]byte("x"), MaxKeySize+1)}},
+		"same key twice": {
+			{Fingerprint: "SHA256:abc", Name: "one", Data: []byte("key")},
+			{Fingerprint: "SHA256:abc", Name: "two", Data: []byte("key")},
+		},
+	} {
+		document := sample()
+		document.Keys = keys
+		sealed, err := Seal(document, "correct horse")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Open(sealed, "correct horse"); !errors.Is(err, ErrNotBackup) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

@@ -44,6 +44,7 @@ var (
 	hitSyncNow            = tree.ID(backupUiHits, "sync-now")
 	hitSyncRestore        = tree.ID(backupUiHits, "sync-restore")
 	hitSyncAuto           = tree.ID(backupUiHits, "sync-auto")
+	hitBackupKeys         = tree.ID(backupUiHits, "backup-keys")
 	// hitSyncCategories is the list of content switches; an item is its index in
 	// syncCategories.
 	hitSyncCategories = tree.Sub(backupUiHits, tree.Name("sync-category"))
@@ -99,6 +100,12 @@ type syncState struct {
 	// waitingForVault is set when a sync could not read its passwords because
 	// the vault is locked; unlocking it syncs.
 	waitingForVault bool
+	// keysFailed counts private key files the last sync received but could not
+	// write, which is said out loud instead of leaving a host that cannot log in.
+	keysFailed int
+	// keysLeftOut counts this computer's key files the last sync could not read
+	// or include, so the same omission is not silent only for sync.
+	keysLeftOut int
 	// timer is the one pending start of a sync, after a change or a failure.
 	timer *time.Timer
 	// holdBack is set while a restore from the server settles: the changes it
@@ -183,25 +190,27 @@ func excludedFromBackup(name string) bool {
 }
 
 // backupDocument gathers what a file backup holds: shared records, device-local
-// shortcuts, trusted keys and saved passwords. A locked vault is
-// reported as vault.ErrNeedsConversion, since the passwords cannot be read.
-func (state *State) backupDocument() (backup.Document, error) {
+// shortcuts, trusted keys and saved passwords. The private key files join them
+// only when the user asked for that; leftOut is how many of those could not be
+// read. A locked vault is reported as vault.ErrNeedsConversion, since the
+// passwords cannot be read.
+func (state *State) backupDocument() (document backup.Document, leftOut int, err error) {
 	if state.appAccessBlocked() {
-		return backup.Document{}, errAppLocked
+		return backup.Document{}, 0, errAppLocked
 	}
 	if !state.flushNoteDraft() {
-		return backup.Document{}, errors.New(state.noteText("Finish composing or resolve the note save error before backing up.", "请完成输入法输入或处理笔记保存错误后再备份。"))
+		return backup.Document{}, 0, errors.New(state.noteText("Finish composing or resolve the note save error before backing up.", "请完成输入法输入或处理笔记保存错误后再备份。"))
 	}
 	state.save()
 	if state.hasUnsavedNotes() {
-		return backup.Document{}, errors.New(state.notes.error)
+		return backup.Document{}, 0, errors.New(state.notes.error)
 	}
 	if state.config == nil {
-		return backup.Document{}, errors.New(state.messages.Tools.SyncErrNoStore)
+		return backup.Document{}, 0, errors.New(state.messages.Tools.SyncErrNoStore)
 	}
 	records, err := state.config.Records()
 	if err != nil {
-		return backup.Document{}, err
+		return backup.Document{}, 0, err
 	}
 	snapshot := state.snapshot()
 	toolbarIndex := -1
@@ -214,15 +223,15 @@ func (state *State) backupDocument() (backup.Document, error) {
 	if toolbarIndex < 0 || records[toolbarIndex].Deleted {
 		data, err := json.Marshal(snapshot.Toolbars)
 		if err != nil {
-			return backup.Document{}, err
+			return backup.Document{}, 0, err
 		}
 		payload, err := json.Marshal(recordPayload{Data: data})
 		if err != nil {
-			return backup.Document{}, err
+			return backup.Document{}, 0, err
 		}
 		stamp, err := state.config.NextStamp()
 		if err != nil {
-			return backup.Document{}, err
+			return backup.Document{}, 0, err
 		}
 		record := configstore.Record{Kind: kindSetting, ID: "toolbars", Stamp: stamp, Payload: payload}
 		if toolbarIndex < 0 {
@@ -231,7 +240,7 @@ func (state *State) backupDocument() (backup.Document, error) {
 			records[toolbarIndex] = record
 		}
 	}
-	document := backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
+	document = backup.Document{Created: state.options.WallNow().UTC(), Device: state.config.Device(), Format: configFormat, Writer: configWriter(), Records: records}
 	document.ShortcutPreferences = &backup.ShortcutPreferences{DefaultsGeneration: snapshot.ShortcutDefaultsGeneration, Shortcuts: make([]backup.Shortcut, 0, len(snapshot.Shortcuts))}
 	for _, entry := range snapshot.Shortcuts {
 		document.ShortcutPreferences.Shortcuts = append(document.ShortcutPreferences.Shortcuts, backup.Shortcut{Action: entry.Action, Key: entry.Key, Modifiers: entry.Modifiers})
@@ -242,7 +251,7 @@ func (state *State) backupDocument() (backup.Document, error) {
 	if opened := state.secrets.vault; opened != nil {
 		secrets, err := opened.Export()
 		if err != nil {
-			return backup.Document{}, err
+			return backup.Document{}, 0, err
 		}
 		for _, secret := range secrets {
 			if !excludedFromBackup(secret.Name) {
@@ -250,7 +259,10 @@ func (state *State) backupDocument() (backup.Document, error) {
 			}
 		}
 	}
-	return document, nil
+	if state.backupKeys {
+		document.Keys, leftOut = state.backupKeyFiles()
+	}
+	return document, leftOut, nil
 }
 
 // backupErrorText says why a backup could not be made or opened.
@@ -313,13 +325,16 @@ func (err *partialRestoreError) Error() string { return err.message }
 // before changing anything when the restore cannot go through, and a
 // *partialRestoreError, with the hosts restored, when part of it could not.
 func (state *State) applyBackup(document backup.Document) (hosts int, err error) {
-	return state.applyBackupScope(document, syncScope{})
+	return state.applyBackupScope(document, syncScope{}, true)
 }
 
 // applyBackupScope is applyBackup for a selection of what to restore: the
 // records, passwords and host keys of a closed category are left as they are.
 // A zero scope restores everything, which is what a backup file does.
-func (state *State) applyBackupScope(document backup.Document, scope syncScope) (hosts int, err error) {
+// restoreKeys says whether private key files in the document are written back:
+// a backup file was chosen explicitly, while cloud sync follows the computer's
+// "SSH key files" setting.
+func (state *State) applyBackupScope(document backup.Document, scope syncScope, restoreKeys bool) (hosts int, err error) {
 	if state.appAccessBlocked() {
 		return 0, errAppLocked
 	}
@@ -442,6 +457,11 @@ func (state *State) applyBackupScope(document backup.Document, scope syncScope) 
 			state.migrateSecretsToHosts(true)
 		}
 	}
+	if restoreKeys && len(document.Keys) > 0 {
+		if _, failed := state.applyBackupKeys(document.Keys, opened, true); failed > 0 && incomplete == nil {
+			incomplete = &partialRestoreError{fmt.Sprintf(m.BackupKeysFailedFmt, failed)}
+		}
+	}
 	return len(state.hosts), incomplete
 }
 
@@ -515,7 +535,7 @@ func (state *State) runExportBackup(form *formDialog) string {
 	case password != form.value(1):
 		return m.BackupErrPasswordMismatch
 	}
-	document, err := state.backupDocument()
+	document, leftOut, err := state.backupDocument()
 	if err != nil {
 		return state.backupErrorText(err)
 	}
@@ -539,6 +559,9 @@ func (state *State) runExportBackup(form *formDialog) string {
 		return fmt.Sprintf(m.BackupFailedFmt, err)
 	}
 	state.status = fmt.Sprintf(m.BackupSavedFmt, path)
+	if leftOut > 0 {
+		state.status = fmt.Sprintf(m.BackupSavedKeysLeftOutFmt, path, leftOut)
+	}
 	return ""
 }
 
@@ -820,7 +843,7 @@ func (state *State) openSyncRestore() {
 		state.showActionWarning(m.SyncRestoreTitle, m.BackupErrSessions)
 		return
 	}
-	if state.syncScope.empty() {
+	if state.syncSelectionEmpty() {
 		state.status = m.SyncErrNothingSelected
 		return
 	}
@@ -847,7 +870,7 @@ func (state *State) runSyncRestore(store cloudsync.Store, password string, epoch
 		return m.SyncRestoreChanged
 	case state.sync.working:
 		return m.SyncWorking
-	case state.syncScope.empty():
+	case state.syncSelectionEmpty():
 		return m.SyncErrNothingSelected
 	case len(state.sessions) > 0:
 		return m.BackupErrSessions
@@ -900,14 +923,14 @@ func (state *State) finishSyncRestore(epoch uint32, remote backup.Document, tag 
 		fail(state.messages.Tools.BackupErrSessions)
 		return
 	}
-	if state.syncScope.empty() {
+	if state.syncSelectionEmpty() {
 		fail(state.messages.Tools.SyncErrNothingSelected)
 		return
 	}
 
 	state.stopSyncTimer()
 	state.sync.holdBack = true
-	_, err = state.applyBackupScope(remote, state.syncScope)
+	_, err = state.applyBackupScope(remote, state.syncScope, state.backupKeys)
 	// What the restore itself asks of the sync engine (a saved password changed
 	// by the vault is posted from the vault) is queued ahead of this.
 	if !state.aiPost(func(state *State) { state.sync.holdBack = false }) {
@@ -962,6 +985,12 @@ func (state *State) clickBackupSettings(id gfx.ID) bool {
 				state.scheduleSync()
 			}
 		}
+	case hitBackupKeys:
+		if state.backupKeys {
+			state.setBackupKeys(false)
+		} else {
+			state.askEnableBackupKeys()
+		}
 	default:
 		if index, ok := id.In(hitSyncCategories); ok && index >= 0 && index < len(syncCategories) {
 			state.toggleSyncCategory(syncCategories[index])
@@ -1012,6 +1041,41 @@ func (state *State) syncTexts() (row, run string) {
 	return view.rowText, view.runText
 }
 
+// setBackupKeys turns carrying private key files in backups on or off. Turning
+// it on while syncing pushes them on the next run rather than waiting for the
+// timer: a user who just asked for it expects the other computer to get them
+// soon.
+func (state *State) setBackupKeys(on bool) {
+	if state.backupKeys == on {
+		return
+	}
+	state.backupKeys = on
+	state.save()
+	if on && state.sync.configured() && !state.sync.manual {
+		state.scheduleSync()
+	}
+}
+
+// askEnableBackupKeys makes the trust decision explicit before the first key
+// file leaves this computer. Canceling leaves the switch off.
+func (state *State) askEnableBackupKeys() {
+	m := state.messages.Tools
+	state.openForm(formDialog{
+		title: m.BackupKeysEnableTitle, description: m.BackupKeysEnableDescription, submit: m.BackupKeysEnableConfirm,
+		run: func(state *State, _ *formDialog) string {
+			state.setBackupKeys(true)
+			return ""
+		},
+	})
+}
+
+// syncSelectionEmpty reports that no sync content is selected at all, so the
+// engine must not contact the service. Private key files are a content choice
+// outside the category list, so they count here.
+func (state *State) syncSelectionEmpty() bool {
+	return state.syncScope.empty() && !state.backupKeys
+}
+
 func (state *State) paintBackupSettings(page *settingsPage) {
 	m := state.messages.Tools
 	row, run := state.syncTexts()
@@ -1040,6 +1104,7 @@ func (state *State) paintBackupSettings(page *settingsPage) {
 				label, description := state.syncCategoryText(category)
 				page.toggleRow(label, description, state.syncScope.allows(category), hitSyncCategories.At(index))
 			}
+			page.toggleRow(m.BackupKeys, m.BackupKeysDescription, state.backupKeys, hitBackupKeys)
 		})
 	})
 }

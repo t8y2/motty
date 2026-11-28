@@ -158,7 +158,7 @@ func TestBackupRestoresCustomPasteShortcutOnANewDevice(t *testing.T) {
 
 func TestOldBackupLeavesDeviceShortcutsUntouched(t *testing.T) {
 	source, _, _ := backupTestState(t)
-	document, err := source.backupDocument()
+	document, _, err := source.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestABackupDoesNotCarryTheLoginsToTheBackupItself(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	document, err := state.backupDocument()
+	document, _, err := state.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}

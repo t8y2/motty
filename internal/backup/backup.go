@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/crypto/argon2"
@@ -40,6 +41,24 @@ type Document struct {
 	// included as tombstones.
 	Secrets             []vault.Secret       `json:"secrets,omitempty"`
 	ShortcutPreferences *ShortcutPreferences `json:"shortcut_preferences,omitempty"`
+	// Keys are private key files themselves, written only when the user asked
+	// for them: they are a credential in their own right rather than a name
+	// for one.
+	Keys []Key `json:"keys,omitempty"`
+}
+
+// Key is one private key file. The fingerprint is what a host refers to, so a
+// key written somewhere other than where it was taken from still answers for
+// the hosts that name it.
+type Key struct {
+	Fingerprint string `json:"fingerprint"`
+	// Name is the file name to write it under, never a path: a backup carries no
+	// say in where another computer keeps its files.
+	Name string `json:"name"`
+	// Path is where the key was when it was taken, kept only to find the
+	// passphrase saved for it.
+	Path string `json:"path,omitempty"`
+	Data []byte `json:"data"`
 }
 
 type ShortcutPreferences struct {
@@ -55,9 +74,14 @@ type Shortcut struct {
 
 const (
 	format  = "motty-backup"
-	version = 2
+	version = 3
 	// MaxSize bounds a backup file, sealed or opened.
 	MaxSize = 64 << 20
+	// MaxKeySize bounds one private key file, as the key reader does.
+	MaxKeySize = 1 << 20
+	// MaxKeys bounds how many a backup may carry, so a crafted file cannot ask
+	// for a great many files to be written.
+	MaxKeys = 512
 	// MinPasswordLength is the shortest password a backup is made with.
 	MinPasswordLength = 8
 
@@ -126,13 +150,19 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCM(block)
 }
 
-// Seal encrypts the document under the password.
+// Seal encrypts the document under the password. The envelope keeps version 2
+// when the document carries no private key files, so an older Motty can still
+// open it; only a backup that actually carries keys needs version 3.
 func Seal(document Document, password string) ([]byte, error) {
 	plain, err := json.Marshal(document)
 	if err != nil {
 		return nil, err
 	}
-	return SealEnvelope(format, version, plain, password)
+	fileVersion := 2
+	if len(document.Keys) > 0 {
+		fileVersion = version
+	}
+	return SealEnvelope(format, fileVersion, plain, password)
 }
 
 // SealEnvelope encrypts plain under password inside an authenticated envelope
@@ -166,6 +196,8 @@ func SealEnvelope(format string, version int, plain []byte, password string) ([]
 // Open decrypts a backup. A file that is not a backup, or is one of another
 // version, is told apart from a wrong password.
 func Open(data []byte, password string) (Document, error) {
+	var header envelope
+	_ = json.Unmarshal(data, &header)
 	plain, err := OpenEnvelope(format, version, data, password)
 	if err != nil {
 		return Document{}, err
@@ -173,6 +205,12 @@ func Open(data []byte, password string) (Document, error) {
 	var document Document
 	if err := json.Unmarshal(plain, &document); err != nil {
 		return Document{}, ErrNotBackup
+	}
+	if header.Version < 3 && len(document.Keys) > 0 {
+		return Document{}, ErrNotBackup
+	}
+	if err := document.checkKeys(); err != nil {
+		return Document{}, err
 	}
 	return document, nil
 }
@@ -206,4 +244,29 @@ func OpenEnvelope(format string, maxVersion int, data []byte, password string) (
 		return nil, ErrWrongPassword
 	}
 	return plain, nil
+}
+
+// checkKeys rejects keys a restore could not write: one without a fingerprint
+// or a name would land nowhere a host could find it, and an oversized one is not
+// a private key the reader accepts either.
+func (document Document) checkKeys() error {
+	if len(document.Keys) > MaxKeys {
+		return ErrNotBackup
+	}
+	seen := make(map[string]bool, len(document.Keys))
+	for _, key := range document.Keys {
+		if key.Fingerprint == "" || key.Name == "" || len(key.Data) == 0 || len(key.Data) > MaxKeySize {
+			return ErrNotBackup
+		}
+		// A name is a name, not a path: a backup does not choose where another
+		// computer writes, so one that tries to is not a backup of this program.
+		if key.Name != filepath.Base(key.Name) || key.Name == "." || key.Name == ".." {
+			return ErrNotBackup
+		}
+		if seen[key.Fingerprint] {
+			return ErrNotBackup
+		}
+		seen[key.Fingerprint] = true
+	}
+	return nil
 }

@@ -353,12 +353,12 @@ func TestAScopedRestoreLeavesClosedCategoriesAlone(t *testing.T) {
 	b.hosts = append(b.hosts, Host{Label: "Only B", Address: "only-b.example.com", User: "u", Port: 22})
 	b.save()
 
-	document, err := b.backupDocument()
+	document, _, err := b.backupDocument()
 	if err != nil {
 		t.Fatal(err)
 	}
 	scope := newSyncScope([]syncCategory{syncCategoryNotes})
-	if _, err := a.applyBackupScope(document, scope); err != nil {
+	if _, err := a.applyBackupScope(document, scope, true); err != nil {
 		t.Fatal(err)
 	}
 

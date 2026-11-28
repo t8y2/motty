@@ -1071,8 +1071,17 @@ type State struct {
 	// syncScope is what this computer lets cloud sync exchange. It belongs to
 	// this device, so two computers may sync different sets of content.
 	syncScope syncScope
-	sshSync   sshSyncState
-	remote    remoteToolsView
+	// backupKeys includes the private key files on this computer in backups and
+	// sync. It is off by default: a key file is a credential of its own, and the
+	// backup leaves this computer. Keys kept in the vault are not files and
+	// travel with the "SSH keys" category instead.
+	backupKeys bool
+	// keyFileTombstones are fingerprints this computer removed from the file
+	// key list. They stop a cloud copy from being restored here without
+	// deleting the cloud copy itself.
+	keyFileTombstones map[string]bool
+	sshSync           sshSyncState
+	remote            remoteToolsView
 	// remoteColumnWidths are the widths the user dragged each tools tab's
 	// columns to. The dialog and every content window share them, so reopening
 	// a surface keeps the sizes for the session.
