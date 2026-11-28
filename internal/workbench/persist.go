@@ -254,7 +254,8 @@ type savedState struct {
 	// beside the terminals instead of under them, the snippet groups it filters
 	// out (keyed by lowercased name; "" means ungrouped), and the order of its
 	// chips. A fresh state shows every group in list order.
-	CommandsShown bool `json:"commands_shown,omitempty"`
+	CommandsShown     bool `json:"commands_shown,omitempty"`
+	SnippetPickerFlat bool `json:"snippet_picker_flat,omitempty"`
 	// CommandsSide is the sidebar dock; false is the bottom strip, which is
 	// also what settings written before the sidebar mean.
 	CommandsSide         bool     `json:"commands_side,omitempty"`
@@ -733,6 +734,7 @@ func (state *State) snapshot() savedState {
 	for _, group := range state.snippets.customGroups {
 		saved.SnippetGroups = append(saved.SnippetGroups, savedSnippetGroup{Name: group})
 	}
+	saved.SnippetPickerFlat = !state.snippets.pickerGrouped
 	saved.CommandsShown = state.commands.shown
 	saved.CommandsSide = state.commands.placement == commandsPlacementSide
 	saved.CommandsSidebarLeft = state.commands.sidebarLeft

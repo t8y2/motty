@@ -279,7 +279,11 @@ func (state *State) snippetTreeCanDrop(from, to int, where ui.TreeDrop) bool {
 	if from < 0 || from >= len(rows) || to < 0 || to >= len(rows) || from == to {
 		return false
 	}
-	src, dst := rows[from], rows[to]
+	return state.canDropSnippetEntries(rows[from], rows[to], where)
+}
+
+// 两个目录树共用移动规则，输入与滚动由 Viva 处理。
+func (state *State) canDropSnippetEntries(src, dst snippetTreeEntry, where ui.TreeDrop) bool {
 	if !src.folder {
 		switch where {
 		case ui.TreeDropInside:
@@ -350,13 +354,17 @@ func (state *State) dropSnippetTreeRow(move ui.TreeMove) {
 	if move.From < 0 || move.From >= len(rows) || move.To < 0 || move.To >= len(rows) || move.From == move.To {
 		return
 	}
-	src, dst := rows[move.From], rows[move.To]
+	state.dropSnippetEntries(rows[move.From], rows[move.To], move.Where)
+}
+
+func (state *State) dropSnippetEntries(src, dst snippetTreeEntry, where ui.TreeDrop) {
+	form := &state.snippets
 	if src.folder {
 		if !dst.folder {
 			return
 		}
 		targetParent := dst.group
-		if move.Where != ui.TreeDropInside {
+		if where != ui.TreeDropInside {
 			targetParent = snippetGroupParent(dst.group)
 		}
 		dest := state.snippetFolderMoveTarget(src.group, targetParent)
@@ -376,7 +384,7 @@ func (state *State) dropSnippetTreeRow(move ui.TreeMove) {
 	}
 	if dst.folder {
 		destGroup := dst.group
-		if move.Where != ui.TreeDropInside {
+		if where != ui.TreeDropInside {
 			destGroup = snippetGroupParent(dst.group)
 		}
 		if sameSnippetGroup(form.list[srcIdx].Group, destGroup) {
@@ -398,7 +406,7 @@ func (state *State) dropSnippetTreeRow(move ui.TreeMove) {
 	entry := form.list[srcIdx]
 	entry.Group = form.list[dstIdx].Group
 	to := dstIdx
-	if move.Where == ui.TreeDropAfter {
+	if where == ui.TreeDropAfter {
 		to = dstIdx + 1
 	}
 	if srcIdx < to {
@@ -791,7 +799,9 @@ func (state *State) declareSnippetFolderMenu(c ui.C) {
 	if !menu.open {
 		return
 	}
-	if state.modal != modalNone || state.activeSection != sectionSnippets || menu.group == "" {
+	picker := menu.fromPicker && state.modal == modalCommandPalette && state.commandPalette.snippets
+	if menu.group == "" || (menu.fromPicker && !picker) ||
+		(!menu.fromPicker && (state.modal != modalNone || state.activeSection != sectionSnippets)) {
 		menu.open = false
 		return
 	}
@@ -807,18 +817,28 @@ func (state *State) declareSnippetFolderMenu(c ui.C) {
 }
 
 func (state *State) chooseSnippetFolderMenu(id gfx.ID) {
-	group := state.snippets.folderMenu.group
+	menu := state.snippets.folderMenu
+	group := menu.group
 	if group == "" {
 		return
 	}
 	switch id {
 	case hitSnippetFolderMenuAdd:
+		if menu.fromPicker {
+			state.closeCommandPalette()
+		}
 		state.startInlineSnippetDraft(group)
 	case hitSnippetFolderMenuNewChild:
+		state.commandPalette.returnToPicker = menu.fromPicker
+		if menu.fromPicker {
+			state.foldSnippetGroup(strings.ToLower(group), true)
+		}
 		state.openSnippetGroupCreate(group + "/")
 	case hitSnippetFolderMenuRename:
+		state.commandPalette.returnToPicker = menu.fromPicker
 		state.openSnippetGroupRenameDirect(group)
 	case hitSnippetFolderMenuDelete:
+		state.commandPalette.returnToPicker = menu.fromPicker
 		state.openSnippetGroupDeleteDirect(group)
 	}
 }

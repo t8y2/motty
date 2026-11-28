@@ -89,6 +89,9 @@ type commandPalette struct {
 	// It starts empty, so every group begins closed and a search is what looks
 	// inside them.
 	expandedGroups []string
+	snippetTree    snippetPickerTree
+	treeMode       bool
+	returnToPicker bool
 	// ctx is the workbench page's declaration context of the last paint; body
 	// declares the dialog into it, kept so a paint makes no closure.
 	ctx  ui.C
@@ -127,6 +130,14 @@ func (state *State) openCommandPalette() {
 }
 
 func (state *State) closeCommandPalette() {
+	state.commandPalette.snippetTree = snippetPickerTree{}
+	state.commandPalette.returnToPicker = false
+	if state.snippets.folderMenu.fromPicker {
+		state.snippets.folderMenu.open = false
+	}
+	if state.snippetMenu.fromPicker {
+		state.snippetMenu.open = false
+	}
 	state.commandPalette.connect, state.commandPalette.snippets, state.commandPalette.workspaces, state.commandPalette.localShells = false, false, false, false
 	state.modal = modalNone
 	state.commandPalette.search = text.Editor{}
@@ -324,6 +335,9 @@ const commandPaletteRowStep float32 = commandPaletteRowPitch
 const commandPaletteListHeight float32 = commandPaletteVisibleRows*commandPaletteRowStep - 4
 
 func (palette *commandPalette) contentHeight() float32 {
+	if palette.usesSnippetTree() {
+		return float32(len(palette.visible)) * commandPaletteRowStep
+	}
 	return max(0, float32(len(palette.visible))*commandPaletteRowStep-4)
 }
 
@@ -368,6 +382,11 @@ func (state *State) clickCommandPalette(id gfx.ID) {
 	switch id {
 	case hitCommandPaletteDismiss, hitCommandPaletteClose:
 		state.dismissCommandPalette()
+	case hitSnippetPickerGrouped:
+		state.snippets.pickerGrouped = !state.snippets.pickerGrouped
+		state.rebuildCommandPalette()
+		state.save()
+		return
 	case hitCommandsBarToggle:
 		// The bar's checkbox is a control of the picker's chrome, not a row of
 		// its searchable list. It switches in place without closing the dialog.
@@ -436,7 +455,7 @@ func (state *State) commandPalettePointer(event gfx.PointerEvent) (gfx.EventResu
 	// scrollbar and the dialog's backdrop and close button their presses first.
 	// The identities this file names by hand are the rows, so those presses
 	// reach the gesture below.
-	visible, ok := event.Target.In(hitCommandPaletteItems)
+	visible, ok := palette.rowIndex(event.Target)
 	if !ok {
 		return gfx.EventResult{}, false
 	}
@@ -493,9 +512,15 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		}
 	}
 	inSearch := event.Target == hitCommandPaletteSearch
-	_, inItems := event.Target.In(hitCommandPaletteItems)
+	focusedRow, inItems := palette.rowIndex(event.Target)
+	if inItems && palette.usesSnippetTree() {
+		palette.selected = focusedRow
+	}
 	if !inSearch && !inItems {
 		return gfx.EventResult{}, false
+	}
+	if result, handled := state.snippetPickerOrderKey(event); handled {
+		return result, true
 	}
 	if inSearch && event.Key == gfx.KeyEnter && !event.Repeat {
 		state.executeCommandPalette(palette.selected)
@@ -527,7 +552,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 			if first < 0 {
 				return gfx.EventResult{Handled: true, Repaint: true}, true
 			}
-			return gfx.EventResult{Handled: true, Repaint: true, Focus: hitCommandPaletteItems.At(first), FocusVisible: true}, true
+			return gfx.EventResult{Handled: true, Repaint: true, Focus: palette.rowID(first), FocusVisible: true}, true
 		}
 		switch event.Key {
 		case gfx.KeyRight:
@@ -566,7 +591,7 @@ func (state *State) commandPaletteKey(event gfx.KeyEvent) (gfx.EventResult, bool
 		}
 		return gfx.EventResult{
 			Handled: true, Repaint: true,
-			Focus: hitCommandPaletteItems.At(palette.selected), FocusVisible: true,
+			Focus: palette.rowID(palette.selected), FocusVisible: true,
 		}, true
 	}
 	switch event.Key {

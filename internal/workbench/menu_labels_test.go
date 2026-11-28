@@ -152,6 +152,8 @@ func menuLabelOf(state *State, id gfx.ID) string {
 		return m.Tools.SnippetMoveUp
 	case hitSnippetMenuDown:
 		return m.Tools.SnippetMoveDown
+	case hitSnippetMenuCopy:
+		return m.Tools.SnippetCopyContent
 	case hitSnippetMenuEdit:
 		return m.Tools.SnippetEdit
 	case hitSnippetMenuDelete:

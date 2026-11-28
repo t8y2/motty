@@ -225,8 +225,9 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 		// A dialog opened by the same click (a quick command with variables)
 		// asks for its first field; let it keep the keyboard. The request is
 		// dropped either way so a later paint does not steal it back.
-		// The terminal has to be the page on screen to take the keyboard too.
-		if state.modal == modalNone && state.terminalPage() {
+		// 仅将焦点交给当前页面的终端或片段内联编辑器。
+		snippetEditor := state.activeSection == sectionSnippets && state.pendingFocus == hitSnippetInlineName
+		if state.modal == modalNone && (state.terminalPage() || snippetEditor) {
 			canvas.RequestFocusOnce(state.pendingFocus)
 		}
 		state.pendingFocus = gfx.ID{}

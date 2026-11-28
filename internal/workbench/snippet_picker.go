@@ -22,8 +22,14 @@ func (state *State) openSnippetPicker() {
 	palette.filtered = false
 	palette.expandedGroups = palette.expandedGroups[:0]
 	state.snippetSend.input = text.Editor{}
+	// 重新打开时显示命令列表，避免沿用上次的会话选择界面。
+	if state.snippetSend.target == sendChosen {
+		state.snippetSend.target = sendCurrent
+	}
 	state.rebuildCommandPalette()
 }
+
+var hitSnippetPickerGrouped = tree.ID(snippetsHits, "picker-grouped")
 
 // ungroupedFoldKey names the fold of the snippets that belong to no group; no
 // group name can be it, because a group name holds no control characters.
@@ -65,12 +71,16 @@ func (state *State) foldSnippetGroup(key string, expand bool) {
 		}
 	}
 	palette.scroll = min(max(scroll, 0), palette.maxScroll())
+	if palette.scrollState != nil {
+		palette.scrollState.ScrollTo(palette.scroll)
+	}
 }
 
 // rebuildSnippetPicker fills the palette with the snippets; choosing one sends it
 // like the palette's own snippet entries do. With none saved, the one row leads
 // to the Snippets page where one is added.
 func (state *State) rebuildSnippetPicker() {
+	state.commandPalette.treeMode = state.snippets.pickerGrouped && state.snippetSend.target != sendChosen
 	if state.snippetSend.target == sendChosen {
 		state.rebuildSendTargetPicker()
 		return
@@ -87,6 +97,7 @@ func (state *State) rebuildSnippetPicker() {
 		palette.addDetailed(entry.Name, snippetDetail(entry), hitSnippetSendList.At(index))
 		last := &palette.entries[len(palette.entries)-1]
 		last.search += " " + strings.ToLower(entry.Command)
+		last.recencyHint = entry.Name + "\n" + entry.Command
 		last.searchOnly = folded
 		last.depth = depth
 	}
@@ -97,7 +108,7 @@ func (state *State) rebuildSnippetPicker() {
 		folded = !last.expanded
 	}
 	form := &state.snippets
-	if len(form.groups) == 0 {
+	if !form.pickerGrouped || len(form.groups) == 0 {
 		for index := range form.list {
 			add(index, 0)
 		}
@@ -105,20 +116,28 @@ func (state *State) rebuildSnippetPicker() {
 		// With groups, the unfiltered list is a collapsible tree in pre-order,
 		// the ungrouped last; a search drops the headings and still matches
 		// every snippet and its full group path.
+		children := make(map[string][]string)
 		for _, group := range form.groups {
-			key := strings.ToLower(group)
-			depth := snippetGroupDepth(group)
-			if palette.groupAncestorsExpanded(group) {
-				header(snippetGroupLeaf(group), key, form.groupCounts[group], depth)
-			} else {
-				folded = true
-			}
-			for index := range form.list {
-				if sameSnippetGroup(form.list[index].Group, group) {
-					add(index, depth+1)
+			parent := strings.ToLower(snippetGroupParent(group))
+			children[parent] = append(children[parent], group)
+		}
+		var visit func(string)
+		visit = func(parent string) {
+			for _, group := range children[strings.ToLower(parent)] {
+				key, depth := strings.ToLower(group), snippetGroupDepth(group)
+				if palette.groupAncestorsExpanded(group) {
+					header(snippetGroupLeaf(group), key, form.groupCounts[group], depth)
+				}
+				visit(group)
+				folded = !palette.groupAncestorsExpanded(group) || !palette.groupExpanded(key)
+				for index := range form.list {
+					if sameSnippetGroup(form.list[index].Group, group) {
+						add(index, depth+1)
+					}
 				}
 			}
 		}
+		visit("")
 		if form.hasUngrouped {
 			count := 0
 			for index := range form.list {

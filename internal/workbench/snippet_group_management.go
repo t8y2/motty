@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/vivaui/viva/components"
@@ -237,6 +238,11 @@ func (state *State) renameSnippetGroup(from, to string) bool {
 	remapCommandGroupMap(state.commands.hiddenGroups, from, to)
 	remapCommandGroupMap(state.commands.collapsedGroups, from, to)
 	remapCommandGroupMap(state.snippets.treeCollapsedGroups, from, to)
+	for index, key := range state.commandPalette.expandedGroups {
+		if snippetGroupWithin(key, from) {
+			state.commandPalette.expandedGroups[index] = strings.ToLower(remapSnippetGroupPath(key, from, to))
+		}
+	}
 	if state.snippets.selectedFolder != "" && snippetGroupWithin(state.snippets.selectedFolder, from) {
 		state.snippets.selectedFolder = remapSnippetGroupPath(state.snippets.selectedFolder, from, to)
 	}
@@ -286,6 +292,9 @@ func (state *State) deleteSnippetGroup(group string) {
 	deleteCommandGroupMap(state.commands.hiddenGroups, group)
 	deleteCommandGroupMap(state.commands.collapsedGroups, group)
 	deleteCommandGroupMap(state.snippets.treeCollapsedGroups, group)
+	state.commandPalette.expandedGroups = slices.DeleteFunc(state.commandPalette.expandedGroups, func(key string) bool {
+		return snippetGroupWithin(key, group)
+	})
 	if state.snippets.selectedFolder != "" && snippetGroupWithin(state.snippets.selectedFolder, group) {
 		state.snippets.selectedFolder = ""
 	}

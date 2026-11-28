@@ -81,6 +81,7 @@ func TestEverySavedStateFieldIsSharedOrKeptOnThisDevice(t *testing.T) {
 		// preference to sync.
 		"commands_shown": true, "commands_side": true, "commands_sort": true, "commands_hidden_groups": true, "commands_collapsed_groups": true, "commands_width": true,
 		"commands_sidebar_left": true,
+		"snippet_picker_flat":   true,
 		// The shells a computer hides from its pickers name this machine's own
 		// programs and distributions; another device hides its own.
 		"hidden_shells": true,
