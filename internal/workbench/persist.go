@@ -44,6 +44,8 @@ type savedState struct {
 	Version                    int                     `json:"version"`
 	Language                   string                  `json:"language,omitempty"`
 	Theme                      string                  `json:"theme,omitempty"`
+	ApplicationTheme           *applicationTheme       `json:"application_theme,omitempty"`
+	CustomSchemes              []savedCustomScheme     `json:"custom_schemes,omitempty"`
 	IconColor                  string                  `json:"icon_color,omitempty"`
 	TerminalTransparency       int                     `json:"terminal_transparency,omitempty"`
 	Corners                    string                  `json:"corners,omitempty"`
@@ -573,6 +575,8 @@ func (state *State) snapshot() savedState {
 		Version:                    stateFileVersion,
 		Language:                   state.savedLanguage(),
 		Theme:                      state.appearanceMode.saved(),
+		ApplicationTheme:           state.applicationTheme.snapshot(),
+		CustomSchemes:              state.savedCustomSchemes(),
 		IconColor:                  state.iconColor.saved(),
 		Corners:                    state.cornerStyle.saved(),
 		TerminalTransparency:       int(state.terminalTransparency.Value),
@@ -1322,17 +1326,44 @@ func (state *State) restoreShared(saved savedState) {
 	state.pasteConfirmOff = saved.TerminalPasteConfirmOff
 	state.terminalInputClickOff = saved.TerminalInputClickOff
 	state.terminalLinkPlainClick = saved.TerminalLinkPlainClick
+	state.restoreCustomSchemes(saved.CustomSchemes)
 	if saved.TerminalSchemeDark == "" && saved.TerminalSchemeLight == "" && saved.TerminalScheme != "" {
 		state.terminalSchemes[appearanceDark], state.terminalSchemes[appearanceLight] = state.migrateTerminalScheme(saved.TerminalScheme)
 	} else {
 		state.terminalSchemes[appearanceDark] = state.normalizeSchemeID(saved.TerminalSchemeDark)
 		state.terminalSchemes[appearanceLight] = state.normalizeSchemeID(saved.TerminalSchemeLight)
 	}
+	// 旧版自定义外观没有终端配色快照，待终端主题恢复后补齐，保留手动覆盖。
+	if state.appearanceMode == appearanceCustom && len(state.applicationTheme.BaseColors) == 0 {
+		state.seedApplicationThemeFromTerminal()
+	}
+	if state.appearanceMode == appearanceCustom {
+		state.refreshApplicationTheme()
+	}
 	state.terminalPad = terminalPadFromString(saved.TerminalPadding)
 	state.terminalGutter = terminalGutterFromString(saved.TerminalGutter)
 	state.terminalLineHeight = lineHeightFromString(saved.TerminalLineHeight)
 	state.terminalScrollbarSize = scrollbarSizeFromString(saved.TerminalScrollbarSize)
 	state.appearanceFollowTerminal = saved.AppearanceFollowTerminal
+	// 迁移早期 PR 的设备本地跟随模式，统一写回可同步的终端配色设置。
+	if saved.Theme == "terminal" {
+		state.appearanceFollowTerminal = true
+		look := appearanceDark
+		if state.applicationTheme.FollowBase == "light" {
+			look = appearanceLight
+		}
+		state.appearanceMode = appearancePinnedDark
+		if look == appearanceLight {
+			state.appearanceMode = appearancePinnedLight
+		}
+		if id := state.applicationTheme.FollowScheme; id != "" {
+			state.terminalSchemes[look] = state.normalizeSchemeID(id)
+		}
+		state.applicationTheme.FollowScheme = ""
+		state.applicationTheme.FollowBase = ""
+		state.syncNativeAppearance()
+		state.setAppearance(look)
+	}
 	state.rebuildTerminalLook()
 	state.notifyOff = saved.TerminalNotifications == "off"
 	state.pasteImageOff = saved.TerminalPasteImage == "off"
@@ -1708,6 +1739,13 @@ func (state *State) restoreWindowAppearance(saved savedState) {
 	state.messages = i18n.For(state.language)
 	state.refreshEditMenu()
 	state.appearanceMode = appearanceModeFromString(saved.Theme)
+	state.applicationTheme = applicationTheme{}
+	if saved.ApplicationTheme != nil {
+		if theme := saved.ApplicationTheme.snapshot(); theme != nil {
+			state.applicationTheme = *theme
+		}
+	}
+	state.applicationThemeUI.opacity.Value = float32(state.applicationOpacity())
 	state.setIconColor(iconColorFromString(saved.IconColor))
 	state.syncNativeAppearance()
 	// The theme setAppearance builds copies the metrics by value, so the saved

@@ -37,6 +37,7 @@ const (
 	appearancePinnedDark appearanceMode = iota
 	appearancePinnedLight
 	appearanceFollowSystem
+	appearanceCustom
 )
 
 // saved is the mode as the state file keeps it. Dark is the default and is kept
@@ -49,6 +50,8 @@ func (m appearanceMode) saved() string {
 		return "light"
 	case appearanceFollowSystem:
 		return "system"
+	case appearanceCustom:
+		return "custom"
 	}
 	return ""
 }
@@ -61,6 +64,8 @@ func appearanceModeFromString(value string) appearanceMode {
 		return appearancePinnedDark
 	case "system":
 		return appearanceFollowSystem
+	case "custom":
+		return appearanceCustom
 	}
 	return appearancePinnedDark
 }
@@ -90,6 +95,7 @@ func (state *State) switchLook(theme gfx.Theme, switchState gfx.State, progress 
 // one pointer; nothing else about painting changes.
 type palette struct {
 	hideApplicationBackground bool
+	customApplicationColors   bool
 	dark                      bool
 
 	shell        gfx.Color // window bar, sidebar and the frame around the workspace
@@ -126,8 +132,11 @@ type palette struct {
 
 	// cursor is the terminal's cursor block; ansi are its sixteen named
 	// colors, chosen to stay legible on the terminal background.
-	cursor gfx.Color
-	ansi   [16][3]uint8
+	cursor          gfx.Color
+	ansi            [16][3]uint8
+	selection       gfx.Color
+	selectionText   gfx.Color
+	customSelection bool
 
 	// The rest is the terminal's own look, filled in by rebuildTerminalLook: the
 	// color of its text, the words it colors, and a number that changes with the
@@ -332,6 +341,9 @@ func (pal *palette) theme() gfx.Theme {
 	theme.Primary = pal.accent
 	theme.PrimaryForeground = pal.onAccent
 	theme.Selection = gfx.RGB(pal.ansi[4][0], pal.ansi[4][1], pal.ansi[4][2])
+	if pal.customApplicationColors {
+		theme.Selection = pal.accent
+	}
 	theme.Selection.Alpha = 0.30
 	if !pal.dark {
 		theme.Selection.Alpha = 0.22
@@ -344,7 +356,7 @@ func (pal *palette) theme() gfx.Theme {
 	theme.Ring = pal.accent
 	theme.Success = pal.success
 	theme.Danger = pal.danger
-	if pal.dark {
+	if pal.dark && !pal.customApplicationColors {
 		theme.Input = gfx.Color{Red: 1, Green: 1, Blue: 1, Alpha: 0.16}
 	} else {
 		theme.Input = pal.line

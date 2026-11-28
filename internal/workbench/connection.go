@@ -614,6 +614,7 @@ const (
 	modalProxyProfile
 	modalPasteReview
 	modalIconColorPicker
+	modalThemeEditor
 	modalAgentHosts
 	modalAppLock
 	modalRecordingPlayback
@@ -1496,6 +1497,9 @@ func (state *State) showNextPrompt() {
 }
 
 func (state *State) closeModal() {
+	if state.modal == modalThemeEditor {
+		state.themeEditor = themeEditorState{}
+	}
 	if state.modal == modalAppLock {
 		state.lockUI.formFields = [3]appLockFormField{}
 		state.lockUI.formCount = 0

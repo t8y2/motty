@@ -2510,7 +2510,7 @@ func (state *State) Scroll(event gfx.ScrollEvent) gfx.EventResult {
 		result.Handled = true
 		return result
 	}
-	if state.modal == modalForm {
+	if state.modal == modalForm || state.modal == modalThemeEditor {
 		// The form's multiline fields are page text areas: the page scrolls them,
 		// and the dialog keeps the wheel from the window behind it.
 		result := state.windowPage().RouteWheel(event)

@@ -18,12 +18,15 @@ import (
 // Default, is whatever the application palette already uses.
 
 type colorScheme struct {
-	id         string
-	name       string
-	background [3]uint8
-	foreground [3]uint8
-	cursor     [3]uint8
-	ansi       [16][3]uint8
+	id                       string
+	name                     string
+	background               [3]uint8
+	foreground               [3]uint8
+	cursor                   [3]uint8
+	ansi                     [16][3]uint8
+	selection, selectionText [3]uint8
+	customSelection          bool
+	opacity                  *int
 }
 
 const defaultSchemeID = "default"
@@ -151,6 +154,11 @@ const schemeCount = len(colorSchemes) + 1
 // schemeByID finds a scheme among the built-ins, the embedded collection and
 // the user's directory.
 func (state *State) schemeByID(id string) (*colorScheme, bool) {
+	for i := range state.managedSchemes {
+		if state.managedSchemes[i].id == id {
+			return &state.managedSchemes[i], true
+		}
+	}
 	for index := range colorSchemes {
 		if colorSchemes[index].id == id {
 			return &colorSchemes[index], true
@@ -176,7 +184,7 @@ func (state *State) normalizeSchemeID(id string) string {
 
 // activeScheme is the chosen scheme for the current appearance.
 func (state *State) activeScheme() string {
-	return state.terminalSchemes[state.appearance]
+	return state.terminalSchemes[state.terminalSchemeAppearance()]
 }
 
 // migrateTerminalScheme places the single scheme an earlier release saved. It
@@ -205,7 +213,7 @@ func (state *State) rebuildTerminalLook() {
 	if previous != nil {
 		previousPalette = *previous
 	}
-	basePal := state.appearance.palette()
+	basePal := state.terminalSchemeAppearance().palette()
 	schemeID := state.activeScheme()
 	if state.schemePreview.shown != "" {
 		schemeID = state.schemePreview.shown
@@ -217,6 +225,9 @@ func (state *State) rebuildTerminalLook() {
 		} else {
 			state.pal = basePal
 		}
+		if state.appearanceMode == appearanceCustom {
+			state.pal = state.applicationTheme.palette()
+		}
 		state.theme = state.pal.theme()
 		look := *state.pal
 		look.dark = luminance(scheme.background) < 0.5
@@ -224,6 +235,9 @@ func (state *State) rebuildTerminalLook() {
 		look.termFG = gfx.RGB(scheme.foreground[0], scheme.foreground[1], scheme.foreground[2])
 		look.cursor = gfx.RGB(scheme.cursor[0], scheme.cursor[1], scheme.cursor[2])
 		look.ansi = scheme.ansi
+		look.selection = schemeRGB(scheme.selection)
+		look.selectionText = schemeRGB(scheme.selectionText)
+		look.customSelection = scheme.customSelection
 		look.highlight = state.highlights
 		look.intense = state.terminalIntense
 		state.termEpoch++
@@ -231,6 +245,9 @@ func (state *State) rebuildTerminalLook() {
 		state.termPal = look
 	} else {
 		state.pal = basePal
+		if state.appearanceMode == appearanceCustom {
+			state.pal = state.applicationTheme.palette()
+		}
 		state.theme = state.pal.theme()
 		look := *state.pal
 		look.termFG = look.text
@@ -350,7 +367,7 @@ func (state *State) setTerminalScheme(id string) bool {
 	if state.activeScheme() == id {
 		return false
 	}
-	state.terminalSchemes[state.appearance] = id
+	state.terminalSchemes[state.terminalSchemeAppearance()] = id
 	state.rebuildTerminalLook()
 	return true
 }
@@ -395,7 +412,7 @@ func schemeDrawerHit(index int) gfx.ID { return hitSchemeDrawerList.At(index) }
 // schemeTotal is how many cards the browser has: the hand-written built-ins,
 // the embedded community collection and the user's directory.
 func (state *State) schemeTotal() int {
-	return schemeCount + len(communitySchemes) + len(state.dirSchemes)
+	return schemeCount + len(communitySchemes) + len(state.dirSchemes) + len(state.managedSchemes)
 }
 
 // schemeAt is the id and name of the card at index, Default first, then the
@@ -418,6 +435,11 @@ func (state *State) schemeAt(index int) (id, name string, scheme *colorScheme) {
 		scheme = &state.dirSchemes[index]
 		return scheme.id, scheme.name, scheme
 	}
+	index -= len(state.dirSchemes)
+	if index >= 0 && index < len(state.managedSchemes) {
+		scheme = &state.managedSchemes[index]
+		return scheme.id, scheme.name, scheme
+	}
 	return "", "", nil
 }
 
@@ -436,12 +458,13 @@ func (state *State) paintSchemePicks(page *settingsPage) {
 		ui.Column(c).PadSides(14, 18, 22, 18).Children(func() {
 			ui.Paragraph(c, m.SchemeDescription, 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20).MarginSides(0, 0, 6, 0)
 			look := m.SchemeLookDark
-			if state.appearance == appearanceLight {
+			if state.terminalSchemeAppearance() == appearanceLight {
 				look = m.SchemeLookLight
 			}
 			ui.Text(c, look).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 14, 0)
-			ui.Row(c).Items(ui.Center).MarginSides(0, 0, 10, 0).Children(func() {
+			ui.Row(c).Items(ui.Center).Gap(10).MarginSides(0, 0, 10, 0).Children(func() {
 				ui.Text(c, m.SchemeQuickPicks).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).Grow(1)
+				page.button(hitThemeNew, state.themeText("New theme", "新建主题", "新增主題"), aiButtonOutline, false)
 				page.button(hitSchemeBrowseAll, fmt.Sprintf(m.SchemeMoreFmt, state.schemeTotal()), aiButtonOutline, false)
 			})
 			state.paintSchemeCards(page, state.schemeQuickPicks())
@@ -454,6 +477,7 @@ func (state *State) openSchemeBrowser() {
 	state.schemeBrowserOpen = true
 	state.schemeFilter = *text.NewEditor("")
 	state.scheme.filter = ""
+	state.scheme.category = schemeFilterAll
 	state.scheme.reset = true
 }
 
@@ -596,8 +620,7 @@ func (state *State) schemeMenuItem(c ui.C, menu *ui.MenuItems, index int, active
 	}
 }
 
-// schemeQuickPicks is seven hand-written built-ins, one community pick and the
-// active scheme when it would otherwise be off the list.
+// 首页保留两行推荐配色，第三行展示最近创建的四个自定义主题。
 func (state *State) schemeQuickPicks() []int {
 	preferred := []string{defaultSchemeID, "windows-terminal", "dracula", "nord", "one-dark", "tokyo-night", "gruvbox-dark"}
 	picks := make([]int, 0, schemeColumns*2)
@@ -615,16 +638,12 @@ func (state *State) schemeQuickPicks() []int {
 	if index, ok := state.communitySchemeIndexByName("Rose Pine Moon"); ok {
 		add(index, ok)
 	}
-	if index, ok := state.schemeIndexByID(state.activeScheme()); ok && !seen[index] {
-		if len(picks) >= schemeColumns*2 {
-			picks[len(picks)-2] = index
-		} else {
-			picks = append(picks, index)
-		}
-		seen[index] = true
-	}
 	for index := 0; index < schemeCount && len(picks) < schemeColumns*2; index++ {
 		add(index, true)
+	}
+	for i := len(state.managedSchemes) - 1; i >= 0 && len(picks) < schemeColumns*3; i-- {
+		index, ok := state.schemeIndexByID(state.managedSchemes[i].id)
+		add(index, ok)
 	}
 	return picks
 }
@@ -662,10 +681,13 @@ func (state *State) communitySchemeIndices() (dark, light []int) {
 
 // userSchemeIndices lists the cards from the data folder's schemes directory.
 func (state *State) userSchemeIndices() []int {
-	indices := make([]int, len(state.dirSchemes))
+	indices := make([]int, 0, len(state.dirSchemes)+len(state.managedSchemes))
 	base := schemeCount + len(communitySchemes)
-	for index := range indices {
-		indices[index] = base + index
+	for i := len(state.managedSchemes) - 1; i >= 0; i-- {
+		indices = append(indices, base+len(state.dirSchemes)+i)
+	}
+	for i := range state.dirSchemes {
+		indices = append(indices, base+i)
 	}
 	return indices
 }
@@ -695,12 +717,13 @@ func schemeMatches(name, filter string) bool {
 // controls are declared in the workbench page; what it keeps here is the search
 // field, the scroll area, and the filter its last declaration ranked.
 type schemeUI struct {
-	field  ui.Field
-	bound  bool
-	body   gfx.Rect
-	scroll ui.Box
-	filter string
-	reset  bool
+	category schemeCategory
+	field    ui.Field
+	bound    bool
+	body     gfx.Rect
+	scroll   ui.Box
+	filter   string
+	reset    bool
 }
 
 // declareSchemeDrawer declares the complete collection as a Drawer of the
@@ -744,13 +767,14 @@ func (state *State) declareSchemeDrawerBody(c ui.C, columns int) {
 	body.Children(func() {
 		ui.TextField(c, &scheme.field, m.SchemeSearchPlaceholder, m.SchemeSearchPlaceholder, ui.WithID(hitSchemeSearch)).
 			Icon(lucideIcons[iconSearch]).Height(schemeSearchHeight).FillWidth().MarginSides(0, 0, 10, 0).Shrink(0)
+		state.declareSchemeCategoryFilter(c)
 		ui.Paragraph(c, fmt.Sprintf(m.SchemeDirHintFmt, state.schemesDir()), 2).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(18).MarginSides(0, 0, 8, 0)
 		scroll := ui.Scroll(c).Grow(1).Basis(0)
 		scheme.scroll = scroll
 		scroll.Children(func() {
 			filter := strings.ToLower(strings.TrimSpace(scheme.field.Text()))
 			if filter != "" {
-				matches := state.schemesMatching(filter)
+				matches := state.filteredSchemeIndices(filter)
 				ui.Text(c, fmt.Sprintf(m.SchemeResultsFmt, len(matches))).FontSize(metrics.FontSizeS).Weight(gfx.WeightSemibold).Color(pal.text).LineHeight(20).MarginSides(0, 0, 8, 0)
 				if len(matches) == 0 {
 					ui.Text(c, m.SchemeNoMatches).FontSize(metrics.FontSizeS).Color(pal.muted).LineHeight(20)
@@ -760,15 +784,11 @@ func (state *State) declareSchemeDrawerBody(c ui.C, columns int) {
 				ui.Spacer(c).Height(10)
 				return
 			}
-			builtins := make([]int, 0, schemeCount)
-			for index := 0; index < schemeCount; index++ {
-				builtins = append(builtins, index)
+			for _, group := range state.schemeDrawerGroups() {
+				if scheme.category == schemeFilterAll || scheme.category == group.category {
+					state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s (%d)", group.title, len(group.indices)), group.indices, columns)
+				}
 			}
-			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s (%d)", m.SchemeBuiltin, len(builtins)), builtins, columns)
-			dark, light := state.communitySchemeIndices()
-			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s · %s (%d)", m.SchemeCommunity, m.SchemeDark, len(dark)), dark, columns)
-			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s · %s (%d)", m.SchemeCommunity, m.SchemeLight, len(light)), light, columns)
-			state.paintSchemeDrawerGroup(c, fmt.Sprintf("%s (%d)", m.SchemeMine, len(state.dirSchemes)), state.userSchemeIndices(), columns)
 			ui.Spacer(c).Height(10)
 		})
 	})
@@ -843,6 +863,7 @@ func (state *State) declareSchemeDrawerCard(c ui.C, index int) {
 		})
 	})
 	card.HitWith(schemeDrawerHit(index), name, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+	state.declareSchemeContextMenu(c, card, id)
 }
 
 // declareScheme declares one color scheme's card: its name and the four colors
@@ -879,5 +900,6 @@ func (state *State) declareScheme(c ui.C, page *settingsPage, index int) {
 		view.colors = append(view.colors, swatches[:]...)
 		page.add(settingsControl{kind: controlSwatches, slot: ui.Slot(c).Size(swatchPitch*3+swatchSize, swatchSize).Shrink(0), first: len(view.colors) - len(swatches), count: len(swatches)})
 	})
-	page.hitOn(card, schemeHit(index), name, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+	card.HitWith(schemeHit(index), name, gfx.HitOptions{Role: gfx.RoleButton, Selected: selected})
+	state.declareSchemeContextMenu(c, card, id)
 }
