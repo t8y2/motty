@@ -2446,13 +2446,29 @@ func TestScrolledToTopWhileTypingTheNextCommandDoesNotLeakTheFold(t *testing.T) 
 	}
 }
 
-func TestAFoldNeverEndsBeforeItsRecordedEnd(t *testing.T) {
-	terminal := &terminal{blocks: []commandBlock{
-		{prompt: blockAnchor{line: 10, ok: true}, exec: blockAnchor{line: 11, ok: true}, end: blockAnchor{line: 20, ok: true}, status: blockSucceeded, collapsed: true},
-		{prompt: blockAnchor{line: 19, ok: true}, exec: blockAnchor{line: 20, ok: true}, end: blockAnchor{line: 21, ok: true}, status: blockSucceeded},
-	}}
-	if got := terminal.blockFoldEnd(0); got != 20 {
-		t.Fatalf("fold end = %d, want the recorded end 20 even when the next prompt is one row early", got)
+func TestAnApproximateEndAnchorStillStopsAtThePrompt(t *testing.T) {
+	state, _, _, shell := liveSession(t)
+	session := &state.sessions[0]
+	terminal := session.term
+	startBlockPrompt(state, shell, session)
+	shell.say("echo many\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "C"))
+	shell.say("one\r\ntwo\r\nthree\r\n")
+	state.Wake()
+	sayMarkers(state, shell, session, blockMarker(session, "D;0"))
+	startBlockPrompt(state, shell, session)
+
+	block := &terminal.blocks[0]
+	// A reflow can merge the D row away and leave its clamped line above later
+	// rewrapped output; the pending prompt is still the real bottom boundary.
+	block.end.line = block.exec.line
+	block.endApprox = true
+	if _, end, ok := terminal.blockRange(0, block); !ok || end != terminal.blockPrompt.line {
+		t.Fatalf("range end = %d, %v; want prompt boundary %d", end, ok, terminal.blockPrompt.line)
+	}
+	if got := terminal.blockFoldEnd(0); got != terminal.blockPrompt.line {
+		t.Fatalf("fold end = %d, want prompt boundary %d", got, terminal.blockPrompt.line)
 	}
 }
 

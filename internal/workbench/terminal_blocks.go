@@ -422,6 +422,31 @@ func (t *terminal) pruneBlocks() {
 	}
 }
 
+// blockPromptBoundary is the first row after a finished block's output: the
+// next block when one exists, otherwise the shell's pending prompt or the live
+// cursor. A reflow can merge a D anchor away and leave an approximate line in
+// the middle of rewrapped output, so this is the authoritative bottom bound.
+func (t *terminal) blockPromptBoundary(index int, block *commandBlock) (uint64, bool) {
+	if block == nil || !block.exec.ok {
+		return 0, false
+	}
+	if index+1 < len(t.blocks) {
+		if line := t.blocks[index+1].startLine(); line > block.exec.line {
+			return line, true
+		}
+	}
+	if t.blockCommand.ok && t.blockCommand.line > block.exec.line {
+		return t.blockCommand.line, true
+	}
+	if t.blockPrompt.ok && t.blockPrompt.line > block.exec.line {
+		return t.blockPrompt.line, true
+	}
+	if point, ok := t.screen.CursorPoint(); ok && point.Line > block.exec.line {
+		return point.Line, true
+	}
+	return 0, false
+}
+
 // blockRange is the block's owned physical row range. start includes the
 // prompt/command; stop is exclusive and leaves D's next-prompt row to the next
 // block. A running block owns the live screen below its start.
@@ -439,6 +464,11 @@ func (t *terminal) blockRange(index int, block *commandBlock) (rangeStart, range
 	rangeStop = block.end.line
 	if block.end.column > 0 {
 		rangeStop++
+	}
+	if block.endApprox || block.stale {
+		if line, ok := t.blockPromptBoundary(index, block); ok && line > rangeStop {
+			rangeStop = line
+		}
 	}
 	return rangeStart, rangeStop, rangeStop >= rangeStart
 }
