@@ -244,6 +244,7 @@ func (state *State) Paint(canvas *gfx.Canvas, size gfx.Size) {
 	// was painted with so a resize can work out the rows and columns.
 	state.viewport = size
 	state.measureTerminalCell(canvas)
+	state.measureCommandRows(canvas)
 	state.requestPasteFrames(canvas)
 	if session := state.fullscreenDesktop(); session != nil {
 		state.beginMenus()

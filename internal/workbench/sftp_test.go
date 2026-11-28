@@ -1394,12 +1394,19 @@ func TestSFTPSaveCancelDoesNotTransfer(t *testing.T) {
 	}
 }
 
-func TestLeavingSFTPStopsItsWorker(t *testing.T) {
+// Leaving the terminal for another page suspends the panel's worker: the
+// connection and its subsystem go, the view and its listing stay for the
+// return.
+func TestLeavingSFTPSuspendsItsWorker(t *testing.T) {
 	state, session, _, remote := openTestSFTP(t)
+	view := session.files
 	worker := session.files.worker
 	state.Click(hitHosts)
-	if session.files != nil {
-		t.Fatal("SFTP page stayed attached")
+	if session.files != view {
+		t.Fatal("SFTP page dropped the panel's view")
+	}
+	if view.worker != nil {
+		t.Fatal("SFTP worker stayed attached")
 	}
 	select {
 	case <-worker.Done():

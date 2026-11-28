@@ -339,8 +339,12 @@ func (state *State) ensureContextSFTP() {
 	if !ok || !context.Open || context.Kind != layoutcore.ContextSFTP {
 		return
 	}
-	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok && session.files == nil {
-		state.openSFTP(session) // a session that is not connected is left alone
+	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
+		if view := session.files; view != nil && view.local {
+			_ = state.refreshLocalDirectory(view)
+		} else if session.files == nil || session.files.worker == nil {
+			state.openSFTP(session) // a session that is not connected is left alone
+		}
 	}
 }
 
@@ -348,7 +352,10 @@ func (state *State) ensureContextSFTP() {
 // has the files panel open. This allows background tabs with an open file panel
 // to load SFTP in the background upon connection instead of waiting for tab activation.
 func (state *State) ensureSessionContextSFTP(session *Session) {
-	if session == nil || session.files != nil {
+	if session == nil {
+		return
+	}
+	if view := session.files; view != nil && (view.local || view.worker != nil) {
 		return
 	}
 	if session.ID == state.activeSessionID {

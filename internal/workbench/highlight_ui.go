@@ -508,6 +508,7 @@ func (state *State) restoreTerminalTools(saved savedState) {
 	}
 	state.commands.sort = commandsSortFromString(saved.CommandsSort)
 	state.commands.width = saved.CommandsWidth
+	state.commands.rows = saved.CommandsRows
 	state.commands.hiddenGroups = make(map[string]bool)
 	for _, group := range saved.CommandsHiddenGroups {
 		if group == "" {

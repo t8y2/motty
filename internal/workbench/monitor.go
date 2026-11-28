@@ -189,11 +189,10 @@ type monitorView struct {
 	memoryRows                      []monitorMemoryText
 	procsOpen, memoryOpen, sortMenu bool
 	// procMenu is the process row a secondary press opened the actions of:
-	// its pid and name are kept beside the point, so a reading that reorders
+	// its pid is kept beside the point, so a reading that reorders
 	// the list cannot retarget the menu.
 	procMenu     bool
 	procMenuPID  int
-	procMenuName string
 	procMenuAt   gfx.Point
 	actionStatus string
 	actionFailed bool

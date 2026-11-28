@@ -27,8 +27,8 @@ var (
 // enough to read, short enough that the next reading takes the line back.
 const monitorActionNotice = 12 * time.Second
 
-// openMonitorProcessMenu records the row a secondary press landed on. The pid and
-// name are copied out now, so a reading that re-orders the list between the press
+// openMonitorProcessMenu records the row a secondary press landed on. The pid
+// is copied out now, so a reading that re-orders the list between the press
 // and the choice cannot point the menu at another process.
 func (state *State) openMonitorProcessMenu(target gfx.ID, at gfx.Point) bool {
 	if target.IsZero() || !state.monitorShown(state.deck.ActiveWorkspace()) {
@@ -44,7 +44,7 @@ func (state *State) openMonitorProcessMenu(target gfx.ID, at gfx.Point) bool {
 			continue
 		}
 		p.procMenu = true
-		p.procMenuPID, p.procMenuName = process.pid, process.name
+		p.procMenuPID = process.pid
 		p.procMenuAt = at
 		return true
 	}
@@ -52,9 +52,8 @@ func (state *State) openMonitorProcessMenu(target gfx.ID, at gfx.Point) bool {
 }
 
 // declareMonitorProcessRowMenu declares the process actions the old tools tab
-// offered, over the row that was pressed. The monitor holds a pid, not a
-// snapshot of the process, so the signal re-reads the instance it is about to
-// end; a host that cannot prove it refuses the action rather than guessing.
+// offered, over the row that was pressed. A signal first resolves the PID to
+// a verified instance and carries it through confirmation.
 func (state *State) declareMonitorProcessRowMenu(c ui.C, p *monitorView) {
 	if !p.procMenu {
 		return
@@ -86,7 +85,7 @@ func (state *State) chooseMonitorProcessMenu(id gfx.ID) {
 		return
 	}
 	p := &session.stats.panel
-	pid, name := p.procMenuPID, p.procMenuName
+	pid := p.procMenuPID
 	if pid <= 0 {
 		return
 	}
@@ -96,10 +95,38 @@ func (state *State) chooseMonitorProcessMenu(id gfx.ID) {
 	case hitMonitorProcMenuCopyPID:
 		state.copyMonitorProcessPID(session, pid)
 	case hitMonitorProcMenuTerminate:
-		state.confirmMonitorProcessSignal(session, pid, name, remotetools.Terminate)
+		state.startMonitorProcessConfirmation(session, pid, remotetools.Terminate)
 	case hitMonitorProcMenuKill:
-		state.confirmMonitorProcessSignal(session, pid, name, remotetools.Kill)
+		state.startMonitorProcessConfirmation(session, pid, remotetools.Kill)
 	}
+}
+
+// A menu row only has a PID. Resolve it to a verified instance before asking
+// the user to confirm, then carry that exact instance through the dialog.
+func (state *State) startMonitorProcessConfirmation(session *Session, pid int, signal remotetools.Signal) {
+	var process remotetools.Process
+	state.monitorProcessAction(session, func(ctx context.Context, runner remotetools.Runner) error {
+		snapshot, err := remotetools.ReadSafeProcessSnapshot(ctx, runner, remotetools.SortCPU)
+		if err != nil {
+			return err
+		}
+		for _, candidate := range snapshot.Processes {
+			if candidate.PID == pid {
+				process = candidate
+				return nil
+			}
+		}
+		return remotetools.ErrProcessChanged
+	}, func(state *State, target *Session, err error) {
+		if err == nil && process.StartIdentity == "" {
+			err = remotetools.ErrProcessUnverifiable
+		}
+		if err != nil {
+			state.monitorNotice(target, state.remoteErrorText(err), true)
+			return
+		}
+		state.confirmMonitorProcessSignal(target, process, shortCommand(process.Command), signal)
+	})
 }
 
 // copyMonitorProcessPID puts the pid on the clipboard and says so in the footer,
@@ -118,26 +145,25 @@ func (state *State) copyMonitorProcessPID(session *Session, pid int) {
 
 // confirmMonitorProcessSignal asks before a signal leaves, as the tools tab did:
 // the row names the process and what is lost with it.
-func (state *State) confirmMonitorProcessSignal(session *Session, pid int, name string, signal remotetools.Signal) {
+func (state *State) confirmMonitorProcessSignal(session *Session, process remotetools.Process, name string, signal remotetools.Signal) {
 	m := state.messages.Tools
 	title, submit := m.RemoteConfirmTerminateTitle, m.RemoteTerminate
 	if signal == remotetools.Kill {
 		title, submit = m.RemoteConfirmKillTitle, m.RemoteForceKill
 	}
 	if name == "" {
-		name = fmt.Sprintf("PID %d", pid)
+		name = fmt.Sprintf("PID %d", process.PID)
 	}
 	sessionID := session.ID
 	state.openForm(formDialog{
 		title:       title,
-		description: fmt.Sprintf(m.RemoteConfirmProcessFmt, pid, name),
+		description: fmt.Sprintf(m.RemoteConfirmProcessFmt, process.PID, name),
 		submit:      submit,
 		danger:      true,
 		run: func(state *State, _ *formDialog) string {
-			// The question may outlive the session it was asked for; the signal
-			// goes to whichever session still holds that id, if any.
+			// The question may outlive the session it was asked for.
 			if target, ok := state.sessionByIDPointer(sessionID); ok {
-				state.startMonitorProcessSignal(target, pid, signal)
+				state.startMonitorProcessSignal(target, process, signal)
 			}
 			return ""
 		},
@@ -173,26 +199,21 @@ func (state *State) monitorProcessAction(
 	}()
 }
 
-// startMonitorProcessSignal reads the instance behind pid and signals it. The
-// reading is what makes the signal safe: a pid the host has already reused
-// carries a different identity, and the guard refuses it.
-func (state *State) startMonitorProcessSignal(session *Session, pid int, signal remotetools.Signal) {
+// The guard checks that the confirmed instance still owns its PID immediately
+// before sending the signal; it must not resolve the PID anew after confirmation.
+func (state *State) startMonitorProcessSignal(session *Session, process remotetools.Process, signal remotetools.Signal) {
 	label := "TERM"
 	if signal == remotetools.Kill {
 		label = "KILL"
 	}
 	state.monitorProcessAction(session, func(ctx context.Context, runner remotetools.Runner) error {
-		identity, err := remotetools.ReadProcessIdentity(ctx, runner, pid)
-		if err != nil {
-			return err
-		}
-		return remotetools.SendSignalToProcess(ctx, runner, remotetools.Process{PID: pid, StartIdentity: identity}, signal)
+		return remotetools.SendSignalToProcess(ctx, runner, process, signal)
 	}, func(state *State, target *Session, err error) {
 		if err != nil {
 			state.monitorNotice(target, state.remoteErrorText(err), true)
 			return
 		}
-		state.monitorNotice(target, fmt.Sprintf(state.messages.Tools.RemoteSignalSentFmt, label, pid), false)
+		state.monitorNotice(target, fmt.Sprintf(state.messages.Tools.RemoteSignalSentFmt, label, process.PID), false)
 	})
 }
 
@@ -282,9 +303,9 @@ func (state *State) monitorProcessDetailAction(sessionID uint32, process remotet
 	name := shortCommand(process.Command)
 	switch id {
 	case hitRemoteTerminate:
-		state.confirmMonitorProcessSignal(session, process.PID, name, remotetools.Terminate)
+		state.confirmMonitorProcessSignal(session, process, name, remotetools.Terminate)
 	case hitRemoteKill:
-		state.confirmMonitorProcessSignal(session, process.PID, name, remotetools.Kill)
+		state.confirmMonitorProcessSignal(session, process, name, remotetools.Kill)
 	case hitRemoteNiceLower:
 		state.startMonitorProcessRenice(session, process, 10)
 	case hitRemoteNiceNormal:

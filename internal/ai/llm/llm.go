@@ -37,6 +37,10 @@ type ToolCall struct {
 	Name string
 	// Arguments is raw JSON text: a JSON object, or "{}" when empty.
 	Arguments string
+	// ExtraContent is opaque provider state returned with the call that the
+	// next request must echo back unchanged. Gemini's OpenAI-compatible
+	// endpoint puts the thought signature it requires there.
+	ExtraContent json.RawMessage `json:"extra_content,omitempty"`
 }
 
 // Image is a picture sent with a user message. MediaType is one of the four

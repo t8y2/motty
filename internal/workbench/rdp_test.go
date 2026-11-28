@@ -529,3 +529,61 @@ func TestRDPMicrophoneIsAnRDPOnlySwitch(t *testing.T) {
 		t.Fatalf("restored = %+v", restored)
 	}
 }
+
+// rdpPasswordState opens an RDP host whose server asks for the certificate
+// and then the password, in the order the real handshake does, and accepts
+// whatever password it is given.
+func rdpPasswordState(t *testing.T) (*State, *Session, Host) {
+	t.Helper()
+	_, options := newWorld(t)
+	state := newTestState(t, options)
+	state.options.Invalidate = func() {}
+	state.connectionReconnect = reconnectOff
+	state.dialDesktop = func(_ context.Context, request desktopRequest) (desktop.Session, error) {
+		if err := request.Verify("win.example.com:3389", []byte("certificate")); err != nil {
+			return nil, err
+		}
+		if _, err := request.Ask(); err != nil {
+			return nil, err
+		}
+		return newPictureOnly(), nil
+	}
+	host := addStreamHost(state, Host{Label: "Win", Address: "win.example.com", User: "administrator", Protocol: protocolRDP})
+	openHost(state)
+	session, _ := state.sessionByIDPointer(state.activeSessionID)
+	return state, session, host
+}
+
+func TestRDPPasswordSavedAtThePromptAnswersTheNextConnection(t *testing.T) {
+	state, session, host := rdpPasswordState(t)
+	waitUntil(t, state, "the certificate question", func() bool { return state.modal == modalHostKey })
+	state.Click(hitHostKeyTrust)
+	waitUntil(t, state, "the password question", func() bool { return state.modal == modalPassword })
+	state.secrets.save = true
+	state.passwordFields[0].Insert("hunter2")
+	state.submitPassword()
+	waitUntil(t, state, "the picture", func() bool { return session.phase == sshconn.PhaseConnected })
+	name := hostSecretName(host.CatalogID, hostPasswordPart)
+	waitUntil(t, state, "the saved password", func() bool {
+		_, found, err := state.secrets.vault.Get(name)
+		return err == nil && found
+	})
+	if value, _, _ := state.secrets.vault.Get(name); value != "hunter2" {
+		t.Fatalf("saved %q", value)
+	}
+	// The save is answered where the user can see it: the main window does not
+	// paint state.status.
+	if len(state.fileNotices.items) == 0 {
+		t.Fatal("saving the password told the user nothing they can see")
+	}
+	// The next connection to the host answers its own password question.
+	state.closeSession(session.ID)
+	openHost(state)
+	again, _ := state.sessionByIDPointer(state.activeSessionID)
+	waitUntil(t, state, "the second connection", func() bool {
+		return state.modal == modalPassword || again.phase == sshconn.PhaseConnected
+	})
+	if state.modal == modalPassword {
+		t.Fatal("the saved RDP password was asked for again")
+	}
+}

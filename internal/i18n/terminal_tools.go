@@ -174,8 +174,10 @@ type ToolsMessages struct {
 	CommandsAdd   string
 	CommandsClose string
 	// CommandsResize is the tooltip of the strip along the bar's inner edge that
-	// drags its width.
+	// drags its width (side) or its rows (bottom); a double-click resets it.
 	CommandsResize string
+	// CommandsEmpty fills the bottom strip while no command exists.
+	CommandsEmpty string
 	// CommandsMoveLeft and CommandsMoveRight are the tooltips of the side bar's
 	// arrow, which moves it to the other side.
 	CommandsMoveLeft, CommandsMoveRight string

@@ -2,12 +2,17 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -754,5 +759,75 @@ func TestAskNoteQueryExecutesAndCannotEdit(t *testing.T) {
 				t.Fatalf("Ask query failed: %+v %v", messages, err)
 			}
 		})
+	}
+}
+
+// Gemini's OpenAI-compatible endpoint puts the thought signature its next
+// request requires in tool_calls[].extra_content. The streamed delta carries
+// it; the request built after the tool ran must return it unchanged.
+func TestGeminiThoughtSignatureReachesTheNextTurn(t *testing.T) {
+	const signature = "c2lnbmF0dXJl"
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		if requests.Add(1) == 1 {
+			fmt.Fprint(w, `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"terminal_exec","arguments":"{\"command\":\"ls\"}"},"extra_content":{"google":{"thought_signature":"`+signature+`"}}}]}}]}`+"\n\n")
+			fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			return
+		}
+		var req struct {
+			Messages []struct {
+				Role      string `json:"role"`
+				ToolCalls []struct {
+					ExtraContent struct {
+						Google struct {
+							ThoughtSignature string `json:"thought_signature"`
+						} `json:"google"`
+					} `json:"extra_content"`
+				} `json:"tool_calls"`
+			} `json:"messages"`
+		}
+		signed := false
+		if json.Unmarshal(body, &req) == nil {
+			for _, m := range req.Messages {
+				for _, c := range m.ToolCalls {
+					signed = signed || c.ExtraContent.Google.ThoughtSignature == signature
+				}
+			}
+		}
+		if !signed {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":{"code":400,"message":"Function call is missing a thought_signature in functionCall parts."}}`)
+			return
+		}
+		fmt.Fprint(w, `data: {"choices":[{"delta":{"content":"done"}}]}`+"\n\n")
+		fmt.Fprint(w, `data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`+"\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	cfg := Config{
+		Provider: llm.NewOpenAI(llm.Config{BaseURL: srv.URL}), Model: "gemini-3-pro", System: "sys", Mode: ModeAgent,
+		Gate: gate.Gate{Backend: &fakeBackend{}, Policy: risk.Policy{Enabled: true, AutoUpTo: risk.Low},
+			Approver: func(context.Context, gate.Request) (bool, string, error) { return true, "", nil }},
+	}
+	msgs, err := Run(context.Background(), cfg, nil, "list files", nil)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if n := requests.Load(); n != 2 {
+		t.Fatalf("server saw %d requests, want 2", n)
+	}
+	// The signature stays on the assistant turn, so it survives into saved
+	// conversations as well as the next request of the loop.
+	if len(msgs) != 4 || len(msgs[1].ToolCalls) != 1 ||
+		string(msgs[1].ToolCalls[0].ExtraContent) != `{"google":{"thought_signature":"`+signature+`"}}` {
+		t.Fatalf("history lost the signature: %+v", msgs)
 	}
 }

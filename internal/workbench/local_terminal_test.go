@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -257,6 +258,29 @@ func TestLocalTerminalBrowsesThisComputersFilesAndTypesPathsIntoTheShell(t *test
 	state.Click(contextID(hitSFTPClose))
 	if session.files != nil {
 		t.Fatal("closing the panel kept the list")
+	}
+}
+
+func TestLocalFilePanelRefreshesAfterPageSwitch(t *testing.T) {
+	dir := localFixture(t)
+	t.Setenv("HOME", dir)
+	t.Setenv("USERPROFILE", dir)
+	state, session := openLocal(t)
+	state.Wake()
+	state.Click(hitSFTPOpen)
+	view := session.files
+	state.Click(hitHosts)
+	if err := os.WriteFile(filepath.Join(dir, "arrived.txt"), []byte("new"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	workspaceID := state.deck.ActiveWorkspace()
+	paneID := state.deck.ActivePane(workspaceID)
+	if !state.activatePane(workspaceID, paneID) {
+		t.Fatal("the local tab did not come back")
+	}
+	if session.files != view || !slices.ContainsFunc(view.lfolder.rows, func(row sftpRow) bool { return row.entry.Name == "arrived.txt" }) {
+		t.Fatalf("the retained local panel did not refresh its listing: same view=%t rows=%v", session.files == view, view.lfolder.rows)
 	}
 }
 

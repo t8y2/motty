@@ -557,7 +557,9 @@ func (s *State) paintMonitorProcessRows(c *gfx.Canvas, p *monitorView, b, viewpo
 	x, y, w := b.X+10, b.Y, b.Width-20
 	if len(p.procShown) == 0 {
 		empty := m.ProcessEmpty
-		if len(p.procs) > 0 {
+		if session := s.contextSession(); session != nil && monitorSystem(session) == sshconn.SystemWindows {
+			empty = m.Unavailable
+		} else if len(p.procs) > 0 {
 			empty = m.ProcessNoMatch
 		}
 		if monitorRowVisible(viewport, y, monitorProcessRowHeight) {
@@ -775,15 +777,23 @@ func (s *State) paintMonitorSections(c *gfx.Canvas, session *Session, v *remoteS
 		y += 8 + monitorGap
 		h = monitorListensHeight(p)
 		c.RoundedBorder(gfx.Rect{X: x, Y: y, Width: w, Height: h}, cornerPx(10), 1, colors.border, colors.surface)
+		listensTitle := fmt.Sprintf("%s · %d", m.ListenSection, len(p.listens))
+		if session := s.contextSession(); session != nil && monitorSystem(session) == sshconn.SystemWindows {
+			listensTitle = m.ListenSection
+		}
 		s.monitorSection(c, hitMonitorListens, gfx.Rect{X: x, Y: y, Width: w, Height: 32},
-			fmt.Sprintf("%s · %d", m.ListenSection, len(p.listens)), icons.Server, colors.network, p.listensOpen)
+			listensTitle, icons.Server, colors.network, p.listensOpen)
 		if !p.listensOpen {
 			break
 		}
 		c.Fill(gfx.Rect{X: x, Y: y + 32, Width: w, Height: 1}, colors.border)
 		rowY := y + 40
 		if len(p.listens) == 0 {
-			monitorLabel(c, m.NoListens, gfx.Rect{X: x + 10, Y: rowY, Width: w - 20, Height: monitorListenRowHeight}, 11, colors.muted, gfx.WeightRegular)
+			empty := m.NoListens
+			if session := s.contextSession(); session != nil && monitorSystem(session) == sshconn.SystemWindows {
+				empty = m.Unavailable
+			}
+			monitorLabel(c, empty, gfx.Rect{X: x + 10, Y: rowY, Width: w - 20, Height: monitorListenRowHeight}, 11, colors.muted, gfx.WeightRegular)
 			break
 		}
 		for _, l := range p.listens {

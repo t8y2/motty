@@ -133,34 +133,6 @@ func readProcessIdentities(ctx context.Context, runner Runner) (map[int]string, 
 	return identities, nil
 }
 
-// ReadProcessIdentity answers what SendSignalToProcess verifies: the identity of
-// the process running under pid now. A caller that only has a pid, such as the
-// resource monitor's process list, reads it before asking for a signal, so the
-// guard never acts on a number the host may have reused. A system that cannot
-// prove instance identity (macOS, Windows, an unreadable procfs) keeps process
-// actions read-only.
-func ReadProcessIdentity(ctx context.Context, runner Runner, pid int) (string, error) {
-	if pid <= 1 {
-		return "", ErrProcessUnverifiable
-	}
-	if system := runnerSystem(runner); system == "windows" || system == "darwin" {
-		return "", ErrProcessUnverifiable
-	}
-	identities, err := readProcessIdentities(ctx, runner)
-	if err != nil {
-		if canceled := processContextError(ctx, err); canceled != nil {
-			return "", canceled
-		}
-		return "", ErrProcessUnverifiable
-	}
-	if identity := identities[pid]; identity != "" {
-		return identity, nil
-	}
-	// A readable host that no longer lists pid has nothing to signal: the
-	// instance the caller showed is gone.
-	return "", ErrProcessChanged
-}
-
 func validBootIdentity(boot string) bool {
 	if len(boot) != 36 {
 		return false

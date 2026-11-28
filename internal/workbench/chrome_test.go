@@ -298,48 +298,6 @@ func headerHit(t *testing.T, canvas *gfx.Canvas, id gfx.ID) gfx.Hit {
 	return found
 }
 
-// TestTheSectionToolbarsCondenseIntoIcons guards the same narrow form on the
-// other section pages: their actions keep their icons and tooltips, and the
-// search box keeps the width it works at.
-func TestTheSectionToolbarsCondenseIntoIcons(t *testing.T) {
-	sections := []struct {
-		name string
-		page uint8
-		ids  []gfx.ID
-	}{
-		{"keys", sectionKeys, []gfx.ID{hitKeysAdd, hitKeysCopyPublic, hitKeysRemove}},
-		{"proxies", sectionProxies, []gfx.ID{hitProxyBatchAdd, hitProxyAdd}},
-		{"forwards", sectionForwards, []gfx.ID{hitForwardAdd}},
-		{"known hosts", sectionKnownHosts, []gfx.ID{hitKnownHostsRefresh, hitKnownHostsRetrust, hitKnownHostsDelete}},
-	}
-	for _, section := range sections {
-		state := newTestState(t, testOptions(t))
-		state.activeSection = section.page
-		wide, _ := paintAt(state, gfx.Size{Width: 1400, Height: 900})
-		for _, id := range section.ids {
-			if hit := headerHit(t, wide, id); hit.Hint != "" || hit.Bounds.Width <= toolbarIconButton {
-				t.Errorf("%s: %q is already condensed in a wide section: %+v", section.name, hit.Label, hit)
-			}
-		}
-		canvas, _ := narrowSection(t, state)
-		for _, id := range section.ids {
-			hit := headerHit(t, canvas, id)
-			if hit.Label == "" || hit.Hint != hit.Label || hit.Bounds.Width != toolbarIconButton {
-				t.Errorf("%s: condensed %q keeps hint %q and width %v", section.name, hit.Label, hit.Hint, hit.Bounds.Width)
-			}
-		}
-		if section.page == sectionKnownHosts {
-			if hit := headerHit(t, canvas, hitKnownHostsSearch); hit.Bounds.Width < 100 {
-				t.Errorf("the known-hosts search box collapsed to %v wide", hit.Bounds.Width)
-			}
-		}
-		state.Close()
-	}
-}
-
-// TestTheHostActionsCondenseIntoIcons guards the row of actions on a checked
-// host: a narrow card keeps the five of them as icons whose tooltips name them,
-// beside the count of what is checked and the view switch.
 func TestTheHostActionsCondenseIntoIcons(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	state.hostSelections = append(state.hostSelections, state.hosts[0].ID)

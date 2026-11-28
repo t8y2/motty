@@ -216,27 +216,28 @@ var (
 
 // Settings: its explicit choices.
 var (
-	hitTerminalTransparency    = tree.ID(settingsHits, "terminal-transparency")
-	hitSettingsTextSizeDown    = tree.ID(settingsHits, "settings-text-size-down")
-	hitSettingsTextSizeReset   = tree.ID(settingsHits, "settings-text-size-reset")
-	hitSettingsTextSizeUp      = tree.ID(settingsHits, "settings-text-size-up")
-	hitSettingsFontSizeDown    = tree.ID(settingsHits, "settings-font-size-down")
-	hitSettingsFontSizeReset   = tree.ID(settingsHits, "settings-font-size-reset")
-	hitSettingsFontSizeUp      = tree.ID(settingsHits, "settings-font-size-up")
-	hitSettingsScrollbackMinus = tree.ID(settingsHits, "settings-scrollback-minus")
-	hitSettingsScrollbackValue = tree.ID(settingsHits, "settings-scrollback-value")
-	hitSettingsScrollbackPlus  = tree.ID(settingsHits, "settings-scrollback-plus")
-	hitSettingsCursorToggle    = tree.ID(settingsHits, "settings-cursor-blink")
-	hitSettingsCursorProgram   = tree.ID(settingsHits, "settings-cursor-program")
-	hitSettingsCopyOnSelect    = tree.ID(settingsHits, "settings-copy-on-select")
-	hitSettingsWordSeparators  = tree.ID(settingsHits, "settings-word-separators")
-	hitSettingsRightClickPaste = tree.ID(settingsHits, "settings-right-click-paste")
-	hitSettingsInputClick      = tree.ID(settingsHits, "settings-input-click")
-	hitSettingsLatencyToggle   = tree.ID(settingsHits, "settings-latency")
-	hitSettingsLinkPlainClick  = tree.ID(settingsHits, "settings-link-plain-click")
-	hitSettingsShareToggle     = tree.ID(settingsHits, "settings-share")
-	hitSettingsVaultForget     = tree.ID(settingsHits, "settings-vault-forget")
-	hitSettingsVaultConvert    = tree.ID(settingsHits, "settings-vault-convert")
+	hitTerminalTransparency             = tree.ID(settingsHits, "terminal-transparency")
+	hitSettingsTextSizeDown             = tree.ID(settingsHits, "settings-text-size-down")
+	hitSettingsTextSizeReset            = tree.ID(settingsHits, "settings-text-size-reset")
+	hitSettingsTextSizeUp               = tree.ID(settingsHits, "settings-text-size-up")
+	hitSettingsFontSizeDown             = tree.ID(settingsHits, "settings-font-size-down")
+	hitSettingsFontSizeReset            = tree.ID(settingsHits, "settings-font-size-reset")
+	hitSettingsFontSizeUp               = tree.ID(settingsHits, "settings-font-size-up")
+	hitSettingsScrollbackMinus          = tree.ID(settingsHits, "settings-scrollback-minus")
+	hitSettingsScrollbackValue          = tree.ID(settingsHits, "settings-scrollback-value")
+	hitSettingsScrollbackPlus           = tree.ID(settingsHits, "settings-scrollback-plus")
+	hitSettingsCursorToggle             = tree.ID(settingsHits, "settings-cursor-blink")
+	hitSettingsAppearanceFollowTerminal = tree.ID(settingsHits, "appearance-follow-terminal")
+	hitSettingsCursorProgram            = tree.ID(settingsHits, "settings-cursor-program")
+	hitSettingsCopyOnSelect             = tree.ID(settingsHits, "settings-copy-on-select")
+	hitSettingsWordSeparators           = tree.ID(settingsHits, "settings-word-separators")
+	hitSettingsRightClickPaste          = tree.ID(settingsHits, "settings-right-click-paste")
+	hitSettingsInputClick               = tree.ID(settingsHits, "settings-input-click")
+	hitSettingsLatencyToggle            = tree.ID(settingsHits, "settings-latency")
+	hitSettingsLinkPlainClick           = tree.ID(settingsHits, "settings-link-plain-click")
+	hitSettingsShareToggle              = tree.ID(settingsHits, "settings-share")
+	hitSettingsVaultForget              = tree.ID(settingsHits, "settings-vault-forget")
+	hitSettingsVaultConvert             = tree.ID(settingsHits, "settings-vault-convert")
 )
 
 // Jump-host routing: its page and dialog.
@@ -993,13 +994,16 @@ type State struct {
 	contextDrawerOpen  bool
 	// The panel's Draw callback is a method value made once: a paint that made
 	// it again would allocate.
-	contextPanelDraw func(*ui.DrawContext)
-	shortcuts        shortcutMap
-	shortcutCapture  shortcutAction
-	shortcutError    string
-	reconnectWaiters int
-	pal              *palette
-	theme            gfx.Theme
+	contextPanelDraw         func(*ui.DrawContext)
+	shortcuts                shortcutMap
+	shortcutCapture          shortcutAction
+	shortcutError            string
+	reconnectWaiters         int
+	pal                      *palette
+	uiPal                    palette
+	theme                    gfx.Theme
+	appearanceFollowTerminal bool
+	terminalScrollbarSize    scrollbarSize
 	// termPal is the terminal's own look: pal with the chosen color scheme and
 	// the highlight rules applied. termEpoch counts its rebuilds.
 	termPal   palette
@@ -2198,14 +2202,14 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.clickConnection(id)
 	case id == hitHosts || id == hitHome:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.releaseIdleSFTP(session)
+			state.suspendIdleSFTP(session)
 		}
 		state.clearBroadcast()
 		state.setActiveSection(sectionHosts)
 		state.save()
 	case id == hitWorkspaces:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.releaseIdleSFTP(session)
+			state.suspendIdleSFTP(session)
 		}
 		state.clearBroadcast()
 		state.setActiveSection(sectionWorkspaces)

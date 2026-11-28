@@ -492,7 +492,7 @@ func (state *State) openSettings() {
 		state.refreshEditors()
 	}
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-		state.releaseIdleSFTP(session)
+		state.suspendIdleSFTP(session)
 	}
 	// Returning to an already-open settings tab preserves where the user left
 	// the page (scroll offsets, drawer, and visit state). Only opening settings
@@ -720,6 +720,11 @@ func (state *State) clickSettings(id gfx.ID) bool {
 		changed = state.setVerticalTabsAutoHide(!state.verticalTabs.autoHide)
 	case hitSettingsVerticalTabsGrouping:
 		changed = state.setVerticalTabsGrouping(!state.verticalTabs.grouping)
+	case hitSettingsAppearanceFollowTerminal:
+		state.appearanceFollowTerminal = !state.appearanceFollowTerminal
+		state.rebuildTerminalLook()
+		state.invalidateRemoteToolsWindows()
+		changed = true
 	case hitSettingsTextSizeDown:
 		changed = state.setInterfaceTextSize(state.interfaceTextSize - interfaceTextSizeStep)
 	case hitSettingsTextSizeUp:
@@ -894,6 +899,7 @@ func (state *State) settingsRelaunchLabel(action relaunchAction) string {
 var (
 	settingsOptionChoices          = [...]terminalOptionMode{terminalOptionText, terminalOptionMeta}
 	settingsLineHeightChoices      = [...]lineHeight{lineHeightCompact, lineHeightNormal, lineHeightRoomy}
+	settingsScrollbarSizeChoices   = [...]scrollbarSize{scrollbarThin, scrollbarMedium, scrollbarWide}
 	settingsPaddingChoices         = [...]terminalPad{padCompact, padNormal, padRoomy}
 	settingsGutterChoices          = [...]terminalGutter{gutterOff, gutterNumbers, gutterTime, gutterBoth}
 	settingsIntenseChoices         = [...]terminalIntense{intenseBoth, intenseBright, intenseBold, intensePlain}
@@ -913,6 +919,17 @@ func (state *State) settingsOptionLabel(mode terminalOptionMode) string {
 		return state.messages.SettingsTerminalOptionMeta
 	}
 	return state.messages.SettingsTerminalOptionText
+}
+
+func (state *State) settingsScrollbarSizeLabel(size scrollbarSize) string {
+	switch size {
+	case scrollbarThin:
+		return state.messages.SettingsTerminalScrollbarThin
+	case scrollbarMedium:
+		return state.messages.SettingsTerminalScrollbarMedium
+	default:
+		return state.messages.SettingsTerminalScrollbarWide
+	}
 }
 
 func (state *State) settingsLineHeightLabel(mode lineHeight) string {

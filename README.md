@@ -13,7 +13,9 @@
   </p>
 
   <p>
-    <a href="https://hellogithub.com/repository/t8y2/motty" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=fbc1633f6fa949a5bd4e360f16e2bb68&claim_uid=p0UjnC1TLtyvWSx&theme=neutral" alt="Featured｜HelloGitHub" width="250" height="54" /></a>
+    <a href="https://hellogithub.com/repository/t8y2/motty" target="_blank"><img src="https://api.hellogithub.com/v1/widgets/recommend.svg?rid=fbc1633f6fa949a5bd4e360f16e2bb68&amp;claim_uid=p0UjnC1TLtyvWSx&amp;theme=neutral" alt="Featured｜HelloGitHub" width="250" height="54" /></a>
+    <a href="https://trendshift.io/repositories/324140?utm_source=trendshift-badge&amp;utm_medium=badge&amp;utm_campaign=badge-trendshift-324140" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/324140/daily?language=Go" alt="t8y2%2Fmotty | Trendshift" width="250" height="55" /></a>
+    <a href="https://atomgit.com/t8y2/motty" target="_blank" rel="noopener noreferrer"><img src="https://atomgit.com/t8y2/motty/star/new_badge.svg" alt="AtomGit G-Star" width="250" height="54" /></a>
   </p>
 
   <p>

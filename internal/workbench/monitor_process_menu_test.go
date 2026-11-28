@@ -75,14 +75,19 @@ func TestMonitorProcessRightClickCopiesThePID(t *testing.T) {
 
 func TestMonitorProcessRightClickConfirmsATerminate(t *testing.T) {
 	state, session, view := monitorProcessMenuFixture(t)
-	if err := view.RightClickLabel("button:postgres"); err != nil {
+	scriptMonitorProcessHost(t, session.conn.(*fakeConn))
+	if err := view.RightClickLabel("button:nginx"); err != nil {
 		t.Fatal(err)
 	}
 	dualClickMenuLabel(t, view, state.messages.Tools.RemoteTerminate)
+	for deadline := time.Now().Add(2 * time.Second); state.modal != modalForm && time.Now().Before(deadline); {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
 	if state.modal != modalForm || state.form.title != state.messages.Tools.RemoteConfirmTerminateTitle {
 		t.Fatalf("terminate did not ask first: modal=%v title=%q", state.modal, state.form.title)
 	}
-	if !strings.Contains(state.form.description, "postgres") || !strings.Contains(state.form.description, "1100") {
+	if !strings.Contains(state.form.description, "nginx") || !strings.Contains(state.form.description, "812") {
 		t.Fatalf("the confirmation does not name the process: %q", state.form.description)
 	}
 	state.click(hitFormCancel, true)
@@ -91,6 +96,54 @@ func TestMonitorProcessRightClickConfirmsATerminate(t *testing.T) {
 	}
 	if session.stats.panel.procMenu {
 		t.Fatal("the row menu stayed open behind the cancelled confirmation")
+	}
+}
+
+func TestMonitorProcessConfirmationRefusesReusedPID(t *testing.T) {
+	state, session, view := monitorProcessMenuFixture(t)
+	fake := session.conn.(*fakeConn)
+	scriptMonitorProcessHost(t, fake)
+	if err := view.RightClickLabel("button:nginx"); err != nil {
+		t.Fatal(err)
+	}
+	dualClickMenuLabel(t, view, state.messages.Tools.RemoteTerminate)
+	for deadline := time.Now().Add(2 * time.Second); state.modal != modalForm && time.Now().Before(deadline); {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if state.modal != modalForm {
+		t.Fatal("the verified process did not reach confirmation")
+	}
+	fake.mu.Lock()
+	fake.runCommand = func(_ context.Context, command string, _ int) ([]byte, error) {
+		if strings.Contains(command, "motty-process-guard") {
+			return []byte(guardMarker.FindString(command) + "changed\n"), nil
+		}
+		if strings.Contains(command, "motty-process-identities") {
+			return []byte("boot " + monitorGuardBoot + "\n812 9999\n"), nil
+		}
+		return nil, nil
+	}
+	fake.mu.Unlock()
+	state.Click(hitFormSubmit)
+	p := &session.stats.panel
+	for deadline := time.Now().Add(2 * time.Second); p.actionStatus == state.messages.Tools.RemoteLoading && time.Now().Before(deadline); {
+		state.Wake()
+		time.Sleep(time.Millisecond)
+	}
+	if !p.actionFailed || p.actionStatus != state.messages.Tools.RemoteProcessChanged {
+		t.Fatalf("reused PID was not refused: %q", p.actionStatus)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	guarded := ""
+	for _, call := range fake.commandCalls {
+		if strings.Contains(call, "motty-process-guard") {
+			guarded = call
+		}
+	}
+	if !strings.Contains(guarded, "[ \"$ticks\" = '4242' ]") {
+		t.Fatalf("guard did not carry the confirmed instance: %q", guarded)
 	}
 }
 
@@ -125,7 +178,7 @@ func TestMonitorProcessTerminateSignalsTheInstanceBehindThePID(t *testing.T) {
 	}
 	fake.mu.Unlock()
 
-	state.startMonitorProcessSignal(session, 812, remotetools.Terminate)
+	state.startMonitorProcessSignal(session, remotetools.Process{PID: 812, StartIdentity: "linux:" + monitorGuardBoot + ":4242"}, remotetools.Terminate)
 	p := &session.stats.panel
 	deadline := time.Now().Add(2 * time.Second)
 	for p.actionStatus == state.messages.Tools.RemoteLoading && time.Now().Before(deadline) {
@@ -164,7 +217,7 @@ func TestMonitorProcessSignalRefusesAnInstanceTheHostCannotProve(t *testing.T) {
 	}
 	fake.mu.Unlock()
 
-	state.startMonitorProcessSignal(session, 812, remotetools.Kill)
+	state.startMonitorProcessSignal(session, remotetools.Process{PID: 812}, remotetools.Kill)
 	p := &session.stats.panel
 	deadline := time.Now().Add(2 * time.Second)
 	for p.actionStatus == state.messages.Tools.RemoteLoading && time.Now().Before(deadline) {
@@ -203,6 +256,27 @@ func TestMonitorProcessMenuIsReadOnlyOnAHostThatCannotProveInstances(t *testing.
 	}
 	if disabled[state.messages.Tools.RemoteProcessCopyPID] {
 		t.Fatal("copying the pid needs no instance identity")
+	}
+}
+
+func TestMonitorWindowsDoesNotReportUncollectedProcessesOrListenersAsEmpty(t *testing.T) {
+	state, session, view := monitorProcessMenuFixture(t)
+	session.host.System = sshconn.SystemWindows
+	p := &session.stats.panel
+	p.procs = nil
+	p.refilterProcesses()
+	if err := view.Frame(); err != nil {
+		t.Fatal(err)
+	}
+	if !view.HasText(state.messages.Monitor.Unavailable) || view.HasText(state.messages.Monitor.ProcessEmpty) {
+		t.Fatal("Windows process page treated unavailable data as an empty process list")
+	}
+	p.page, p.scroll, p.listensOpen = 3, 0, true
+	if err := view.Frame(); err != nil {
+		t.Fatal(err)
+	}
+	if view.HasText(state.messages.Monitor.NoListens) || view.HasText(state.messages.Monitor.ListenSection+" · 0") {
+		t.Fatal("Windows network page reported zero listeners without collecting them")
 	}
 }
 

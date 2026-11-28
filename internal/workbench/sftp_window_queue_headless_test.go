@@ -67,6 +67,20 @@ func TestSFTPWindowQueuePreview(t *testing.T) {
 			if err := view.Wait(transferDetailDelay + 220*time.Millisecond); err != nil {
 				t.Fatal(err)
 			}
+			// The card shows one hover delay after the pointer stops, and the
+			// page asks for that frame itself; a headless view paints only when
+			// the test asks it to, so the frame it asked for is driven here.
+			for frame := 0; frame < 6; frame++ {
+				if _, ok := findSnapshotHit(view.Snapshot(), hitSFTPQueueDetails); ok {
+					break
+				}
+				if err := view.Rest(); err != nil {
+					t.Fatal(err)
+				}
+				if err := view.Wait(40 * time.Millisecond); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if _, ok := findSnapshotHit(view.Snapshot(), hitSFTPQueueDetails); !ok {
 				d := &w.ui.queueDetails
 				t.Fatalf("no details: hovered=%v row=%d showing=%d", view.Snapshot().Hovered, d.hover.id, d.showing)

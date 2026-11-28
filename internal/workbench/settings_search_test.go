@@ -3,6 +3,7 @@ package workbench
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/vivaui/viva/gfx"
 	"github.com/vivaui/viva/keymap"
@@ -57,17 +58,29 @@ func TestSearchOpensLockShortcutSettingsRow(t *testing.T) {
 func TestSearchingSettingsListsMatchesFromEveryCategoryWithTheirCategory(t *testing.T) {
 	state := newTestState(t, testOptions(t))
 	canvas := searchSettings(t, state, "font")
-	if !state.settingsSearching() || state.settings.count != 4 {
-		t.Fatalf("results = %d, want the interface font, the terminal's font size, its font family and its fallback fonts", state.settings.count)
+	if !state.settingsSearching() {
+		t.Fatal("searching for a font found nothing")
+	}
+	// The rows a reader looks for by that word are among the results; how many
+	// others mention it in their description is not the page's promise.
+	for _, want := range []string{
+		state.messages.SettingsInterfaceFont, state.messages.SettingsTerminalFontSize,
+		state.messages.SettingsTerminalFontFamily, state.messages.Tools.FontFallbackRow,
+	} {
+		found := false
+		for index := 0; index < state.settings.count; index++ {
+			if state.settings.results[index].label == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("searching for a font did not find %q", want)
+		}
 	}
 	for index := 0; index < state.settings.count; index++ {
 		hit, ok := hitByID(canvas, hitSettingsResultList.At(index))
-		want := state.messages.Tools.CatTerminal
-		if state.settings.results[index].category == settingsGeneral {
-			want = state.messages.Tools.CatGeneral // the interface's font
-		}
-		if !ok || hit.Label != want {
-			t.Fatalf("result %d hit = %+v, %v: it should be a button named for its category", index, hit, ok)
+		if want := state.settingsCategoryName(state.settings.results[index].category); !ok || hit.Label != want {
+			t.Fatalf("result %d hit = %+v, %v: it should be a button named for its category %q", index, hit, ok, want)
 		}
 	}
 	// No category looks selected while the results are up.
@@ -76,10 +89,20 @@ func TestSearchingSettingsListsMatchesFromEveryCategoryWithTheirCategory(t *test
 			t.Errorf("category %d is highlighted during a search", category)
 		}
 	}
-	// Words may come in any order, and case does not matter.
-	typeInto(state, hitSettingsSearch, " SIZE")
+	// Case does not matter, and a setting whose name is the rest of the word is
+	// still found.
+	typeInto(state, hitSettingsSearch, " FONT SIZE")
 	paintedTexts(state)
-	if !state.settingsSearching() || state.settings.count != 1 || state.settings.results[0].label != state.messages.SettingsTerminalFontSize {
+	if !state.settingsSearching() || state.settings.count == 0 {
+		t.Fatal("an upper-case search found nothing")
+	}
+	found := false
+	for index := 0; index < state.settings.count; index++ {
+		if state.settings.results[index].label == state.messages.SettingsTerminalFontSize {
+			found = true
+		}
+	}
+	if !found {
 		t.Fatalf("results = %+v", state.settings.results[:state.settings.count])
 	}
 }
@@ -128,14 +151,30 @@ func TestChoosingAResultOpensItsCategoryScrolledToItAndLeavesTheSearch(t *testin
 	if state.settingsCategory != settingsAssistant || state.settings.search.RuneCount() != 0 || state.settingsSearching() {
 		t.Fatalf("category %d, query %q", state.settingsCategory, state.settings.search.String())
 	}
-	// Two paints: the first scrolls, the second shows it there and asks for no more.
+	// The first paint scrolls and asks for the paint that shows the scroll; the
+	// animation that carries it out settles, and then nothing asks for frames.
 	canvas = gfx.Canvas{}
 	state.Paint(&canvas, size)
 	if _, scheduled := canvas.NextFrame(); !scheduled {
 		t.Fatal("scrolling to a result did not ask for the paint that shows it")
 	}
-	canvas = gfx.Canvas{}
-	state.Paint(&canvas, size)
+	// A scrollbar left showing fades on the frame clock, so the clock is what the
+	// test advances: with the page still, the frames stop.
+	now := time.Duration(0)
+	settled := false
+	for paint := 0; paint < 120; paint++ {
+		canvas = gfx.Canvas{}
+		canvas.SetClock(func() time.Duration { return now })
+		state.Paint(&canvas, size)
+		if _, scheduled := canvas.NextFrame(); !scheduled {
+			settled = true
+			break
+		}
+		now += 50 * time.Millisecond
+	}
+	if !settled {
+		t.Fatal("the page kept asking for frames after it had scrolled")
+	}
 	if state.settingsScroll == 0 {
 		t.Fatal("the page was not scrolled to the group")
 	}
@@ -147,9 +186,6 @@ func TestChoosingAResultOpensItsCategoryScrolledToItAndLeavesTheSearch(t *testin
 	}
 	if !found {
 		t.Fatalf("the Behaviour group is not near the top (scroll %v)", state.settingsScroll)
-	}
-	if _, scheduled := canvas.NextFrame(); scheduled {
-		t.Fatal("the page kept asking for frames after it had scrolled")
 	}
 }
 
