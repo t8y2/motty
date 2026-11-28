@@ -2198,14 +2198,14 @@ func (state *State) click(id gfx.ID, feedback bool) {
 		state.clickConnection(id)
 	case id == hitHosts || id == hitHome:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.releaseIdleSFTP(session)
+			state.suspendIdleSFTP(session)
 		}
 		state.clearBroadcast()
 		state.setActiveSection(sectionHosts)
 		state.save()
 	case id == hitWorkspaces:
 		if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-			state.releaseIdleSFTP(session)
+			state.suspendIdleSFTP(session)
 		}
 		state.clearBroadcast()
 		state.setActiveSection(sectionWorkspaces)

@@ -387,6 +387,44 @@ func (state *State) releaseIdleSFTP(session *Session) {
 	state.releaseKeptConnection(session)
 }
 
+// suspendIdleSFTP releases an idle panel's connections without dropping the
+// view. A page switch only hides the panel: the workspace keeps it open, and
+// coming back should redraw the folders it has listed, not list them again.
+// A view with anything under way keeps its connections until it is idle, and
+// a panel that talks on its own connection or through sudo cannot have its
+// worker reattached over the terminal transport, so those keep the full
+// release.
+func (state *State) suspendIdleSFTP(session *Session) {
+	if session == nil || session.files == nil {
+		return
+	}
+	view := session.files
+	if view.worker != nil {
+		state.refreshSFTPTransfers(view)
+		if len(view.transfers) > 0 {
+			return
+		}
+	}
+	// A copy reading from this view holds its connection without owning a task
+	// on this worker; the last one releases it.
+	if len(view.outgoingCopies) > 0 {
+		return
+	}
+	if view.busy || view.localBusy || view.extracting || len(view.prefetching) > 0 {
+		return
+	}
+	if view.dedicated != nil || view.sudo {
+		state.releaseIdleSFTP(session)
+		return
+	}
+	if view.worker != nil {
+		view.worker.Interrupt()
+		view.worker.Close()
+		view.worker = nil
+	}
+	state.releaseKeptConnection(session)
+}
+
 func (state *State) syncTransfers(view *sftpView) {
 	center := &state.transfers
 	view.transferScan++

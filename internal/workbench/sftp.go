@@ -362,6 +362,12 @@ func (state *State) openSFTP(session *Session) {
 			}
 			session.files.worker = sftpclient.NewWorker(session.files.openFiles, state.notifyFor(session))
 			state.configureSFTPWorker(session.files)
+			// The folders the panel listed while it was away are still on
+			// screen; read the shown one again in the background so the rows
+			// catch up without taking the listing off screen.
+			if !session.files.local && session.files.path != "" {
+				state.refreshSFTPDirectory(session.files, session.files.path)
+			}
 		}
 		return
 	}

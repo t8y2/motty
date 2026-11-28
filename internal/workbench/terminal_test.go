@@ -375,6 +375,68 @@ func TestTheConnectionOutlivesAUsersShellWhileTheFilesUseIt(t *testing.T) {
 	}
 }
 
+// A page switch only hides the file panel: the workspace keeps it open, so the
+// release suspends its worker and keeps the view. Coming back to the tab
+// reattaches the worker over the same connection, the listing stays on screen,
+// and the folder on it is read again in the background.
+func TestAPageSwitchSuspendsThePanelAndKeepsItsListing(t *testing.T) {
+	state, session, fake, _ := openTestSFTP(t)
+	view := session.files
+	rows := len(view.rows)
+
+	state.Click(hitWorkspaces)
+	if session.files != view || view.worker != nil {
+		t.Fatalf("files=%v worker=%v, want the same view with its worker suspended", session.files == view, view.worker != nil)
+	}
+	if fake.canceled != 0 {
+		t.Fatal("the terminal connection was canceled by the page switch")
+	}
+
+	workspaceID := state.deck.ActiveWorkspace()
+	paneID := state.deck.ActivePane(workspaceID)
+	if !state.activatePane(workspaceID, paneID) {
+		t.Fatal("the tab did not come back")
+	}
+	if view.worker == nil || view.busy || len(view.rows) != rows {
+		t.Fatalf("worker=%v busy=%v rows=%d, want the listing kept and the worker back", view.worker != nil, view.busy, len(view.rows))
+	}
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && len(view.prefetching) == 0 })
+	state.openSFTPDirectory(view, "/home/test/docs")
+	waitSFTP(t, state, session, func(view *sftpView) bool { return !view.busy && sftpRowIndexOrNegative(view, "guide.md") >= 0 })
+	if fake.canceled != 0 {
+		t.Fatal("the terminal connection did not survive the suspend and the return")
+	}
+}
+
+// A panel with work under way keeps its worker over a page switch: the
+// suspension only takes an idle panel's.
+func TestABusyPanelKeepsItsWorkerOverAPageSwitch(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	view := session.files
+	worker := view.worker
+	view.busy = true
+	state.suspendIdleSFTP(session)
+	if view.worker != worker {
+		t.Fatal("the worker was suspended while the panel was busy")
+	}
+	view.busy = false
+	state.suspendIdleSFTP(session)
+	if view.worker != nil {
+		t.Fatal("the idle panel kept its worker")
+	}
+}
+
+// A suspended panel still closes with its tab: the full release takes the
+// suspended view away, and nothing is left for a later cleanup to trip over.
+func TestASuspendedPanelStillClosesWithItsTab(t *testing.T) {
+	state, session, _, _ := openTestSFTP(t)
+	state.suspendIdleSFTP(session)
+	state.releaseIdleSFTP(session)
+	if session.files != nil {
+		t.Fatal("the suspended view was left behind")
+	}
+}
+
 // exitStatus is a stand-in for *ssh.ExitError.
 type exitStatus struct{ code int }
 

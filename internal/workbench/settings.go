@@ -492,7 +492,7 @@ func (state *State) openSettings() {
 		state.refreshEditors()
 	}
 	if session, ok := state.sessionByIDPointer(state.activeSessionID); ok {
-		state.releaseIdleSFTP(session)
+		state.suspendIdleSFTP(session)
 	}
 	// Returning to an already-open settings tab preserves where the user left
 	// the page (scroll offsets, drawer, and visit state). Only opening settings
